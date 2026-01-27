@@ -1,0 +1,176 @@
+{
+  "rules": {
+    ".read": true,
+    ".write": true,
+    "users": {
+      ".read": "auth != null || true",
+      "$uid": {
+        ".read": "auth != null || true",
+        ".write": "$uid === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin' || true",
+        "passwordHash": {
+          ".read": false,
+          ".write": "true"
+        },
+        "refreshTokens": {
+          ".read": "$uid === auth.uid || true",
+          ".write": "$uid === auth.uid || true"
+        }
+      }
+    },
+    "authSessions": {
+      "$sessionId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "courses": {
+      ".read": "auth != null",
+      ".write": "root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'teacher'",
+      ".indexOn": ["instructorId", "status", "category", "level"],
+      "$courseId": {
+        ".write": "data.child('instructorId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin'"
+      }
+    },
+    "modules": {
+      ".read": "auth != null",
+      ".indexOn": ["courseId", "order"],
+      "$moduleId": {
+        ".write": "root.child('courses').child(data.child('courseId').val()).child('instructorId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin'"
+      }
+    },
+    "lessons": {
+      ".read": "auth != null",
+      ".indexOn": ["moduleId", "courseId", "order"],
+      "$lessonId": {
+        ".write": "root.child('courses').child(data.child('courseId').val()).child('instructorId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin'"
+      }
+    },
+    "enrollments": {
+      ".read": "auth != null",
+      ".indexOn": ["userId", "courseId", "status"],
+      "$enrollmentId": {
+        ".read": "data.child('userId').val() === auth.uid || root.child('courses').child(data.child('courseId').val()).child('instructorId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin'",
+        ".write": "data.child('userId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin'"
+      }
+    },
+    "evaluations": {
+      ".read": "auth != null",
+      ".indexOn": ["courseId", "moduleId", "status", "createdBy"],
+      "$evaluationId": {
+        ".write": "root.child('courses').child(data.child('courseId').val()).child('instructorId').val() === auth.uid || data.child('createdBy').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin'"
+      }
+    },
+    "evaluationAttempts": {
+      ".read": "auth != null",
+      ".indexOn": ["userId", "evaluationId", "courseId"],
+      "$attemptId": {
+        ".read": "data.child('userId').val() === auth.uid || root.child('courses').child(data.child('courseId').val()).child('instructorId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin'",
+        ".write": "data.child('userId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'teacher'"
+      }
+    },
+    "grades": {
+      ".read": "auth != null",
+      ".indexOn": ["studentId", "courseId", "teacherId", "evaluationId"],
+      "$gradeId": {
+        ".read": "data.child('studentId').val() === auth.uid || data.child('teacherId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin'",
+        ".write": "data.child('teacherId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin'"
+      }
+    },
+    "certificates": {
+      ".read": "auth != null",
+      ".indexOn": ["userId", "courseId", "credentialId"],
+      "$certificateId": {
+        ".read": "data.child('userId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin'",
+        ".write": "root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'teacher'"
+      }
+    },
+    "conversations": {
+      ".read": "auth != null",
+      ".indexOn": ["type", "courseId"],
+      "$conversationId": {
+        ".read": "data.child('participants').hasChild(auth.uid) || root.child('users').child(auth.uid).child('role').val() === 'admin'",
+        ".write": "data.child('participants').hasChild(auth.uid) || data.child('createdBy').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin'"
+      }
+    },
+    "messages": {
+      ".read": "auth != null",
+      ".indexOn": ["conversationId", "senderId"],
+      "$messageId": {
+        ".read": "root.child('conversations').child(data.child('conversationId').val()).child('participants').hasChild(auth.uid) || root.child('users').child(auth.uid).child('role').val() === 'admin'",
+        ".write": "data.child('senderId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin'"
+      }
+    },
+    "notifications": {
+      ".indexOn": ["userId", "type", "read"],
+      "$notificationId": {
+        ".read": "data.child('userId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin'",
+        ".write": "data.child('userId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin'"
+      }
+    },
+    "supportTickets": {
+      ".read": "root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'support'",
+      ".indexOn": ["userId", "status", "assignedTo", "priority", "category"],
+      "$ticketId": {
+        ".read": "data.child('userId').val() === auth.uid || data.child('assignedTo').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'support'",
+        ".write": "data.child('userId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'support'"
+      }
+    },
+    "activities": {
+      ".read": "root.child('users').child(auth.uid).child('role').val() === 'admin'",
+      ".write": "auth != null",
+      ".indexOn": ["userId", "type", "timestamp"],
+      "$activityId": {
+        ".read": "data.child('userId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin'"
+      }
+    },
+    "userPoints": {
+      ".read": "auth != null",
+      ".indexOn": ["userId", "totalPoints", "level"],
+      "$pointsId": {
+        ".read": "auth != null",
+        ".write": "data.child('userId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin'"
+      }
+    },
+    "badges": {
+      ".read": "auth != null",
+      ".write": "root.child('users').child(auth.uid).child('role').val() === 'admin'",
+      ".indexOn": ["category", "rarity", "isActive"]
+    },
+    "userBadges": {
+      ".read": "auth != null",
+      ".indexOn": ["userId", "badgeId"],
+      "$userBadgeId": {
+        ".read": "auth != null",
+        ".write": "data.child('userId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin'"
+      }
+    },
+    "learningStreaks": {
+      ".read": "auth != null",
+      ".indexOn": ["userId", "currentStreak"],
+      "$streakId": {
+        ".read": "data.child('userId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin'",
+        ".write": "data.child('userId').val() === auth.uid || $streakId === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin'"
+      }
+    },
+    "progressActivities": {
+      ".read": "auth != null",
+      ".indexOn": ["userId", "type", "courseId"],
+      "$activityId": {
+        ".read": "data.child('userId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin'",
+        ".write": "data.child('userId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin'"
+      }
+    },
+    "userSettings": {
+      ".indexOn": ["userId"],
+      "$settingsId": {
+        ".read": "data.child('userId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin'",
+        ".write": "data.child('userId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin'"
+      }
+    },
+    "systemMetrics": {
+      ".read": "root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'teacher'",
+      ".write": "root.child('users').child(auth.uid).child('role').val() === 'admin'",
+      ".indexOn": ["date"]
+    }
+  }
+}
