@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '@app/store/authStore';
-import { localDB } from '@shared/utils/localDB';
+import { gamificationService } from '@shared/services/dataService';
 import { 
   Trophy,
   Star,
@@ -101,46 +101,52 @@ export default function GamificationPage() {
 
   const loadGamificationData = async () => {
     try {
-      // Load or create user points
-      let points = localDB.getCollection<UserPoints>('userPoints')
-        .find(p => p.oderId === user?.id);
-      
+      // Load user points from Firebase
+      let points = await gamificationService.getUserPoints(user?.id || '');
+
       if (!points && user) {
         // Initialize user points
-        points = {
-          id: `points_${Date.now()}`,
-          oderId: user.id,
-          totalPoints: 150, // Start with some points
-          level: 2,
-          currentLevelPoints: 50,
-          pointsToNextLevel: 200,
-          streak: 3,
-          lastActivityDate: new Date().toISOString(),
-          badges: ['first_course'],
-          achievements: []
-        };
-        localDB.add('userPoints', points);
+        points = await gamificationService.createUserPoints(user.id);
       }
-      
-      setUserPoints(points || null);
-      setUnlockedBadges(points?.badges || []);
 
-      // Generate mock leaderboard
-      const mockLeaderboard: LeaderboardEntry[] = [
-        { rank: 1, oderId: '1', userName: 'María García', points: 2450, level: 7, badges: 8 },
-        { rank: 2, oderId: '2', userName: 'Carlos López', points: 2100, level: 6, badges: 7 },
-        { rank: 3, oderId: '3', userName: 'Ana Martínez', points: 1850, level: 6, badges: 6 },
-        { rank: 4, oderId: user?.id || '4', userName: user?.name || 'Tú', points: points?.totalPoints || 150, level: points?.level || 2, badges: points?.badges.length || 1 },
-        { rank: 5, oderId: '5', userName: 'Pedro Sánchez', points: 1200, level: 5, badges: 5 },
-        { rank: 6, oderId: '6', userName: 'Laura Torres', points: 980, level: 4, badges: 4 },
-        { rank: 7, oderId: '7', userName: 'Diego Ruiz', points: 750, level: 4, badges: 3 },
-        { rank: 8, oderId: '8', userName: 'Sofia Morales', points: 620, level: 3, badges: 3 },
-        { rank: 9, oderId: '9', userName: 'Javier Herrera', points: 450, level: 3, badges: 2 },
-        { rank: 10, oderId: '10', userName: 'Elena Díaz', points: 320, level: 2, badges: 2 }
-      ].map((entry, index) => ({ ...entry, rank: index + 1, oderId: entry.oderId, userId: entry.oderId }))
-       .sort((a, b) => b.points - a.points);
-      
-      setLeaderboard(mockLeaderboard);
+      // Map to local interface if points exist
+      const mappedPoints: UserPoints | null = points ? {
+        id: points.id,
+        oderId: points.userId || user?.id || '',
+        totalPoints: points.totalPoints || 0,
+        level: points.level || 1,
+        currentLevelPoints: (points.totalPoints || 0) % 100,
+        pointsToNextLevel: points.nextLevelPoints || 100,
+        streak: 0,
+        lastActivityDate: new Date().toISOString(),
+        badges: [],
+        achievements: []
+      } : null;
+
+      setUserPoints(mappedPoints);
+      setUnlockedBadges(mappedPoints?.badges || []);
+
+      // Load leaderboard from Firebase
+      const leaderboardData = await gamificationService.getLeaderboard(10);
+
+      // If user is not in top 10, add them at their position
+      const userInLeaderboard = leaderboardData.find(e => e.userId === user?.id);
+      if (!userInLeaderboard && user && mappedPoints) {
+        // Calculate user rank (count how many have more points)
+        const allPoints = await gamificationService.getUserPoints(user.id);
+        const userRank = leaderboardData.filter(e => e.points > (allPoints?.totalPoints || 0)).length + 1;
+
+        leaderboardData.push({
+          rank: userRank,
+          userId: user.id,
+          userName: user.name,
+          points: mappedPoints.totalPoints,
+          level: mappedPoints.level,
+          badges: 0
+        });
+      }
+
+      setLeaderboard(leaderboardData);
     } catch (error) {
       console.error('Error loading gamification data:', error);
     } finally {

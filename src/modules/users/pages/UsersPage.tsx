@@ -1,40 +1,47 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '@app/store/authStore';
-import { localDB } from '@shared/utils/localDB';
-import { 
-  Users, 
-  Search, 
-  Edit3, 
-  Trash2, 
+import { userService } from '@shared/services/dataService';
+import type { DBUser } from '@shared/services/firebaseDataService';
+import {
+  Users,
+  Search,
+  Edit3,
+  Trash2,
   UserPlus,
   Shield,
   Eye,
   EyeOff,
   CheckCircle,
-  XCircle
+  XCircle,
+  Loader2
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@shared/components/ui/Card';
 import { Button } from '@shared/components/ui/Button';
 import { Input } from '@shared/components/ui/Input';
 import { Label } from '@shared/components/ui/Label';
-import type { User, UserRole } from '@shared/types';
+import type { UserRole } from '@shared/types';
 
 const UsersPage = () => {
   const { user: currentUser } = useAuthStore();
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<DBUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [roleFilter, setRoleFilter] = useState<UserRole | 'all'>('all');
+  const [roleFilter, setRoleFilter] = useState<DBUser['role'] | 'all'>('all');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [selectedUser, setSelectedUser] = useState<DBUser | null>(null);
 
-  // Cargar usuarios
-  const loadUsers = () => {
+  // Cargar usuarios desde Firebase
+  const loadUsers = async () => {
     setLoading(true);
-    const userData = localDB.get<User>('users');
-    setUsers(userData);
-    setLoading(false);
+    try {
+      const userData = await userService.getAll();
+      setUsers(userData);
+    } catch (error) {
+      console.error('Error loading users:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -59,57 +66,75 @@ const UsersPage = () => {
     active: users.filter(u => u.lastActive && (Date.now() - u.lastActive) < 7 * 24 * 60 * 60 * 1000).length
   };
 
-  const handleCreateUser = (userData: Partial<User>) => {
-    const newUser = localDB.add<User>('users', {
-      ...userData,
-      id: '',
-      emailVerified: false,
-      loginAttempts: 0,
-      profile: {},
-      preferences: {
-        theme: 'light',
-        notifications: { email: true, push: true, inApp: true }
-      },
-      refreshTokens: {},
-      lastActive: Date.now()
-    } as User);
+  const handleCreateUser = async (userData: Partial<DBUser>) => {
+    try {
+      const newUser = await userService.create({
+        email: userData.email || '',
+        name: userData.name || '',
+        role: userData.role || 'student',
+        emailVerified: userData.emailVerified || false,
+        loginAttempts: 0,
+        profile: {},
+        preferences: {
+          language: 'es',
+          timezone: 'America/Santo_Domingo',
+          notifications: { email: true, push: true, sms: false, marketing: false },
+          privacy: { showProfile: true, showProgress: true, showBadges: true }
+        }
+      } as Omit<DBUser, 'id'>);
 
-    setUsers([...users, newUser]);
-    setShowCreateModal(false);
-  };
-
-  const handleEditUser = (userData: Partial<User>) => {
-    if (!selectedUser) return;
-    
-    const updatedUser = localDB.update<User>('users', selectedUser.id, userData);
-    if (updatedUser) {
-      setUsers(users.map(u => u.id === selectedUser.id ? updatedUser : u));
-      setShowEditModal(false);
-      setSelectedUser(null);
+      setUsers([...users, newUser]);
+      setShowCreateModal(false);
+    } catch (error) {
+      console.error('Error creating user:', error);
+      alert('Error al crear usuario');
     }
   };
 
-  const handleDeleteUser = (userId: string) => {
+  const handleEditUser = async (userData: Partial<DBUser>) => {
+    if (!selectedUser) return;
+
+    try {
+      const updatedUser = await userService.update(selectedUser.id, userData);
+      if (updatedUser) {
+        setUsers(users.map(u => u.id === selectedUser.id ? updatedUser : u));
+        setShowEditModal(false);
+        setSelectedUser(null);
+      }
+    } catch (error) {
+      console.error('Error updating user:', error);
+      alert('Error al actualizar usuario');
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
     if (confirm('¿Estás seguro de que quieres eliminar este usuario?')) {
-      const success = localDB.delete('users', userId);
-      if (success) {
+      try {
+        await userService.delete(userId);
         setUsers(users.filter(u => u.id !== userId));
+      } catch (error) {
+        console.error('Error deleting user:', error);
+        alert('Error al eliminar usuario');
       }
     }
   };
 
-  const toggleUserStatus = (userId: string) => {
+  const toggleUserStatus = async (userId: string) => {
     const user = users.find(u => u.id === userId);
     if (user) {
-      const newStatus = user.emailVerified ? false : true;
-      const updatedUser = localDB.update<User>('users', userId, { emailVerified: newStatus });
-      if (updatedUser) {
-        setUsers(users.map(u => u.id === userId ? updatedUser : u));
+      const newStatus = !user.emailVerified;
+      try {
+        const updatedUser = await userService.update(userId, { emailVerified: newStatus });
+        if (updatedUser) {
+          setUsers(users.map(u => u.id === userId ? updatedUser : u));
+        }
+      } catch (error) {
+        console.error('Error toggling user status:', error);
       }
     }
   };
 
-  const getRoleBadgeColor = (role: UserRole) => {
+  const getRoleBadgeColor = (role: DBUser['role']) => {
     const colors = {
       admin: 'bg-red-100 text-red-800',
       teacher: 'bg-blue-100 text-blue-800',
@@ -119,7 +144,7 @@ const UsersPage = () => {
     return colors[role];
   };
 
-  const getRoleIcon = (role: UserRole) => {
+  const getRoleIcon = (role: DBUser['role']) => {
     const icons = {
       admin: Shield,
       teacher: Users,
@@ -226,7 +251,7 @@ const UsersPage = () => {
             <div className="w-full md:w-48">
               <select
                 value={roleFilter}
-                onChange={(e) => setRoleFilter(e.target.value as UserRole | 'all')}
+                onChange={(e) => setRoleFilter(e.target.value as DBUser['role'] | 'all')}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="all">Todos los roles</option>
@@ -248,6 +273,7 @@ const UsersPage = () => {
         <CardContent>
           {loading ? (
             <div className="text-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin text-blue-600 mx-auto mb-2" />
               <div className="text-gray-500">Cargando usuarios...</div>
             </div>
           ) : filteredUsers.length === 0 ? (
@@ -380,21 +406,21 @@ const UsersPage = () => {
 };
 
 // Modal Component para crear/editar usuarios
-const UserModal = ({ 
-  title, 
-  user, 
-  onSave, 
-  onClose 
-}: { 
+const UserModal = ({
+  title,
+  user,
+  onSave,
+  onClose
+}: {
   title: string;
-  user: User | null;
-  onSave: (data: Partial<User>) => void;
+  user: DBUser | null;
+  onSave: (data: Partial<DBUser>) => void;
   onClose: () => void;
 }) => {
   const [formData, setFormData] = useState({
     name: user?.name || '',
     email: user?.email || '',
-    role: user?.role || 'student' as UserRole,
+    role: user?.role || 'student' as DBUser['role'],
     emailVerified: user?.emailVerified || false
   });
 

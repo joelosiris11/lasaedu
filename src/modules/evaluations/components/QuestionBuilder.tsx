@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
-import { 
-  Plus, 
-  X, 
+import {
+  Plus,
+  X,
   Save,
   Eye,
   CheckCircle,
@@ -12,7 +12,7 @@ import {
   Upload,
   Edit3,
   Trash2,
-  Copy
+  FileText
 } from 'lucide-react';
 import { Button } from '@shared/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@shared/components/ui/Card';

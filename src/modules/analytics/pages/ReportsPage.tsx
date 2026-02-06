@@ -1,6 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuthStore } from '@app/store/authStore';
-import { localDB } from '@shared/utils/localDB';
+import {
+  userService,
+  courseService,
+  certificateService,
+  supportTicketService,
+  legacyEnrollmentService as enrollmentService
+} from '@shared/services/dataService';
 import { 
   exportUsers,
   exportGrades,
@@ -76,19 +82,36 @@ export default function ReportsPage() {
 
   const loadReportData = async () => {
     try {
-      // Generate mock report data
-      const users = localDB.getCollection<any>('users');
-      const courses = localDB.getCollection<any>('courses');
-      const enrollments = localDB.getCollection<any>('enrollments');
-      const certificates = localDB.getCollection<any>('certificates');
-      const tickets = localDB.getCollection<any>('supportTickets');
+      // Load data from Firebase
+      const [users, allCourses, allEnrollments, certificates, tickets] = await Promise.all([
+        userService.getAll(),
+        courseService.getAll(),
+        enrollmentService.getAll(),
+        certificateService.getAll(),
+        supportTicketService.getAll()
+      ]);
 
-      // Count users by role
-      const usersByRole = [
-        { role: 'Estudiantes', count: users.filter(u => u.role === 'student').length || 85 },
-        { role: 'Profesores', count: users.filter(u => u.role === 'teacher').length || 12 },
-        { role: 'Administradores', count: users.filter(u => u.role === 'admin').length || 3 },
-        { role: 'Soporte', count: users.filter(u => u.role === 'support').length || 5 }
+      // Filter data based on user role
+      // Teachers only see data for their own courses
+      let courses = allCourses;
+      let enrollments = allEnrollments;
+
+      if (!isAdmin && user?.role === 'teacher') {
+        // Filter to only teacher's courses
+        courses = allCourses.filter(c => c.instructorId === user.id);
+        const teacherCourseIds = courses.map(c => c.id);
+        enrollments = allEnrollments.filter(e => teacherCourseIds.includes(e.courseId));
+      }
+
+      // Count users by role (only for admin)
+      const usersByRole = isAdmin ? [
+        { role: 'Estudiantes', count: users.filter(u => u.role === 'student').length },
+        { role: 'Profesores', count: users.filter(u => u.role === 'teacher').length },
+        { role: 'Administradores', count: users.filter(u => u.role === 'admin').length },
+        { role: 'Soporte', count: users.filter(u => u.role === 'support').length }
+      ] : [
+        // Teachers see student count in their courses only
+        { role: 'Estudiantes en mis cursos', count: new Set(enrollments.map(e => e.userId)).size }
       ];
 
       // Monthly stats (mock data)
@@ -135,15 +158,17 @@ export default function ReportsPage() {
       }
 
       setReportData({
-        totalUsers: users.length || 105,
+        totalUsers: isAdmin ? users.length : new Set(enrollments.map(e => e.userId)).size,
         usersByRole,
-        totalCourses: courses.length || 24,
-        activeCourses: courses.filter((c: any) => c.status === 'publicado').length || 18,
-        totalEnrollments: enrollments.length || 342,
-        completionRate: 72,
+        totalCourses: courses.length,
+        activeCourses: courses.filter((c: any) => c.status === 'publicado').length,
+        totalEnrollments: enrollments.length,
+        completionRate: enrollments.length > 0
+          ? Math.round(enrollments.filter((e: any) => e.status === 'completed').length / enrollments.length * 100)
+          : 0,
         avgCourseRating: 4.3,
-        certificatesIssued: certificates.length || 156,
-        ticketsResolved: tickets.filter((t: any) => t.status === 'resolved').length || 89,
+        certificatesIssued: isAdmin ? certificates.length : 0,
+        ticketsResolved: isAdmin ? tickets.filter((t: any) => t.status === 'resolved').length : 0,
         monthlyStats,
         topCourses,
         userActivity

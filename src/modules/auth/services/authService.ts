@@ -1,110 +1,143 @@
-import { storage } from '../../../shared/utils/storage';
-import type { User, UserRole } from '../../../shared/types';
-
-// Mock delay to simulate network request
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-// Mock users for development
-const MOCK_USERS: Record<string, User> = {
-  'admin@lasaedu.com': {
-    id: '1',
-    email: 'admin@lasaedu.com',
-    name: 'Administrador Principal',
-    role: 'admin',
-    emailVerified: true,
-    loginAttempts: 0,
-    profile: {},
-    preferences: {
-      theme: 'light',
-      notifications: { email: true, push: true, inApp: true }
-    },
-    refreshTokens: {},
-    createdAt: Date.now(),
-    lastActive: Date.now()
-  },
-  'teacher@lasaedu.com': {
-    id: '2',
-    email: 'teacher@lasaedu.com',
-    name: 'Juan Profesor',
-    role: 'teacher',
-    emailVerified: true,
-    loginAttempts: 0,
-    profile: {},
-    preferences: {
-      theme: 'light',
-      notifications: { email: true, push: true, inApp: true }
-    },
-    refreshTokens: {},
-    createdAt: Date.now(),
-    lastActive: Date.now()
-  },
-  'student@lasaedu.com': {
-    id: '3',
-    email: 'student@lasaedu.com',
-    name: 'Ana Estudiante',
-    role: 'student',
-    emailVerified: true,
-    loginAttempts: 0,
-    profile: {},
-    preferences: {
-      theme: 'light',
-      notifications: { email: true, push: true, inApp: true }
-    },
-    refreshTokens: {},
-    createdAt: Date.now(),
-    lastActive: Date.now()
-  }
-};
+import {
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+  sendPasswordResetEmail,
+  onAuthStateChanged,
+  type User as FirebaseUser
+} from 'firebase/auth';
+import { auth } from '@app/config/firebase';
+import { firebaseDB } from '@shared/services/firebaseDataService';
+import { storage } from '@shared/utils/storage';
+import type { User, UserRole } from '@shared/types';
 
 export interface LoginCredentials {
   email: string;
-  passwordHash: string; // Pre-hashed or verify function in real backend
+  password: string;
 }
 
 export interface RegisterData {
   email: string;
-  passwordHash: string;
+  password: string;
   name: string;
   role: UserRole;
 }
 
 export const authService = {
+  /**
+   * Login with email and password using Firebase Auth
+   */
   async login(credentials: LoginCredentials): Promise<{ user: User; accessToken: string; refreshToken: string }> {
-    await delay(800); // Simulate network
+    // Sign in with Firebase Auth
+    const userCredential = await signInWithEmailAndPassword(
+      auth,
+      credentials.email,
+      credentials.password
+    );
 
-    const user = MOCK_USERS[credentials.email];
-    
-    // In a real app, verify passwordHash
-    if (!user) {
-      throw new Error('Credenciales inválidas');
+    // Get the ID token
+    const accessToken = await userCredential.user.getIdToken();
+    const refreshToken = userCredential.user.refreshToken;
+
+    // Get user data from Realtime Database
+    let dbUser = await firebaseDB.getUserByEmail(credentials.email);
+
+    // If user doesn't exist in DB, create it (for backward compatibility)
+    if (!dbUser) {
+      const now = Date.now();
+      dbUser = await firebaseDB.createUser({
+        email: credentials.email,
+        name: userCredential.user.displayName || credentials.email.split('@')[0],
+        role: 'student',
+        emailVerified: userCredential.user.emailVerified,
+        loginAttempts: 0,
+        profile: {},
+        preferences: {
+          language: 'es',
+          timezone: 'America/Santo_Domingo',
+          notifications: { email: true, push: true, sms: false, marketing: false },
+          privacy: { showProfile: true, showProgress: true, showBadges: true }
+        },
+        createdAt: now,
+        updatedAt: now,
+        lastActive: now
+      });
     }
 
-    const accessToken = `mock_access_token_${user.id}_${Date.now()}`;
-    const refreshToken = `mock_refresh_token_${user.id}_${Date.now()}`;
+    // Map DB user to User type
+    const user: User = {
+      id: dbUser.id,
+      email: dbUser.email,
+      name: dbUser.name,
+      role: dbUser.role as UserRole,
+      emailVerified: dbUser.emailVerified || userCredential.user.emailVerified,
+      loginAttempts: dbUser.loginAttempts || 0,
+      profile: dbUser.profile || {},
+      preferences: {
+        theme: 'light',
+        notifications: {
+          email: dbUser.preferences?.notifications?.email ?? true,
+          push: dbUser.preferences?.notifications?.push ?? true,
+          inApp: true
+        }
+      },
+      refreshTokens: {},
+      createdAt: dbUser.createdAt,
+      lastActive: Date.now()
+    };
 
+    // Update last active in database
+    await firebaseDB.updateUser(dbUser.id, { lastActive: Date.now() });
+
+    // Store in local storage for persistence
     storage.setToken(accessToken);
     storage.setRefreshToken(refreshToken);
     storage.setUser(user);
 
-    return {
-      user,
-      accessToken,
-      refreshToken
-    };
+    return { user, accessToken, refreshToken };
   },
 
+  /**
+   * Register a new user with Firebase Auth and create DB record
+   */
   async register(data: RegisterData): Promise<{ user: User; accessToken: string; refreshToken: string }> {
-    await delay(1000);
-    
-    if (MOCK_USERS[data.email]) {
-      throw new Error('El usuario ya existe');
-    }
+    // Create user in Firebase Auth
+    const userCredential = await createUserWithEmailAndPassword(
+      auth,
+      data.email,
+      data.password
+    );
 
-    const newUser: User = {
-      id: Math.random().toString(36).substr(2, 9),
+    // Get tokens
+    const accessToken = await userCredential.user.getIdToken();
+    const refreshToken = userCredential.user.refreshToken;
+
+    // Create user in Realtime Database
+    const now = Date.now();
+    const dbUser = await firebaseDB.createUser({
       email: data.email,
       name: data.name,
       role: data.role,
+      emailVerified: false,
+      loginAttempts: 0,
+      profile: {},
+      preferences: {
+        language: 'es',
+        timezone: 'America/Santo_Domingo',
+        notifications: { email: true, push: true, sms: false, marketing: false },
+        privacy: { showProfile: true, showProgress: true, showBadges: true }
+      },
+      createdAt: now,
+      updatedAt: now,
+      lastActive: now
+    });
+
+    // Map to User type
+    const user: User = {
+      id: dbUser.id,
+      email: dbUser.email,
+      name: dbUser.name,
+      role: dbUser.role as UserRole,
       emailVerified: false,
       loginAttempts: 0,
       profile: {},
@@ -113,36 +146,58 @@ export const authService = {
         notifications: { email: true, push: true, inApp: true }
       },
       refreshTokens: {},
-      createdAt: Date.now(),
+      createdAt: dbUser.createdAt,
       lastActive: Date.now()
     };
 
-    // Store in mock db
-    MOCK_USERS[data.email] = newUser;
-
-    const accessToken = `mock_access_token_${newUser.id}_${Date.now()}`;
-    const refreshToken = `mock_refresh_token_${newUser.id}_${Date.now()}`;
-
+    // Store in local storage
     storage.setToken(accessToken);
     storage.setRefreshToken(refreshToken);
-    storage.setUser(newUser);
+    storage.setUser(user);
 
-    return {
-      user: newUser,
-      accessToken,
-      refreshToken
-    };
+    return { user, accessToken, refreshToken };
   },
 
+  /**
+   * Logout the current user
+   */
   async logout(): Promise<void> {
-    await delay(500);
+    await signOut(auth);
     storage.clear();
   },
 
+  /**
+   * Send password reset email
+   */
+  async resetPassword(email: string): Promise<void> {
+    await sendPasswordResetEmail(auth, email);
+  },
+
+  /**
+   * Refresh the access token
+   */
   async refreshToken(): Promise<string> {
-    await delay(500);
-    const newToken = `mock_access_token_${Date.now()}`;
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      throw new Error('No user logged in');
+    }
+
+    const newToken = await currentUser.getIdToken(true);
     storage.setToken(newToken);
     return newToken;
+  },
+
+  /**
+   * Subscribe to auth state changes
+   */
+  onAuthStateChanged(callback: (user: FirebaseUser | null) => void): () => void {
+    return onAuthStateChanged(auth, callback);
+  },
+
+  /**
+   * Get the current Firebase user
+   */
+  getCurrentUser(): FirebaseUser | null {
+    return auth.currentUser;
   }
 };

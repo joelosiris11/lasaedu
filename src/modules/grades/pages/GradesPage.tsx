@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '@app/store/authStore';
-import { localDB } from '@shared/utils/localDB';
+import { courseService, evaluationService, enrollmentService } from '@shared/services/dataService';
+import { firebaseDB } from '@shared/services/firebaseDataService';
 import { 
   BookOpen,
   Search,
@@ -94,21 +95,24 @@ export default function GradesPage() {
 
   const loadCourses = async () => {
     try {
-      const allCourses = localDB.getCollection<Course>('courses');
-      
+      const allCourses = await courseService.getAll();
+
       let filteredCourses: Course[];
       if (isAdmin) {
-        filteredCourses = allCourses;
+        filteredCourses = allCourses.map(c => ({ id: c.id, title: c.title, instructorId: c.instructorId || '' }));
       } else if (isTeacher) {
-        filteredCourses = allCourses.filter(c => c.instructorId === user?.id);
+        filteredCourses = allCourses
+          .filter(c => c.instructorId === user?.id)
+          .map(c => ({ id: c.id, title: c.title, instructorId: c.instructorId || '' }));
       } else {
         // For students, get courses they're enrolled in
-        const enrollments = localDB.getCollection<Enrollment>('enrollments')
-          .filter(e => e.studentId === user?.id);
+        const enrollments = await enrollmentService.getByUser(user?.id || '');
         const enrolledCourseIds = enrollments.map(e => e.courseId);
-        filteredCourses = allCourses.filter(c => enrolledCourseIds.includes(c.id));
+        filteredCourses = allCourses
+          .filter(c => enrolledCourseIds.includes(c.id))
+          .map(c => ({ id: c.id, title: c.title, instructorId: c.instructorId || '' }));
       }
-      
+
       setCourses(filteredCourses);
       if (filteredCourses.length > 0) {
         setSelectedCourseId(filteredCourses[0].id);
@@ -123,32 +127,34 @@ export default function GradesPage() {
   const loadCourseGrades = async (courseId: string) => {
     try {
       // Get evaluations for this course
-      const courseEvaluations = localDB.getCollection<Evaluation>('evaluations')
-        .filter(e => e.courseId === courseId)
-        .map(e => ({
-          ...e,
-          maxPoints: 100, // Default max points
-          weight: 100 / (localDB.getCollection<Evaluation>('evaluations').filter(ev => ev.courseId === courseId).length || 1)
-        }));
+      const allEvaluations = await evaluationService.getAll();
+      const filteredEvals = allEvaluations.filter(e => e.courseId === courseId);
+      const courseEvaluations = filteredEvals.map(e => ({
+        id: e.id,
+        title: e.title,
+        courseId: e.courseId,
+        type: e.type as 'quiz' | 'tarea' | 'examen' | 'proyecto',
+        maxPoints: 100,
+        weight: 100 / (filteredEvals.length || 1)
+      }));
       setEvaluations(courseEvaluations);
 
       // Get students enrolled in this course
       let students: { id: string; name: string }[];
-      
+
       if (isStudent) {
         // If student, only show their own grades
         students = [{ id: user?.id || '', name: user?.name || '' }];
       } else {
-        const enrollments = localDB.getCollection<Enrollment>('enrollments')
-          .filter(e => e.courseId === courseId);
+        const enrollments = await enrollmentService.getByCourse(courseId);
         students = enrollments.map(e => ({
-          id: e.studentId,
-          name: e.studentName || 'Estudiante'
+          id: e.userId,
+          name: 'Estudiante' // Would need to fetch user names separately
         }));
       }
 
-      // Get all submissions
-      const allSubmissions = localDB.getCollection<Submission>('submissions');
+      // Get all submissions from Firebase
+      const allSubmissions = await firebaseDB.getAll<Submission>('submissions');
 
       // Calculate grades for each student
       const grades: StudentGrade[] = students.map(student => {

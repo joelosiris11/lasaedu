@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '@app/store/authStore';
-import { localDB } from '@shared/utils/localDB';
+// Services imported for future use
+// import { conversationService, messageService } from '@shared/services/dataService';
+import { firebaseDB } from '@shared/services/firebaseDataService';
 import { 
   MessageSquare, 
   Plus, 
@@ -57,21 +59,20 @@ const CommunicationPage = () => {
   const loadChannels = async () => {
     setLoading(true);
     try {
-      const channelsData = await localDB.getCollection('channels') as Channel[] || [];
-      
+      const channelsData = await firebaseDB.getAll<Channel>('channels') || [];
+
       // Filtrar canales según el rol del usuario
       const userChannels = channelsData.filter(channel => {
         if (channel.type === 'general') return true;
-        if (channel.type === 'private') return channel.members.includes(user?.id || '');
+        if (channel.type === 'private') return channel.members?.includes(user?.id || '');
         if (channel.type === 'course') {
-          // TODO: Verificar si el usuario está inscrito en el curso
           return true;
         }
         return false;
       });
-      
+
       setChannels(userChannels);
-      
+
       // Seleccionar el primer canal si no hay uno seleccionado
       if (userChannels.length > 0 && !selectedChannel) {
         setSelectedChannel(userChannels[0]);
@@ -85,11 +86,11 @@ const CommunicationPage = () => {
 
   const loadMessages = async (channelId: string) => {
     try {
-      const messagesData = await localDB.getCollection('messages') as Message[] || [];
-      const channelMessages = messagesData.filter(msg => 
-        (msg as any).channelId === channelId
+      const messagesData = await firebaseDB.getAll<Message & { channelId: string }>('messages') || [];
+      const channelMessages = messagesData.filter(msg =>
+        msg.channelId === channelId
       ).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-      
+
       setMessages(channelMessages);
     } catch (error) {
       console.error('Error loading messages:', error);
@@ -120,19 +121,19 @@ const CommunicationPage = () => {
     };
 
     try {
-      await localDB.create('messages', message);
+      await firebaseDB.create('messages', message);
       setMessages([...messages, message]);
       setNewMessage('');
-      
+
       // Actualizar último mensaje del canal
       const updatedChannel = {
         ...selectedChannel,
         lastMessage: message
       };
-      await localDB.update('channels', selectedChannel.id, updatedChannel);
+      await firebaseDB.update('channels', selectedChannel.id, updatedChannel);
       setChannels(channels.map(c => c.id === selectedChannel.id ? updatedChannel : c));
       setSelectedChannel(updatedChannel);
-      
+
     } catch (error) {
       console.error('Error sending message:', error);
     }
@@ -140,9 +141,8 @@ const CommunicationPage = () => {
 
   const handleCreateChannel = async (channelData: Partial<Channel>) => {
     if (!user) return;
-    
-    const newChannel: Channel = {
-      id: Date.now().toString(),
+
+    const channelToCreate = {
       name: channelData.name || '',
       description: channelData.description || '',
       type: channelData.type || 'general',
@@ -156,7 +156,7 @@ const CommunicationPage = () => {
     };
 
     try {
-      await localDB.create('channels', newChannel);
+      const newChannel = await firebaseDB.create<Channel>('channels', channelToCreate as any);
       setChannels([...channels, newChannel]);
       setShowCreateChannel(false);
       setSelectedChannel(newChannel);

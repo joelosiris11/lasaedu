@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '@app/store/authStore';
-import { courseService, legacyEnrollmentService } from '@shared/services/dataService';
+import { courseService, legacyEnrollmentService, certificateService } from '@shared/services/dataService';
 import { certificateGenerator } from '@shared/services/certificateGeneratorNew';
 import type { CertificateData } from '@shared/services/certificateGeneratorNew';
 import { 
@@ -53,22 +53,35 @@ export default function CertificatesPage() {
       const userEnrollments = enrollments.filter(e => e.userId === user.id);
       const completedEnrollments = userEnrollments.filter(e => e.status === 'completed');
 
+      // Get all certificates for the user from Firebase
+      const userCertificates = await certificateService.getByUser(user.id);
+      const certMap = new Map(userCertificates.map(c => [c.courseId, c]));
+
       // Get course details for completed courses
       const completions: CourseCompletion[] = await Promise.all(
         completedEnrollments.map(async (enrollment) => {
           const course = await courseService.getById(enrollment.courseId);
-          
-          // Check if certificate already exists
-          const existingCert = localStorage.getItem(`cert_${user.id}_${enrollment.courseId}`);
-          
+          const existingCert = certMap.get(enrollment.courseId);
+
           return {
             courseId: enrollment.courseId,
             courseTitle: course?.title || 'Curso sin título',
             instructorName: course?.instructor || 'Instructor desconocido',
-            completedAt: Date.now(), // Use current time since completedAt doesn't exist on DBEnrollment
-            score: enrollment.grade || 0, // Use grade instead of finalGrade
-            hours: 40, // Default hours since estimatedHours doesn't exist on DBCourse
-            certificate: existingCert ? JSON.parse(existingCert) : undefined
+            completedAt: enrollment.updatedAt || Date.now(),
+            score: enrollment.grade || 0,
+            hours: 40,
+            certificate: existingCert ? {
+              id: existingCert.id,
+              userId: existingCert.userId,
+              userName: existingCert.userName,
+              courseId: existingCert.courseId,
+              courseTitle: existingCert.courseTitle,
+              instructorName: existingCert.instructorName,
+              completedAt: existingCert.completedAt,
+              score: existingCert.score,
+              hours: existingCert.hours,
+              certificateNumber: existingCert.certificateNumber
+            } : undefined
           };
         })
       );
@@ -102,11 +115,11 @@ export default function CertificatesPage() {
       // Generate and download PDF
       await certificateGenerator.downloadCertificate(certificateData);
 
-      // Save certificate data locally
-      localStorage.setItem(
-        `cert_${user.id}_${completion.courseId}`,
-        JSON.stringify(certificateData)
-      );
+      // Save certificate to Firebase
+      await certificateService.create({
+        ...certificateData,
+        createdAt: Date.now()
+      } as any);
 
       // Update state
       setCompletedCourses(prev =>

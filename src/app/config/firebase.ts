@@ -3,6 +3,7 @@ import { initializeApp } from "firebase/app";
 import { getDatabase, connectDatabaseEmulator } from "firebase/database";
 import { getStorage, connectStorageEmulator } from "firebase/storage";
 import { getFirestore, connectFirestoreEmulator } from "firebase/firestore";
+import { getAuth, connectAuthEmulator } from "firebase/auth";
 
 const firebaseConfig = {
   // This will be replaced with actual config
@@ -31,6 +32,9 @@ export const db = getFirestore(app);
 // Initialize Firebase Storage
 export const storage = getStorage(app);
 
+// Initialize Firebase Auth
+export const auth = getAuth(app);
+
 // Connect to emulators if enabled
 if (USE_EMULATOR) {
   try {
@@ -45,6 +49,10 @@ if (USE_EMULATOR) {
     // Connect to Storage Emulator
     connectStorageEmulator(storage, '127.0.0.1', 9199);
     console.log('🔧 Connected to Firebase Storage Emulator');
+
+    // Connect to Auth Emulator
+    connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+    console.log('🔧 Connected to Firebase Auth Emulator');
   } catch (error) {
     // Already connected or emulator not running
     console.log('Firebase emulator connection:', error);

@@ -1007,6 +1007,19 @@ class FirebaseDataService {
     return this.getById<DBUserPoints>('userPoints', userId);
   }
 
+  async createUserPoints(userId: string): Promise<DBUserPoints> {
+    const now = Date.now();
+    return this.create<DBUserPoints>('userPoints', {
+      userId,
+      totalPoints: 0,
+      level: 1,
+      levelName: 'Principiante',
+      nextLevelPoints: 100,
+      history: [],
+      createdAt: now
+    } as any);
+  }
+
   async addPoints(userId: string, points: number, action: string, description: string): Promise<DBUserPoints | null> {
     let userPoints = await this.getUserPoints(userId);
     
@@ -1076,6 +1089,35 @@ class FirebaseDataService {
       earnedAt: new Date().toISOString(),
       notified: false
     } as any);
+  }
+
+  async getLeaderboard(limit: number = 10): Promise<{ rank: number; userId: string; userName: string; points: number; level: number; badges: number }[]> {
+    // Get all user points
+    const allPoints = await this.getAll<DBUserPoints>('userPoints');
+
+    // Get all users for names
+    const allUsers = await this.getAll<DBUser>('users');
+    const userMap = new Map(allUsers.map(u => [u.id, u.name]));
+
+    // Get badge counts
+    const allBadges = await this.getAll<DBUserBadge>('userBadges');
+    const badgeCounts = new Map<string, number>();
+    allBadges.forEach(b => {
+      badgeCounts.set(b.userId, (badgeCounts.get(b.userId) || 0) + 1);
+    });
+
+    // Sort by points and take top N
+    return allPoints
+      .sort((a, b) => b.totalPoints - a.totalPoints)
+      .slice(0, limit)
+      .map((points, index) => ({
+        rank: index + 1,
+        userId: points.userId,
+        userName: userMap.get(points.userId) || 'Usuario',
+        points: points.totalPoints,
+        level: points.level,
+        badges: badgeCounts.get(points.userId) || 0
+      }));
   }
 
   // --- RACHA DE APRENDIZAJE ---

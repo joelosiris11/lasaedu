@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@app/store/authStore';
-import { localDB } from '@shared/utils/localDB';
+import { enrollmentService, courseService, gamificationService, activityService } from '@shared/services/dataService';
 import { 
   BookOpen, 
   Clock,
@@ -91,126 +91,57 @@ export default function MyProgressPage() {
     if (!user) return;
 
     try {
-      // Load enrollments
-      const allEnrollments = localDB.getCollection<Enrollment>('enrollments');
-      const userEnrollments = allEnrollments.filter(e => e.userId === user.id);
-      
-      // Generate sample enrollments if none exist
-      if (userEnrollments.length === 0) {
-        const sampleEnrollments: Enrollment[] = [
-          {
-            id: 'enroll_1',
-            courseId: 'course_1',
-            userId: user.id,
-            enrolledAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(),
-            progress: 75,
-            status: 'active',
-            completedLessons: ['lesson_1', 'lesson_2', 'lesson_3', 'lesson_4', 'lesson_5', 'lesson_6'],
-            lastAccessedAt: new Date().toISOString(),
-            totalTimeSpent: 320
-          },
-          {
-            id: 'enroll_2',
-            courseId: 'course_2',
-            userId: user.id,
-            enrolledAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-            progress: 100,
-            status: 'completed',
-            completedLessons: ['lesson_1', 'lesson_2', 'lesson_3', 'lesson_4', 'lesson_5'],
-            lastAccessedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-            totalTimeSpent: 480
-          },
-          {
-            id: 'enroll_3',
-            courseId: 'course_3',
-            userId: user.id,
-            enrolledAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-            progress: 30,
-            status: 'active',
-            completedLessons: ['lesson_1', 'lesson_2'],
-            lastAccessedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-            totalTimeSpent: 90
-          }
-        ];
-        
-        sampleEnrollments.forEach(e => localDB.add('enrollments', e));
-        setEnrollments(sampleEnrollments);
-      } else {
-        setEnrollments(userEnrollments);
-      }
+      // Load enrollments from Firebase
+      const userEnrollments = await enrollmentService.getByUser(user.id);
+      const mappedEnrollments: Enrollment[] = userEnrollments.map(e => ({
+        id: e.id,
+        courseId: e.courseId,
+        userId: e.userId,
+        enrolledAt: new Date(e.enrolledAt || e.createdAt).toISOString(),
+        progress: e.progress || 0,
+        status: e.status as 'active' | 'completed' | 'paused',
+        completedLessons: e.completedLessons || [],
+        lastAccessedAt: e.lastAccessedAt ? new Date(e.lastAccessedAt).toISOString() : undefined,
+        totalTimeSpent: e.totalTimeSpent || 0
+      }));
+      setEnrollments(mappedEnrollments);
 
-      // Load courses
-      const allCourses = localDB.getCollection<Course>('courses');
-      setCourses(allCourses);
+      // Load courses from Firebase
+      const allCourses = await courseService.getAll();
+      const mappedCourses: Course[] = allCourses.map(c => ({
+        id: c.id,
+        title: c.title,
+        description: c.description || '',
+        instructor: c.instructor || '',
+        duration: c.duration || '',
+        level: c.level || '',
+        category: c.category || ''
+      }));
+      setCourses(mappedCourses);
 
-      // Load or generate activities
-      const allActivities = localDB.getCollection<ProgressActivity>('progressActivities');
-      const userActivities = allActivities.filter(a => a.userId === user.id);
-      
-      if (userActivities.length === 0) {
-        const sampleActivities: ProgressActivity[] = [
-          {
-            id: 'act_1',
-            userId: user.id,
-            type: 'lesson_completed',
-            courseId: 'course_1',
-            lessonId: 'lesson_6',
-            timestamp: new Date().toISOString(),
-            details: 'Variables y tipos de datos',
-            points: 25
-          },
-          {
-            id: 'act_2',
-            userId: user.id,
-            type: 'quiz_passed',
-            courseId: 'course_1',
-            timestamp: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-            details: 'Quiz: Fundamentos de Python',
-            points: 50
-          },
-          {
-            id: 'act_3',
-            userId: user.id,
-            type: 'course_completed',
-            courseId: 'course_2',
-            timestamp: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-            details: 'Matemáticas Avanzadas',
-            points: 200
-          },
-          {
-            id: 'act_4',
-            userId: user.id,
-            type: 'badge_earned',
-            timestamp: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-            details: 'Primera graduación',
-            points: 100
-          },
-          {
-            id: 'act_5',
-            userId: user.id,
-            type: 'lesson_completed',
-            courseId: 'course_3',
-            lessonId: 'lesson_2',
-            timestamp: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-            details: 'Componentes en React',
-            points: 25
-          }
-        ];
-        
-        sampleActivities.forEach(a => localDB.add('progressActivities', a));
-        setActivities(sampleActivities);
-      } else {
-        setActivities(userActivities);
-      }
+      // Load activities from Firebase
+      const userActivities = await activityService.getByUser(user.id);
+      const mappedActivities: ProgressActivity[] = userActivities.map(a => ({
+        id: a.id,
+        userId: a.userId,
+        type: a.type as ProgressActivity['type'],
+        courseId: a.metadata?.courseId,
+        lessonId: a.metadata?.lessonId,
+        timestamp: new Date(a.timestamp).toISOString(),
+        details: a.description,
+        points: a.metadata?.points
+      }));
+      setActivities(mappedActivities);
 
-      // Calculate streak
-      const streakData = localDB.getById<LearningStreak>('learningStreaks', user.id);
+      // Load streak from Firebase
+      const streakData = await gamificationService.getUserStreak(user.id);
       if (streakData) {
-        setStreak(streakData);
-      } else {
-        const newStreak: LearningStreak = { id: user.id, currentStreak: 5, longestStreak: 12, lastActiveDate: new Date().toISOString() };
-        localDB.add('learningStreaks', newStreak);
-        setStreak(newStreak);
+        setStreak({
+          id: streakData.id,
+          currentStreak: streakData.currentStreak || 0,
+          longestStreak: streakData.longestStreak || 0,
+          lastActiveDate: streakData.lastActiveDate || new Date().toISOString()
+        });
       }
     } catch (error) {
       console.error('Error loading progress:', error);
@@ -262,11 +193,30 @@ export default function MyProgressPage() {
   };
 
   const weekDays = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
-  const activityHeatmap = weekDays.map(() => {
-    // Simulate activity for each day
-    const dayActivities = Math.floor(Math.random() * 5);
-    return dayActivities;
-  });
+
+  // Calculate activity heatmap from real activities
+  const getActivityHeatmap = () => {
+    const today = new Date();
+    const dayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, ...
+
+    return weekDays.map((_, index) => {
+      // Calculate the date for each day of the current week (Monday = index 0)
+      const dayOffset = index - (dayOfWeek === 0 ? 6 : dayOfWeek - 1);
+      const targetDate = new Date(today);
+      targetDate.setDate(today.getDate() + dayOffset);
+      const targetDateStr = targetDate.toISOString().split('T')[0];
+
+      // Count activities for that day
+      const dayActivities = activities.filter(a => {
+        const activityDate = new Date(a.timestamp).toISOString().split('T')[0];
+        return activityDate === targetDateStr;
+      }).length;
+
+      return dayActivities;
+    });
+  };
+
+  const activityHeatmap = getActivityHeatmap();
 
   if (loading) {
     return (

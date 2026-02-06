@@ -70,6 +70,9 @@ export interface Course {
   enrollments: Record<string, Enrollment>;
   createdAt: number;
   updatedAt: number;
+  prerequisites?: string[];
+  maxStudents?: number;
+  duration?: string;
 }
 
 export type CourseLevel = 'beginner' | 'intermediate' | 'advanced';
@@ -108,13 +111,28 @@ export interface LessonSettings {
 }
 
 export interface Enrollment {
+  id: string;
+  courseId: string;
   userId: string;
-  enrolledAt: number;
+  enrolledAt: string;
+  progress: number;
   status: EnrollmentStatus;
-  progress: Record<string, Record<string, LessonProgress>>;
+  completedLessons: string[];
+  completedModules: string[];
+  lastAccessedAt?: string;
+  lastLessonId?: string;
+  totalTimeSpent: number;
+  certificateId?: string;
+  grade?: number;
+  createdAt: number;
+  updatedAt: number;
+  waitlistPosition?: number;
+  withdrawnAt?: number;
+  withdrawReason?: string;
+  promotedFromWaitlistAt?: number;
 }
 
-export type EnrollmentStatus = 'active' | 'completed' | 'dropped';
+export type EnrollmentStatus = 'active' | 'completed' | 'paused' | 'cancelled' | 'withdrawn' | 'waitlisted' | 'pending' | 'dropped';
 
 export interface LessonProgress {
   completed: boolean;

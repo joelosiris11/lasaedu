@@ -3,6 +3,7 @@ import { useForm } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
+import { useAuthStore } from '@app/store/authStore';
 import { Button } from '@shared/components/ui/Button';
 import { Input } from '@shared/components/ui/Input';
 import { Label } from '@shared/components/ui/Label';
@@ -17,8 +18,8 @@ type RecoveryFormValues = z.infer<typeof recoverySchema>;
 
 export default function RecoveryPage() {
   const [isSubmitted, setIsSubmitted] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
+  const { resetPassword, isLoading } = useAuthStore();
 
   const {
     register,
@@ -29,13 +30,13 @@ export default function RecoveryPage() {
   });
 
   const onSubmit = async (data: RecoveryFormValues) => {
-    console.log('Recovery requested for:', data);
-    setIsLoading(true);
-    // Simulate API call
-    setTimeout(() => {
-        setIsLoading(false);
-        setIsSubmitted(true);
-    }, 1500);
+    try {
+      await resetPassword(data.email);
+      setIsSubmitted(true);
+    } catch {
+      // Always show success message for security (don't reveal if email exists)
+      setIsSubmitted(true);
+    }
   };
 
   return (

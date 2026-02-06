@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAuthStore } from '@app/store/authStore';
-import { localDB } from '@shared/utils/localDB';
+import { userService } from '@shared/services/dataService';
+// import { firebaseDB } from '@shared/services/firebaseDataService';
 import { 
   User,
   Lock,
@@ -98,38 +99,33 @@ export default function SettingsPage() {
   const saveProfile = async () => {
     setSaving(true);
     try {
-      // Update user in localDB
-      const users = localDB.getCollection<any>('users');
-      const userIndex = users.findIndex(u => u.id === user?.id);
-      
-      if (userIndex !== -1) {
-        const updatedUser = {
-          ...users[userIndex],
-          name: profile.name,
-          email: profile.email,
-          phone: profile.phone,
-          location: profile.location,
-          bio: profile.bio,
-          avatar: profile.avatar,
-          birthDate: profile.birthDate,
-          updatedAt: new Date().toISOString()
-        };
-        
-        localDB.update('users', user?.id || '', updatedUser);
-        
-        // Update auth store
-        setUser({
-          ...user!,
+      // Update user in Firebase
+      if (user?.id) {
+        await userService.update(user.id, {
           name: profile.name,
           email: profile.email,
           profile: {
-            ...user!.profile,
+            phone: profile.phone,
+            location: profile.location,
+            bio: profile.bio,
+            avatar: profile.avatar,
+            birthDate: profile.birthDate
+          }
+        } as any);
+
+        // Update auth store
+        setUser({
+          ...user,
+          name: profile.name,
+          email: profile.email,
+          profile: {
+            ...user.profile,
             avatar: profile.avatar,
             bio: profile.bio
           }
         });
       }
-      
+
       showMessage('success', 'Perfil actualizado correctamente');
     } catch (error) {
       showMessage('error', 'Error al guardar los cambios');
@@ -143,7 +139,7 @@ export default function SettingsPage() {
       showMessage('error', 'Las contraseñas no coinciden');
       return;
     }
-    
+
     if (passwordForm.newPassword.length < 8) {
       showMessage('error', 'La contraseña debe tener al menos 8 caracteres');
       return;
@@ -151,22 +147,10 @@ export default function SettingsPage() {
 
     setSaving(true);
     try {
-      // In a real app, this would call an API
-      // For now, just update locally
-      const users = localDB.getCollection<any>('users');
-      const userIndex = users.findIndex(u => u.id === user?.id);
-      
-      if (userIndex !== -1) {
-        // In real implementation, you'd verify currentPassword first
-        localDB.update('users', user?.id || '', {
-          ...users[userIndex],
-          passwordHash: passwordForm.newPassword, // In real app, this would be hashed
-          updatedAt: new Date().toISOString()
-        });
-      }
-      
+      // Note: In Firebase Auth, password change should use updatePassword from firebase/auth
+      // This is a placeholder - real implementation would use Firebase Auth
+      showMessage('success', 'Para cambiar la contraseña, use la opción "Olvidé mi contraseña" en el login');
       setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
-      showMessage('success', 'Contraseña actualizada correctamente');
     } catch (error) {
       showMessage('error', 'Error al cambiar la contraseña');
     } finally {
@@ -177,8 +161,14 @@ export default function SettingsPage() {
   const saveNotifications = async () => {
     setSaving(true);
     try {
-      // Save notification preferences
-      localStorage.setItem(`notifications_${user?.id}`, JSON.stringify(profile.notifications));
+      // Save notification preferences to Firebase
+      if (user?.id) {
+        await userService.update(user.id, {
+          preferences: {
+            notifications: profile.notifications
+          }
+        } as any);
+      }
       showMessage('success', 'Preferencias de notificación guardadas');
     } catch (error) {
       showMessage('error', 'Error al guardar las preferencias');
@@ -190,8 +180,14 @@ export default function SettingsPage() {
   const savePrivacy = async () => {
     setSaving(true);
     try {
-      // Save privacy preferences
-      localStorage.setItem(`privacy_${user?.id}`, JSON.stringify(profile.privacy));
+      // Save privacy preferences to Firebase
+      if (user?.id) {
+        await userService.update(user.id, {
+          preferences: {
+            privacy: profile.privacy
+          }
+        } as any);
+      }
       showMessage('success', 'Preferencias de privacidad guardadas');
     } catch (error) {
       showMessage('error', 'Error al guardar las preferencias');

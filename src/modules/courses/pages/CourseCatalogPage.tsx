@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@app/store/authStore';
-import { courseService, legacyEnrollmentService } from '@shared/services/dataService';
+import { courseService, legacyEnrollmentService, gamificationService } from '@shared/services/dataService';
 import type { DBCourse, DBEnrollment } from '@shared/services/dataService';
 import { 
   BookOpen, 
@@ -38,6 +38,12 @@ export default function CourseCatalogPage() {
   const [enrolling, setEnrolling] = useState<string | null>(null);
   const [showEnrollSuccess, setShowEnrollSuccess] = useState(false);
 
+  // Role checks
+  const isStudent = user?.role === 'student';
+  const isTeacher = user?.role === 'teacher';
+  const isAdmin = user?.role === 'admin';
+  const canEnroll = isStudent; // Only students can enroll in courses
+
   useEffect(() => {
     loadData();
   }, [user]);
@@ -68,6 +74,12 @@ export default function CourseCatalogPage() {
       return;
     }
 
+    // Only students can enroll
+    if (!canEnroll) {
+      console.warn('Only students can enroll in courses');
+      return;
+    }
+
     setEnrolling(courseId);
     
     try {
@@ -78,48 +90,42 @@ export default function CourseCatalogPage() {
         return;
       }
 
-      // Create enrollment
-      const newEnrollment: Enrollment = {
-        id: `enroll_${Date.now()}`,
+      // Create enrollment using Firebase service
+      const now = Date.now();
+      const newEnrollment = await legacyEnrollmentService.create({
         courseId,
         userId: user.id,
         enrolledAt: new Date().toISOString(),
         progress: 0,
         status: 'active',
         completedLessons: [],
-        lastAccessedAt: new Date().toISOString()
-      };
+        completedModules: [],
+        totalTimeSpent: 0,
+        lastAccessedAt: new Date().toISOString(),
+        createdAt: now,
+        updatedAt: now
+      });
 
-      localDB.add('enrollments', newEnrollment);
-      setEnrollments([...enrollments, newEnrollment]);
+      setEnrollments([...enrollments, newEnrollment as Enrollment]);
 
       // Update course student count
       const course = courses.find(c => c.id === courseId);
       if (course) {
-        localDB.update('courses', courseId, {
-          ...course,
+        await courseService.update(courseId, {
           studentsCount: (course.studentsCount || 0) + 1
         });
-        setCourses(courses.map(c => 
+        setCourses(courses.map(c =>
           c.id === courseId ? { ...c, studentsCount: (c.studentsCount || 0) + 1 } : c
         ));
       }
 
       // Award points for enrollment (gamification)
-      const userPoints = localDB.getCollection<any>('userPoints');
-      const userPointsRecord = userPoints.find(p => p.userId === user.id);
-      if (userPointsRecord) {
-        localDB.update('userPoints', userPointsRecord.id, {
-          ...userPointsRecord,
-          totalPoints: userPointsRecord.totalPoints + 50, // 50 points for enrolling
-          history: [...(userPointsRecord.history || []), {
-            action: 'course_enrollment',
-            points: 50,
-            timestamp: new Date().toISOString(),
-            description: `Inscripción en: ${course?.title}`
-          }]
-        });
-      }
+      await gamificationService.addPoints(
+        user.id,
+        50,
+        'course_enrollment',
+        `Inscripción en: ${course?.title}`
+      );
 
       setShowEnrollSuccess(true);
       setTimeout(() => {
@@ -184,10 +190,17 @@ export default function CourseCatalogPage() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Catálogo de Cursos</h1>
-        <p className="text-gray-600">Explora y inscríbete en los cursos disponibles</p>
+        <p className="text-gray-600">
+          {canEnroll
+            ? 'Explora y inscríbete en los cursos disponibles'
+            : isTeacher
+              ? 'Explora los cursos disponibles en la plataforma'
+              : 'Vista general de todos los cursos publicados'
+          }
+        </p>
       </div>
 
-      {/* Stats Cards */}
+      {/* Stats Cards - Only show enrollment stats for students */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white">
           <CardContent className="p-4">
@@ -200,42 +213,72 @@ export default function CourseCatalogPage() {
             </div>
           </CardContent>
         </Card>
-        
-        <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-green-100 text-sm">Mis Cursos</p>
-                <p className="text-2xl font-bold">{stats.enrolled}</p>
-              </div>
-              <GraduationCap className="h-8 w-8 text-green-200" />
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-purple-100 text-sm">En Progreso</p>
-                <p className="text-2xl font-bold">{stats.inProgress}</p>
-              </div>
-              <TrendingUp className="h-8 w-8 text-purple-200" />
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card className="bg-gradient-to-br from-amber-500 to-amber-600 text-white">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-amber-100 text-sm">Completados</p>
-                <p className="text-2xl font-bold">{stats.completed}</p>
-              </div>
-              <Award className="h-8 w-8 text-amber-200" />
-            </div>
-          </CardContent>
-        </Card>
+
+        {canEnroll ? (
+          <>
+            <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-green-100 text-sm">Mis Cursos</p>
+                    <p className="text-2xl font-bold">{stats.enrolled}</p>
+                  </div>
+                  <GraduationCap className="h-8 w-8 text-green-200" />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-purple-100 text-sm">En Progreso</p>
+                    <p className="text-2xl font-bold">{stats.inProgress}</p>
+                  </div>
+                  <TrendingUp className="h-8 w-8 text-purple-200" />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-gradient-to-br from-amber-500 to-amber-600 text-white">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-amber-100 text-sm">Completados</p>
+                    <p className="text-2xl font-bold">{stats.completed}</p>
+                  </div>
+                  <Award className="h-8 w-8 text-amber-200" />
+                </div>
+              </CardContent>
+            </Card>
+          </>
+        ) : (
+          <>
+            <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-green-100 text-sm">Categorías</p>
+                    <p className="text-2xl font-bold">{categories.length}</p>
+                  </div>
+                  <GraduationCap className="h-8 w-8 text-green-200" />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white md:col-span-2">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-purple-100 text-sm">Vista de</p>
+                    <p className="text-lg font-bold">{isTeacher ? 'Profesor' : 'Administrador'}</p>
+                  </div>
+                  <Users className="h-8 w-8 text-purple-200" />
+                </div>
+              </CardContent>
+            </Card>
+          </>
+        )}
       </div>
 
       {/* Filters */}
@@ -369,29 +412,40 @@ export default function CourseCatalogPage() {
                     </div>
                   )}
 
-                  <Button 
-                    className="w-full"
-                    variant={enrolled ? 'outline' : 'default'}
-                    onClick={() => enrolled ? navigate(`/courses/${course.id}`) : handleEnroll(course.id)}
-                    disabled={enrolling === course.id}
-                  >
-                    {enrolling === course.id ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
-                        Inscribiendo...
-                      </>
-                    ) : enrolled ? (
-                      <>
-                        <Play className="h-4 w-4 mr-2" />
-                        Continuar
-                      </>
-                    ) : (
-                      <>
-                        <GraduationCap className="h-4 w-4 mr-2" />
-                        Inscribirse
-                      </>
-                    )}
-                  </Button>
+                  {canEnroll ? (
+                    <Button
+                      className="w-full"
+                      variant={enrolled ? 'outline' : 'default'}
+                      onClick={() => enrolled ? navigate(`/courses/${course.id}`) : handleEnroll(course.id)}
+                      disabled={enrolling === course.id}
+                    >
+                      {enrolling === course.id ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
+                          Inscribiendo...
+                        </>
+                      ) : enrolled ? (
+                        <>
+                          <Play className="h-4 w-4 mr-2" />
+                          Continuar
+                        </>
+                      ) : (
+                        <>
+                          <GraduationCap className="h-4 w-4 mr-2" />
+                          Inscribirse
+                        </>
+                      )}
+                    </Button>
+                  ) : (
+                    <Button
+                      className="w-full"
+                      variant="outline"
+                      onClick={() => navigate(`/courses/${course.id}`)}
+                    >
+                      <BookOpen className="h-4 w-4 mr-2" />
+                      Ver Curso
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
             );
@@ -456,13 +510,22 @@ export default function CourseCatalogPage() {
                           </span>
                         </div>
                         
-                        <Button 
-                          variant={enrolled ? 'outline' : 'default'}
-                          onClick={() => enrolled ? navigate(`/courses/${course.id}`) : handleEnroll(course.id)}
-                          disabled={enrolling === course.id}
-                        >
-                          {enrolling === course.id ? 'Inscribiendo...' : enrolled ? 'Continuar' : 'Inscribirse'}
-                        </Button>
+                        {canEnroll ? (
+                          <Button
+                            variant={enrolled ? 'outline' : 'default'}
+                            onClick={() => enrolled ? navigate(`/courses/${course.id}`) : handleEnroll(course.id)}
+                            disabled={enrolling === course.id}
+                          >
+                            {enrolling === course.id ? 'Inscribiendo...' : enrolled ? 'Continuar' : 'Inscribirse'}
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            onClick={() => navigate(`/courses/${course.id}`)}
+                          >
+                            Ver Curso
+                          </Button>
+                        )}
                       </div>
 
                       {enrolled && progress > 0 && (

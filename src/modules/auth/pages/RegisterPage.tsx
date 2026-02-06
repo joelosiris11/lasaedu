@@ -41,7 +41,7 @@ export default function RegisterPage() {
       await registerUser({
         name: data.name,
         email: data.email,
-        passwordHash: data.password, // In real app, consider handling this better
+        password: data.password,
         role: 'student' // Default role
       });
       navigate('/student/dashboard'); // Or logic to check role

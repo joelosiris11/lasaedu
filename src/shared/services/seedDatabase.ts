@@ -3,18 +3,36 @@
  * Ejecutar desde la consola del navegador o importar en la app
  */
 
+import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { auth } from '@app/config/firebase';
 import { firebaseDB } from './firebaseDataService';
-import type { 
-  DBUser, 
-  DBCourse, 
-  DBModule, 
-  DBLesson, 
+import type {
+  DBUser,
+  DBCourse,
+  DBModule,
+  DBLesson,
   DBEvaluation,
-  DBBadge 
+  DBBadge
 } from './firebaseDataService';
+
+// Helper para crear usuario en Firebase Auth
+async function createAuthUser(email: string, password: string): Promise<void> {
+  try {
+    await createUserWithEmailAndPassword(auth, email, password);
+    console.log(`   🔐 Auth creado: ${email}`);
+  } catch (error: any) {
+    if (error.code === 'auth/email-already-in-use') {
+      console.log(`   ⏭️ Auth ya existe: ${email}`);
+    } else {
+      throw error;
+    }
+  }
+}
 
 export async function seedDatabase() {
   console.log('🌱 Iniciando siembra de datos...');
+
+  const DEFAULT_PASSWORD = 'password123';
 
   try {
     // =============================================
@@ -121,18 +139,70 @@ export async function seedDatabase() {
         createdAt: Date.now(),
         updatedAt: Date.now(),
         lastActive: Date.now()
+      },
+      {
+        email: 'laura@lasaedu.com',
+        passwordHash: '$2a$10$hash',
+        name: 'Laura Mendoza',
+        role: 'student',
+        emailVerified: true,
+        loginAttempts: 0,
+        profile: {
+          avatar: '',
+          bio: 'Diseñadora gráfica aprendiendo programación',
+          phone: '+1234567894',
+          location: 'Puebla',
+        },
+        preferences: {
+          language: 'es',
+          timezone: 'America/Mexico_City',
+          notifications: { email: true, push: false, sms: false, marketing: true },
+          privacy: { showProfile: true, showProgress: true, showBadges: true }
+        },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        lastActive: Date.now()
+      },
+      {
+        email: 'pedro@lasaedu.com',
+        passwordHash: '$2a$10$hash',
+        name: 'Pedro Sánchez',
+        role: 'student',
+        emailVerified: true,
+        loginAttempts: 0,
+        profile: {
+          avatar: '',
+          bio: 'Contador aprendiendo análisis de datos',
+          phone: '+1234567895',
+          location: 'Querétaro',
+        },
+        preferences: {
+          language: 'es',
+          timezone: 'America/Mexico_City',
+          notifications: { email: true, push: true, sms: false, marketing: false },
+          privacy: { showProfile: true, showProgress: true, showBadges: true }
+        },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        lastActive: Date.now()
       }
     ];
 
     const createdUsers: DBUser[] = [];
     for (const user of users) {
+      // Crear usuario en Firebase Auth primero
+      await createAuthUser(user.email, DEFAULT_PASSWORD);
+
       const created = await firebaseDB.createUser(user);
       createdUsers.push(created);
       console.log(`✅ Usuario creado: ${created.name}`);
     }
 
     const teacherId = createdUsers.find(u => u.role === 'teacher')?.id || '';
-    const studentId = createdUsers.find(u => u.role === 'student')?.id || '';
+    const students = createdUsers.filter(u => u.role === 'student');
+    const studentId = students[0]?.id || '';
+    const student2Id = students[1]?.id || '';
+    const student3Id = students[2]?.id || '';
 
     // =============================================
     // CURSOS
@@ -445,70 +515,114 @@ export async function seedDatabase() {
     console.log('✅ Evaluación creada');
 
     // =============================================
-    // INSIGNIAS
+    // INSIGNIAS (coinciden con BADGES en GamificationPage)
     // =============================================
     const badges: Omit<DBBadge, 'id'>[] = [
       {
         name: 'Primer Paso',
-        description: 'Completa tu primera lección',
+        description: 'Completar tu primer curso',
         icon: '🎯',
-        category: 'achievement',
-        criteria: { type: 'lessons_completed', value: 1, description: 'Completar 1 lección' },
-        points: 10,
+        category: 'course',
+        criteria: { type: 'courses_completed', value: 1, description: 'Completar 1 curso' },
+        points: 50,
         rarity: 'common',
         isActive: true,
         createdAt: Date.now()
       },
       {
         name: 'Estudiante Dedicado',
-        description: 'Completa 10 lecciones',
+        description: 'Completar 5 cursos',
         icon: '📚',
-        category: 'achievement',
-        criteria: { type: 'lessons_completed', value: 10, description: 'Completar 10 lecciones' },
-        points: 50,
-        rarity: 'uncommon',
-        isActive: true,
-        createdAt: Date.now()
-      },
-      {
-        name: 'Primera Graduación',
-        description: 'Completa tu primer curso',
-        icon: '🎓',
         category: 'course',
-        criteria: { type: 'courses_completed', value: 1, description: 'Completar 1 curso' },
-        points: 100,
+        criteria: { type: 'courses_completed', value: 5, description: 'Completar 5 cursos' },
+        points: 150,
         rarity: 'rare',
         isActive: true,
         createdAt: Date.now()
       },
       {
-        name: 'Racha de 7 días',
-        description: 'Estudia 7 días consecutivos',
-        icon: '🔥',
-        category: 'streak',
-        criteria: { type: 'streak_days', value: 7, description: 'Mantener racha de 7 días' },
-        points: 70,
-        rarity: 'uncommon',
-        isActive: true,
-        createdAt: Date.now()
-      },
-      {
-        name: 'Maestro del Quiz',
-        description: 'Obtén 100% en 5 evaluaciones',
-        icon: '🏆',
+        name: 'Perfeccionista',
+        description: 'Obtener 100% en una evaluación',
+        icon: '💯',
         category: 'achievement',
-        criteria: { type: 'perfect_quizzes', value: 5, description: 'Obtener 100% en 5 quizzes' },
-        points: 150,
+        criteria: { type: 'perfect_score', value: 1, description: '100% en evaluación' },
+        points: 100,
         rarity: 'epic',
         isActive: true,
         createdAt: Date.now()
       },
       {
-        name: 'Leyenda',
-        description: 'Alcanza el nivel 10',
-        icon: '⭐',
+        name: 'Constante',
+        description: 'Mantener una racha de 7 días',
+        icon: '🔥',
+        category: 'streak',
+        criteria: { type: 'streak_days', value: 7, description: 'Racha de 7 días' },
+        points: 70,
+        rarity: 'rare',
+        isActive: true,
+        createdAt: Date.now()
+      },
+      {
+        name: 'Imparable',
+        description: 'Mantener una racha de 30 días',
+        icon: '⚡',
+        category: 'streak',
+        criteria: { type: 'streak_days', value: 30, description: 'Racha de 30 días' },
+        points: 300,
+        rarity: 'legendary',
+        isActive: true,
+        createdAt: Date.now()
+      },
+      {
+        name: 'Madrugador',
+        description: 'Completar una lección antes de las 7am',
+        icon: '🌅',
         category: 'special',
-        criteria: { type: 'level_reached', value: 10, description: 'Alcanzar nivel 10' },
+        criteria: { type: 'early_lesson', value: 7, description: 'Lección antes de 7am' },
+        points: 30,
+        rarity: 'common',
+        isActive: true,
+        createdAt: Date.now()
+      },
+      {
+        name: 'Búho Nocturno',
+        description: 'Completar una lección después de las 11pm',
+        icon: '🦉',
+        category: 'special',
+        criteria: { type: 'night_lesson', value: 23, description: 'Lección después de 11pm' },
+        points: 30,
+        rarity: 'common',
+        isActive: true,
+        createdAt: Date.now()
+      },
+      {
+        name: 'Ayudante',
+        description: 'Responder 10 preguntas en foros',
+        icon: '🤝',
+        category: 'social',
+        criteria: { type: 'forum_replies', value: 10, description: '10 respuestas en foros' },
+        points: 80,
+        rarity: 'rare',
+        isActive: true,
+        createdAt: Date.now()
+      },
+      {
+        name: 'Maestro del Quiz',
+        description: 'Completar 20 quizzes',
+        icon: '🧠',
+        category: 'achievement',
+        criteria: { type: 'quizzes_completed', value: 20, description: 'Completar 20 quizzes' },
+        points: 200,
+        rarity: 'epic',
+        isActive: true,
+        createdAt: Date.now()
+      },
+      {
+        name: 'Campeón',
+        description: 'Alcanzar el top 3 del leaderboard',
+        icon: '👑',
+        category: 'special',
+        criteria: { type: 'leaderboard_top', value: 3, description: 'Top 3 leaderboard' },
         points: 500,
         rarity: 'legendary',
         isActive: true,
@@ -522,7 +636,7 @@ export async function seedDatabase() {
     console.log('✅ Insignias creadas');
 
     // =============================================
-    // PUNTOS INICIALES para el estudiante
+    // PUNTOS INICIALES para los estudiantes (leaderboard)
     // =============================================
     await firebaseDB.create('userPoints', {
       userId: studentId,
@@ -537,7 +651,206 @@ export async function seedDatabase() {
         { id: 'h4', action: 'streak_bonus', points: 75, description: 'Bonus racha 3 días', timestamp: new Date().toISOString() }
       ]
     });
-    console.log('✅ Puntos de usuario inicializados');
+
+    // Puntos para Laura (segundo lugar en leaderboard)
+    await firebaseDB.create('userPoints', {
+      userId: student2Id,
+      totalPoints: 320,
+      level: 3,
+      levelName: 'Estudiante',
+      nextLevelPoints: 600,
+      history: [
+        { id: 'h1', action: 'enrollment', points: 50, description: 'Inscripción en curso', timestamp: new Date().toISOString() },
+        { id: 'h2', action: 'course_complete', points: 150, description: 'Curso completado', timestamp: new Date().toISOString() },
+        { id: 'h3', action: 'streak_bonus', points: 120, description: 'Bonus racha 7 días', timestamp: new Date().toISOString() }
+      ]
+    });
+
+    // Puntos para Pedro (tercer lugar en leaderboard)
+    await firebaseDB.create('userPoints', {
+      userId: student3Id,
+      totalPoints: 85,
+      level: 1,
+      levelName: 'Novato',
+      nextLevelPoints: 100,
+      history: [
+        { id: 'h1', action: 'enrollment', points: 50, description: 'Inscripción en curso', timestamp: new Date().toISOString() },
+        { id: 'h2', action: 'lesson_complete', points: 35, description: 'Lecciones completadas', timestamp: new Date().toISOString() }
+      ]
+    });
+    console.log('✅ Puntos de usuarios inicializados');
+
+    // =============================================
+    // INSCRIPCIONES adicionales
+    // =============================================
+    const reactCourse = createdCourses[1];
+
+    // Laura inscrita en Python (completado) y React
+    await firebaseDB.createEnrollment({
+      courseId: pythonCourse.id,
+      userId: student2Id,
+      enrolledAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+      progress: 100,
+      status: 'completed',
+      completedLessons: ['lesson1', 'lesson2', 'lesson3', 'lesson4', 'lesson5'],
+      completedModules: ['module1', 'module2', 'module3'],
+      totalTimeSpent: 480,
+      lastAccessedAt: new Date().toISOString(),
+      createdAt: Date.now() - 30 * 24 * 60 * 60 * 1000,
+      updatedAt: Date.now()
+    });
+
+    await firebaseDB.createEnrollment({
+      courseId: reactCourse.id,
+      userId: student2Id,
+      enrolledAt: new Date().toISOString(),
+      progress: 15,
+      status: 'active',
+      completedLessons: [],
+      completedModules: [],
+      totalTimeSpent: 30,
+      lastAccessedAt: new Date().toISOString(),
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    });
+
+    // Pedro inscrito en Python
+    await firebaseDB.createEnrollment({
+      courseId: pythonCourse.id,
+      userId: student3Id,
+      enrolledAt: new Date().toISOString(),
+      progress: 10,
+      status: 'active',
+      completedLessons: ['lesson1'],
+      completedModules: [],
+      totalTimeSpent: 45,
+      lastAccessedAt: new Date().toISOString(),
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    });
+    console.log('✅ Inscripciones adicionales creadas');
+
+    // =============================================
+    // ACTIVIDADES de estudiantes
+    // =============================================
+    const now = Date.now();
+    const dayMs = 24 * 60 * 60 * 1000;
+
+    const activities = [
+      { userId: studentId, type: 'lesson_view', details: { lessonId: 'l1', title: 'Instalación de Python' }, timestamp: new Date(now - 2 * dayMs).toISOString() },
+      { userId: studentId, type: 'lesson_complete', details: { lessonId: 'l1', title: 'Instalación de Python' }, timestamp: new Date(now - 2 * dayMs).toISOString() },
+      { userId: studentId, type: 'lesson_view', details: { lessonId: 'l2', title: 'Tu primer programa' }, timestamp: new Date(now - 1 * dayMs).toISOString() },
+      { userId: studentId, type: 'lesson_complete', details: { lessonId: 'l2', title: 'Tu primer programa' }, timestamp: new Date(now - 1 * dayMs).toISOString() },
+      { userId: studentId, type: 'login', details: {}, timestamp: new Date(now).toISOString() },
+      { userId: student2Id, type: 'course_complete', details: { courseId: pythonCourse.id, title: 'Introducción a Python' }, timestamp: new Date(now - 5 * dayMs).toISOString() },
+      { userId: student2Id, type: 'enrollment', details: { courseId: reactCourse.id, title: 'Desarrollo Web con React' }, timestamp: new Date(now).toISOString() },
+      { userId: student3Id, type: 'enrollment', details: { courseId: pythonCourse.id, title: 'Introducción a Python' }, timestamp: new Date(now - 1 * dayMs).toISOString() },
+      { userId: student3Id, type: 'lesson_complete', details: { lessonId: 'l1', title: 'Instalación de Python' }, timestamp: new Date(now).toISOString() }
+    ];
+
+    for (const activity of activities) {
+      await firebaseDB.create('activities', activity);
+    }
+    console.log('✅ Actividades de estudiantes creadas');
+
+    // =============================================
+    // CONVERSACIÓN de ejemplo
+    // =============================================
+    const conversation = await firebaseDB.create('conversations', {
+      type: 'direct',
+      participants: [studentId, teacherId],
+      createdAt: Date.now() - 3 * dayMs,
+      updatedAt: Date.now()
+    });
+
+    await firebaseDB.create('messages', {
+      conversationId: conversation.id,
+      senderId: studentId,
+      content: 'Hola profesora, tengo una duda sobre el ejercicio de variables.',
+      type: 'text',
+      readBy: [studentId, teacherId],
+      createdAt: Date.now() - 3 * dayMs
+    });
+
+    await firebaseDB.create('messages', {
+      conversationId: conversation.id,
+      senderId: teacherId,
+      content: 'Claro Carlos, dime cuál es tu duda específica.',
+      type: 'text',
+      readBy: [teacherId],
+      createdAt: Date.now() - 3 * dayMs + 60000
+    });
+
+    await firebaseDB.create('messages', {
+      conversationId: conversation.id,
+      senderId: studentId,
+      content: 'No entiendo por qué Python no requiere declarar el tipo de variable.',
+      type: 'text',
+      readBy: [studentId],
+      createdAt: Date.now() - 2 * dayMs
+    });
+
+    await firebaseDB.create('messages', {
+      conversationId: conversation.id,
+      senderId: teacherId,
+      content: 'Python es un lenguaje de tipado dinámico, esto significa que el tipo se infiere automáticamente del valor asignado. Por ejemplo, x = 5 crea un entero, y x = "hola" crea un string.',
+      type: 'text',
+      readBy: [teacherId],
+      createdAt: Date.now() - 2 * dayMs + 120000
+    });
+    console.log('✅ Conversación de ejemplo creada');
+
+    // =============================================
+    // POST DE FORO
+    // =============================================
+    const forumPost = await firebaseDB.create('forumPosts', {
+      courseId: pythonCourse.id,
+      authorId: studentId,
+      authorName: 'Carlos Rodríguez',
+      title: 'Ayuda con bucles while',
+      content: 'Estoy intentando hacer un bucle while que cuente del 1 al 10 pero no sé cómo evitar un bucle infinito. ¿Alguien puede ayudarme?',
+      tags: ['python', 'bucles', 'principiante'],
+      likes: 3,
+      views: 15,
+      isPinned: false,
+      isLocked: false,
+      createdAt: Date.now() - 1 * dayMs,
+      updatedAt: Date.now() - 1 * dayMs
+    });
+
+    await firebaseDB.create('forumReplies', {
+      postId: forumPost.id,
+      authorId: student2Id,
+      authorName: 'Laura Mendoza',
+      content: 'Necesitas una variable contador y asegurarte de incrementarla dentro del bucle. Por ejemplo:\n\ni = 1\nwhile i <= 10:\n    print(i)\n    i += 1',
+      likes: 5,
+      isAccepted: true,
+      createdAt: Date.now() - 1 * dayMs + 3600000,
+      updatedAt: Date.now() - 1 * dayMs + 3600000
+    });
+
+    await firebaseDB.create('forumReplies', {
+      postId: forumPost.id,
+      authorId: teacherId,
+      authorName: 'Prof. María García',
+      content: 'Excelente respuesta Laura! Carlos, recuerda que siempre debes tener una condición de salida clara y modificar la variable de control dentro del bucle.',
+      likes: 2,
+      isAccepted: false,
+      createdAt: Date.now() - 1 * dayMs + 7200000,
+      updatedAt: Date.now() - 1 * dayMs + 7200000
+    });
+    console.log('✅ Post de foro creado');
+
+    // =============================================
+    // INSIGNIA DESBLOQUEADA para estudiante
+    // =============================================
+    await firebaseDB.create('userBadges', {
+      userId: student2Id,
+      badgeId: 'first_course',
+      earnedAt: new Date(now - 5 * dayMs).toISOString(),
+      notified: true
+    });
+    console.log('✅ Insignia desbloqueada creada');
 
     console.log('\n🎉 ¡Base de datos sembrada exitosamente!');
     console.log('\n📋 Usuarios de prueba:');
@@ -545,7 +858,7 @@ export async function seedDatabase() {
     console.log('   Profesor: profesor@lasaedu.com');
     console.log('   Estudiante: estudiante@lasaedu.com');
     console.log('   Soporte: soporte@lasaedu.com');
-    console.log('\n   (Contraseña: cualquiera, el auth es local)');
+    console.log(`\n   🔑 Contraseña para todos: ${DEFAULT_PASSWORD}`);
 
   } catch (error) {
     console.error('❌ Error sembrando base de datos:', error);

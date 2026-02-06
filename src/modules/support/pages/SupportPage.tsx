@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '@app/store/authStore';
-import { localDB } from '@shared/utils/localDB';
+import { supportTicketService } from '@shared/services/dataService';
+import type { DBSupportTicket } from '@shared/services/firebaseDataService';
 import { 
   HelpCircle,
   Plus,
@@ -18,32 +19,19 @@ import { Button } from '@shared/components/ui/Button';
 import { Input } from '@shared/components/ui/Input';
 import { Label } from '@shared/components/ui/Label';
 
-interface Ticket {
-  id: string;
-  userId: string;
-  userName: string;
-  userEmail: string;
-  subject: string;
-  description: string;
-  category: 'technical' | 'course' | 'payment' | 'account' | 'other';
-  priority: 'low' | 'medium' | 'high' | 'critical';
-  status: 'new' | 'assigned' | 'in_progress' | 'resolved' | 'closed';
-  assignedTo?: string;
-  assignedToName?: string;
-  messages: TicketMessage[];
-  createdAt: string;
-  updatedAt: string;
-  resolvedAt?: string;
-}
+// Use DBSupportTicket from firebaseDataService
+type Ticket = DBSupportTicket;
 
 interface TicketMessage {
   id: string;
+  ticketId: string;
   senderId: string;
   senderName: string;
-  senderRole: string;
+  senderRole: 'user' | 'support' | 'system';
   content: string;
-  timestamp: string;
-  attachments?: string[];
+  isInternal: boolean;
+  createdAt: number;
+  attachments?: { id: string; name: string; url: string }[];
 }
 
 export default function SupportPage() {
@@ -73,122 +61,22 @@ export default function SupportPage() {
 
   const loadTickets = async () => {
     try {
-      let allTickets = localDB.getCollection<Ticket>('supportTickets');
-      
+      let allTickets: Ticket[];
+
+      // Load tickets from Firebase based on role
+      if (isSupport) {
+        allTickets = await supportTicketService.getAll();
+      } else {
+        allTickets = user?.id ? await supportTicketService.getByUser(user.id) : [];
+      }
+
       // Ensure all tickets have messages array
       allTickets = allTickets.map(ticket => ({
         ...ticket,
         messages: ticket.messages || []
       }));
-      
-      // Generate sample tickets if none exist
-      if (allTickets.length === 0) {
-        const sampleTickets: Ticket[] = [
-          {
-            id: 'ticket_1',
-            userId: 'user_1',
-            userName: 'Juan Pérez',
-            userEmail: 'juan@email.com',
-            subject: 'No puedo acceder al curso de Matemáticas',
-            description: 'Al intentar ingresar al curso me aparece un error 404.',
-            category: 'technical',
-            priority: 'high',
-            status: 'in_progress',
-            assignedTo: 'support_1',
-            assignedToName: 'Soporte Técnico',
-            messages: [
-              {
-                id: 'm1',
-                senderId: 'user_1',
-                senderName: 'Juan Pérez',
-                senderRole: 'student',
-                content: 'Al intentar ingresar al curso me aparece un error 404.',
-                timestamp: new Date(Date.now() - 86400000).toISOString()
-              },
-              {
-                id: 'm2',
-                senderId: 'support_1',
-                senderName: 'Soporte Técnico',
-                senderRole: 'support',
-                content: 'Hola Juan, estamos revisando el problema. ¿Podrías indicarnos desde qué dispositivo intentas acceder?',
-                timestamp: new Date(Date.now() - 43200000).toISOString()
-              }
-            ],
-            createdAt: new Date(Date.now() - 86400000).toISOString(),
-            updatedAt: new Date(Date.now() - 43200000).toISOString()
-          },
-          {
-            id: 'ticket_2',
-            userId: 'user_2',
-            userName: 'María López',
-            userEmail: 'maria@email.com',
-            subject: 'Error en calificación de examen',
-            description: 'Mi calificación aparece incorrecta en el sistema.',
-            category: 'course',
-            priority: 'medium',
-            status: 'new',
-            messages: [
-              {
-                id: 'm1',
-                senderId: 'user_2',
-                senderName: 'María López',
-                senderRole: 'student',
-                content: 'Mi calificación aparece incorrecta en el sistema. Según mis respuestas debería tener 85 pero aparece 70.',
-                timestamp: new Date().toISOString()
-              }
-            ],
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          },
-          {
-            id: 'ticket_3',
-            userId: 'user_3',
-            userName: 'Carlos Ruiz',
-            userEmail: 'carlos@email.com',
-            subject: 'Consulta sobre certificado',
-            description: '¿Cuándo puedo descargar mi certificado?',
-            category: 'other',
-            priority: 'low',
-            status: 'resolved',
-            assignedTo: 'support_1',
-            assignedToName: 'Soporte Técnico',
-            messages: [
-              {
-                id: 'm1',
-                senderId: 'user_3',
-                senderName: 'Carlos Ruiz',
-                senderRole: 'student',
-                content: '¿Cuándo puedo descargar mi certificado del curso de Python?',
-                timestamp: new Date(Date.now() - 172800000).toISOString()
-              },
-              {
-                id: 'm2',
-                senderId: 'support_1',
-                senderName: 'Soporte Técnico',
-                senderRole: 'support',
-                content: 'El certificado se genera automáticamente al completar el 100% del curso. Ya debería estar disponible en la sección de Certificados.',
-                timestamp: new Date(Date.now() - 86400000).toISOString()
-              }
-            ],
-            createdAt: new Date(Date.now() - 172800000).toISOString(),
-            updatedAt: new Date(Date.now() - 86400000).toISOString(),
-            resolvedAt: new Date(Date.now() - 86400000).toISOString()
-          }
-        ];
-        
-        sampleTickets.forEach(t => localDB.add('supportTickets', t));
-        allTickets = sampleTickets;
-      }
-      
-      // Filter based on role
-      let filtered: Ticket[];
-      if (isSupport) {
-        filtered = allTickets; // Support sees all tickets
-      } else {
-        filtered = allTickets.filter(t => t.userId === user?.id);
-      }
-      
-      setTickets(filtered);
+
+      setTickets(allTickets);
     } catch (error) {
       console.error('Error loading tickets:', error);
     } finally {
@@ -198,80 +86,97 @@ export default function SupportPage() {
 
   const createTicket = async () => {
     if (!ticketForm.subject.trim() || !ticketForm.description.trim()) return;
-    
-    const newTicket: Ticket = {
-      id: `ticket_${Date.now()}`,
-      userId: user?.id || '',
-      userName: user?.name || '',
-      userEmail: user?.email || '',
-      subject: ticketForm.subject,
-      description: ticketForm.description,
-      category: ticketForm.category,
-      priority: ticketForm.priority,
-      status: 'new',
-      messages: [{
-        id: `msg_${Date.now()}`,
-        senderId: user?.id || '',
-        senderName: user?.name || '',
-        senderRole: user?.role || 'student',
-        content: ticketForm.description,
-        timestamp: new Date().toISOString()
-      }],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-    
-    localDB.add('supportTickets', newTicket);
-    setTickets([...tickets, newTicket]);
-    setShowCreateModal(false);
-    setTicketForm({ subject: '', description: '', category: 'technical', priority: 'medium' });
+
+    try {
+      const ticketData = {
+        userId: user?.id || '',
+        userName: user?.name || '',
+        userEmail: user?.email || '',
+        subject: ticketForm.subject,
+        description: ticketForm.description,
+        category: ticketForm.category,
+        priority: ticketForm.priority,
+        status: 'new' as const,
+        messages: [{
+          id: `msg_${Date.now()}`,
+          senderId: user?.id || '',
+          senderName: user?.name || '',
+          senderRole: user?.role || 'student',
+          content: ticketForm.description,
+          timestamp: new Date().toISOString()
+        }],
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      };
+
+      const newTicket = await supportTicketService.create(ticketData as any);
+      setTickets([...tickets, newTicket]);
+      setShowCreateModal(false);
+      setTicketForm({ subject: '', description: '', category: 'tecnico', priority: 'media' });
+    } catch (error) {
+      console.error('Error creating ticket:', error);
+      alert('Error al crear el ticket');
+    }
   };
 
   const sendMessage = async () => {
     if (!selectedTicket || !newMessage.trim()) return;
-    
-    const message: TicketMessage = {
-      id: `msg_${Date.now()}`,
-      senderId: user?.id || '',
-      senderName: user?.name || '',
-      senderRole: user?.role || '',
-      content: newMessage,
-      timestamp: new Date().toISOString()
-    };
-    
-    const updatedTicket = {
-      ...selectedTicket,
-      messages: [...selectedTicket.messages, message],
-      updatedAt: new Date().toISOString(),
-      status: isSupport && selectedTicket.status === 'new' ? 'in_progress' as const : selectedTicket.status
-    };
-    
-    localDB.update('supportTickets', selectedTicket.id, updatedTicket);
-    setSelectedTicket(updatedTicket);
-    setTickets(tickets.map(t => t.id === selectedTicket.id ? updatedTicket : t));
-    setNewMessage('');
+
+    try {
+      const senderRole: 'user' | 'support' | 'system' = isSupport ? 'support' : 'user';
+      const message: TicketMessage = {
+        id: `msg_${Date.now()}`,
+        ticketId: selectedTicket.id,
+        senderId: user?.id || '',
+        senderName: user?.name || '',
+        senderRole,
+        content: newMessage,
+        isInternal: false,
+        createdAt: Date.now()
+      };
+
+      const newStatus = isSupport && selectedTicket.status === 'new' ? 'in_progress' : selectedTicket.status;
+      const updates = {
+        messages: [...(selectedTicket.messages || []), message],
+        updatedAt: Date.now(),
+        status: newStatus
+      };
+
+      await supportTicketService.update(selectedTicket.id, updates as any);
+
+      const updatedTicket = { ...selectedTicket, ...updates } as Ticket;
+      setSelectedTicket(updatedTicket);
+      setTickets(tickets.map(t => t.id === selectedTicket.id ? updatedTicket : t));
+      setNewMessage('');
+    } catch (error) {
+      console.error('Error sending message:', error);
+    }
   };
 
-  const updateTicketStatus = (ticketId: string, newStatus: Ticket['status']) => {
+  const updateTicketStatus = async (ticketId: string, newStatus: Ticket['status']) => {
     const ticket = tickets.find(t => t.id === ticketId);
     if (!ticket) return;
-    
-    const updates: Partial<Ticket> = {
-      status: newStatus,
-      updatedAt: new Date().toISOString(),
-      ...(newStatus === 'resolved' ? { resolvedAt: new Date().toISOString() } : {}),
-      ...(newStatus === 'assigned' && !ticket.assignedTo ? {
-        assignedTo: user?.id,
-        assignedToName: user?.name
-      } : {})
-    };
-    
-    localDB.update('supportTickets', ticketId, updates);
-    
-    const updatedTicket = { ...ticket, ...updates };
-    setTickets(tickets.map(t => t.id === ticketId ? updatedTicket : t));
-    if (selectedTicket?.id === ticketId) {
-      setSelectedTicket(updatedTicket);
+
+    try {
+      const updates: Partial<Ticket> = {
+        status: newStatus,
+        updatedAt: Date.now(),
+        ...(newStatus === 'resolved' ? { resolvedAt: Date.now() } : {}),
+        ...(newStatus === 'in_progress' && !ticket.assignedTo ? {
+          assignedTo: user?.id,
+          assignedName: user?.name
+        } : {})
+      };
+
+      await supportTicketService.update(ticketId, updates as any);
+
+      const updatedTicket = { ...ticket, ...updates } as Ticket;
+      setTickets(tickets.map(t => t.id === ticketId ? updatedTicket : t));
+      if (selectedTicket?.id === ticketId) {
+        setSelectedTicket(updatedTicket);
+      }
+    } catch (error) {
+      console.error('Error updating ticket status:', error);
     }
   };
 
@@ -332,9 +237,9 @@ export default function SupportPage() {
   // Stats
   const stats = {
     total: tickets.length,
-    open: tickets.filter(t => ['new', 'assigned', 'in_progress'].includes(t.status)).length,
+    open: tickets.filter(t => ['new', 'open', 'in_progress', 'waiting'].includes(t.status)).length,
     resolved: tickets.filter(t => t.status === 'resolved').length,
-    critical: tickets.filter(t => t.priority === 'critical' && t.status !== 'resolved' && t.status !== 'closed').length
+    urgent: tickets.filter(t => t.priority === 'urgente' && t.status !== 'resolved' && t.status !== 'closed').length
   };
 
   if (loading) {
@@ -410,8 +315,8 @@ export default function SupportPage() {
                 <AlertCircle className="h-6 w-6 text-red-600" />
               </div>
               <div className="ml-4">
-                <p className="text-2xl font-bold">{stats.critical}</p>
-                <p className="text-sm text-gray-600">Críticos</p>
+                <p className="text-2xl font-bold">{stats.urgent}</p>
+                <p className="text-sm text-gray-600">Urgentes</p>
               </div>
             </CardContent>
           </Card>
@@ -555,19 +460,19 @@ export default function SupportPage() {
                 {/* Status Actions (Support only) */}
                 {isSupport && (
                   <div className="flex flex-wrap gap-2 mb-6 p-3 bg-gray-50 rounded-lg">
-                    <Button 
-                      size="sm" 
-                      variant={selectedTicket.status === 'assigned' ? 'default' : 'outline'}
-                      onClick={() => updateTicketStatus(selectedTicket.id, 'assigned')}
+                    <Button
+                      size="sm"
+                      variant={selectedTicket.assignedTo === user?.id ? 'default' : 'outline'}
+                      onClick={() => updateTicketStatus(selectedTicket.id, 'in_progress')}
                     >
                       Asignarme
                     </Button>
-                    <Button 
-                      size="sm" 
-                      variant={selectedTicket.status === 'in_progress' ? 'default' : 'outline'}
-                      onClick={() => updateTicketStatus(selectedTicket.id, 'in_progress')}
+                    <Button
+                      size="sm"
+                      variant={selectedTicket.status === 'waiting' ? 'default' : 'outline'}
+                      onClick={() => updateTicketStatus(selectedTicket.id, 'waiting')}
                     >
-                      En Progreso
+                      En Espera
                     </Button>
                     <Button 
                       size="sm" 
@@ -597,13 +502,13 @@ export default function SupportPage() {
                       <div className={`max-w-[80%] rounded-lg p-3 ${
                         message.senderId === user?.id 
                           ? 'bg-indigo-600 text-white'
-                          : message.senderRole === 'support' || message.senderRole === 'admin'
+                          : message.senderRole === 'support'
                             ? 'bg-green-100 text-green-900'
                             : 'bg-gray-100 text-gray-900'
                       }`}>
                         <div className="flex items-center space-x-2 mb-1">
                           <span className="font-medium text-sm">{message.senderName}</span>
-                          {(message.senderRole === 'support' || message.senderRole === 'admin') && (
+                          {(message.senderRole === 'support') && (
                             <span className={`text-xs px-1.5 py-0.5 rounded ${
                               message.senderId === user?.id 
                                 ? 'bg-indigo-500' 
@@ -617,7 +522,7 @@ export default function SupportPage() {
                         <p className={`text-xs mt-1 ${
                           message.senderId === user?.id ? 'text-indigo-200' : 'text-gray-500'
                         }`}>
-                          {new Date(message.timestamp).toLocaleString()}
+                          {new Date(message.createdAt).toLocaleString()}
                         </p>
                       </div>
                     </div>

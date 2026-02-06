@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuthStore } from '@app/store/authStore';
-import { localDB } from '@shared/utils/localDB';
+import { firebaseDB } from '@shared/services/firebaseDataService';
 import { courseService } from '@shared/services/dataService';
 import { 
   MessageSquare, 
@@ -108,7 +108,7 @@ export default function ForumsPage() {
       setCourses(coursesData.map(c => ({ id: c.id, title: c.title })));
 
       // Load forum posts
-      const postsData = await localDB.getCollection('forum_posts') as ForumPost[] || [];
+      const postsData = await firebaseDB.getAll<ForumPost>('forum_posts') || [];
       setPosts(postsData);
     } catch (error) {
       console.error('Error loading forum data:', error);
@@ -119,7 +119,7 @@ export default function ForumsPage() {
 
   const loadReplies = async (postId: string) => {
     try {
-      const allReplies = await localDB.getCollection('forum_replies') as ForumReply[] || [];
+      const allReplies = await firebaseDB.getAll<ForumReply>('forum_replies') || [];
       const postReplies = allReplies.filter(r => r.postId === postId);
       setReplies(prev => ({ ...prev, [postId]: postReplies }));
     } catch (error) {
@@ -133,7 +133,7 @@ export default function ForumsPage() {
     
     // Increment views
     const updatedPost = { ...post, views: post.views + 1 };
-    await localDB.update('forum_posts', post.id, updatedPost as any);
+    await firebaseDB.update('forum_posts', post.id, updatedPost as any);
     setPosts(prev => prev.map(p => p.id === post.id ? updatedPost : p));
   };
 
@@ -161,7 +161,7 @@ export default function ForumsPage() {
       updatedAt: new Date().toISOString()
     };
 
-    await localDB.add('forum_posts', post);
+    await firebaseDB.create('forum_posts', post);
     setPosts([post, ...posts]);
     setNewPost({ courseId: '', title: '', content: '', tags: [] });
     setShowCreatePost(false);
@@ -185,7 +185,7 @@ export default function ForumsPage() {
       updatedAt: new Date().toISOString()
     };
 
-    await localDB.add('forum_replies', reply);
+    await firebaseDB.create('forum_replies', reply);
     setReplies(prev => ({
       ...prev,
       [selectedPost.id]: [...(prev[selectedPost.id] || []), reply]
@@ -193,7 +193,7 @@ export default function ForumsPage() {
 
     // Update post replies count
     const updatedPost = { ...selectedPost, repliesCount: selectedPost.repliesCount + 1 };
-    await localDB.update('forum_posts', selectedPost.id, updatedPost as any);
+    await firebaseDB.update('forum_posts', selectedPost.id, updatedPost as any);
     setSelectedPost(updatedPost);
     setPosts(prev => prev.map(p => p.id === selectedPost.id ? updatedPost : p));
 
@@ -213,7 +213,7 @@ export default function ForumsPage() {
         : [...post.likedBy, userId]
     };
 
-    await localDB.update('forum_posts', post.id, updatedPost as any);
+    await firebaseDB.update('forum_posts', post.id, updatedPost as any);
 
     setPosts(prev => prev.map(p => p.id === post.id ? updatedPost : p));
     if (selectedPost?.id === post.id) setSelectedPost(updatedPost);
@@ -231,7 +231,7 @@ export default function ForumsPage() {
         : [...reply.likedBy, userId]
     };
 
-    await localDB.update('forum_replies', reply.id, updatedReply as any);
+    await firebaseDB.update('forum_replies', reply.id, updatedReply as any);
 
     setReplies(prev => ({
       ...prev,
@@ -246,17 +246,17 @@ export default function ForumsPage() {
     const postReplies = replies[selectedPost.id] || [];
     for (const r of postReplies) {
       if (r.isAnswer && r.id !== reply.id) {
-        await localDB.update('forum_replies', r.id, { ...r, isAnswer: false } as any);
+        await firebaseDB.update('forum_replies', r.id, { ...r, isAnswer: false } as any);
       }
     }
 
     // Mark this as answer
     const updatedReply = { ...reply, isAnswer: !reply.isAnswer };
-    await localDB.update('forum_replies', reply.id, updatedReply as any);
+    await firebaseDB.update('forum_replies', reply.id, updatedReply as any);
 
     // Update post resolved status
     const updatedPost = { ...selectedPost, isResolved: updatedReply.isAnswer };
-    await localDB.update('forum_posts', selectedPost.id, updatedPost as any);
+    await firebaseDB.update('forum_posts', selectedPost.id, updatedPost as any);
 
     setReplies(prev => ({
       ...prev,
@@ -272,7 +272,7 @@ export default function ForumsPage() {
     if (user?.role !== 'admin' && user?.role !== 'teacher') return;
 
     const updatedPost = { ...post, isPinned: !post.isPinned };
-    await localDB.update('forum_posts', post.id, updatedPost as any);
+    await firebaseDB.update('forum_posts', post.id, updatedPost as any);
     setPosts(prev => prev.map(p => p.id === post.id ? updatedPost : p));
     if (selectedPost?.id === post.id) setSelectedPost(updatedPost);
   };
@@ -280,7 +280,7 @@ export default function ForumsPage() {
   const handleDeletePost = async (postId: string) => {
     if (!confirm('¿Estás seguro de eliminar esta publicación?')) return;
     
-    await localDB.delete('forum_posts', postId);
+    await firebaseDB.delete('forum_posts', postId);
     setPosts(prev => prev.filter(p => p.id !== postId));
     if (selectedPost?.id === postId) setSelectedPost(null);
   };

@@ -36,13 +36,20 @@ export default function LoginPage() {
     register,
     handleSubmit,
     formState: { errors },
+    setValue,
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      email: 'admin@lasaedu.com',
-      password: 'password123',
+      email: '',
+      password: '',
     },
   });
+
+  // Quick fill demo credentials
+  const fillDemoCredentials = (email: string) => {
+    setValue('email', email);
+    setValue('password', 'password123');
+  };
 
   const onSubmit = async (data: LoginFormValues) => {
     setLocalError(null);
@@ -136,15 +143,20 @@ export default function LoginPage() {
             </div>
             
             <div className="text-xs text-center text-muted-foreground w-full border-t pt-4">
-                <p>Usuarios de prueba:</p>
-                <div className="grid grid-cols-2 gap-2 mt-1">
-                    <button type="button" className="underline hover:text-primary" onClick={() => {
-                        const form = document.querySelector('form');
-                        if(form) {
-                            // Quick fill for demo
-                        }
-                    }}>admin@lasaedu.com</button>
-                    <span className="text-gray-400">teacher@lasaedu.com</span>
+                <p>Usuarios de prueba (password: password123):</p>
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                    <button type="button" className="underline hover:text-primary" onClick={() => fillDemoCredentials('admin@lasaedu.com')}>
+                      admin@lasaedu.com
+                    </button>
+                    <button type="button" className="underline hover:text-primary" onClick={() => fillDemoCredentials('teacher@lasaedu.com')}>
+                      teacher@lasaedu.com
+                    </button>
+                    <button type="button" className="underline hover:text-primary" onClick={() => fillDemoCredentials('student@lasaedu.com')}>
+                      student@lasaedu.com
+                    </button>
+                    <button type="button" className="underline hover:text-primary" onClick={() => fillDemoCredentials('support@lasaedu.com')}>
+                      support@lasaedu.com
+                    </button>
                 </div>
             </div>
         </CardFooter>

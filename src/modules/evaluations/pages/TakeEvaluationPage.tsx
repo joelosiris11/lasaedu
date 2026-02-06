@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@app/store/authStore';
-import { localDB } from '@shared/utils/localDB';
+import { evaluationService } from '@shared/services/dataService';
+import { firebaseDB } from '@shared/services/firebaseDataService';
 import { 
   ArrowLeft,
   ArrowRight,
@@ -106,7 +107,7 @@ export default function TakeEvaluationPage() {
 
   const loadEvaluation = async (id: string) => {
     try {
-      const data = localDB.getById<EvaluationData>('evaluations', id);
+      const data = await evaluationService.getById(id) as EvaluationData | null;
       if (data) {
         // Shuffle questions if setting is enabled
         let questions = [...data.questions];
@@ -168,7 +169,7 @@ export default function TakeEvaluationPage() {
     return answers.find(a => a.questionId === question.id)?.answer;
   };
 
-  const handleSubmit = useCallback((forced = false) => {
+  const handleSubmit = useCallback(async (forced = false) => {
     if (!evaluation || !user) return;
     
     if (!forced && !confirming) {
@@ -249,16 +250,8 @@ export default function TakeEvaluationPage() {
         : 0
     };
     
-    localDB.add('submissions', submission);
-    
-    // Update evaluation submission count
-    const currentEval = localDB.getById<EvaluationData>('evaluations', evaluation.id);
-    if (currentEval) {
-      localDB.update<EvaluationData>('evaluations', evaluation.id, {
-        ...currentEval,
-        submissions: (currentEval.submissions || 0) + 1
-      });
-    }
+    // Save submission to Firebase
+    await firebaseDB.create('submissions', submission);
     
     setResult(submissionResult);
     setSubmitted(true);

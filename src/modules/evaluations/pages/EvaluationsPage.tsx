@@ -9,7 +9,6 @@ import {
   Trash2, 
   Eye,
   Clock,
-  Users,
   Star,
   BookOpen,
   CheckCircle,
@@ -29,7 +28,7 @@ const EvaluationsPage = () => {
   const [evaluations, setEvaluations] = useState<DBEvaluation[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('all');
+  // const [categoryFilter, setCategoryFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -53,82 +52,87 @@ const EvaluationsPage = () => {
   }, []);
 
   // Filtrar evaluaciones según rol y filtros
-  const filteredEvaluations = evaluations.filter(evaluation => {
+  const filteredDBEvaluations = evaluations.filter(evaluation => {
     const matchesSearch = evaluation.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          evaluation.description.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesType = typeFilter === 'all' || evaluation.type === typeFilter;
     const matchesStatus = statusFilter === 'all' || evaluation.status === statusFilter;
-    
+
     // Si es profesor, solo ver sus evaluaciones
     if (user?.role === 'teacher') {
-      return evaluation.instructorId === user.id && matchesSearch && matchesType && matchesStatus;
+      return evaluation.createdBy === user.id && matchesSearch && matchesType && matchesStatus;
     }
-    
-    // Si es estudiante, solo ver evaluaciones de cursos en los que está matriculado
+
+    // Si es estudiante, solo ver evaluaciones publicadas
     if (user?.role === 'student') {
-      return evaluation.status === 'activa' && matchesSearch && matchesType && matchesStatus;
+      return evaluation.status === 'publicado' && matchesSearch && matchesType && matchesStatus;
     }
-    
+
     return matchesSearch && matchesType && matchesStatus;
   });
 
   // Estadísticas
   const stats = {
-    total: user?.role === 'teacher' 
-      ? evaluations.filter(e => e.instructorId === user.id).length 
+    total: user?.role === 'teacher'
+      ? evaluations.filter(e => e.createdBy === user.id).length
       : evaluations.length,
-    active: evaluations.filter(e => e.status === 'activa' && 
-      (user?.role !== 'teacher' || e.instructorId === user.id)).length,
-    completed: evaluations.filter(e => e.status === 'completada' && 
-      (user?.role !== 'teacher' || e.instructorId === user.id)).length,
-    draft: evaluations.filter(e => e.status === 'borrador' && 
-      (user?.role !== 'teacher' || e.instructorId === user.id)).length
+    active: evaluations.filter(e => e.status === 'publicado' &&
+      (user?.role !== 'teacher' || e.createdBy === user.id)).length,
+    archived: evaluations.filter(e => e.status === 'archivado' &&
+      (user?.role !== 'teacher' || e.createdBy === user.id)).length,
+    draft: evaluations.filter(e => e.status === 'borrador' &&
+      (user?.role !== 'teacher' || e.createdBy === user.id)).length
   };
 
-  const handleCreateEvaluation = async (evaluationData: Partial<Evaluation>) => {
+  const handleCreateDBEvaluation = async (evaluationData: Partial<DBEvaluation>) => {
     try {
-      const newEvaluation = {
-        id: Date.now().toString(),
+      const now = Date.now();
+      const newDBEvaluation = await evaluationService.create({
         ...evaluationData,
-        instructorId: user?.id || '',
-        instructor: user?.name || '',
-        submissions: 0,
+        title: evaluationData.title || '',
+        description: evaluationData.description || '',
+        type: evaluationData.type || 'quiz',
+        courseId: evaluationData.courseId || '',
         status: 'borrador',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      } as Evaluation;
-      
-      await localDB.create('evaluations', newEvaluation);
-      setEvaluations([...evaluations, newEvaluation]);
+        questions: evaluationData.questions || [],
+        settings: evaluationData.settings || {
+          shuffleQuestions: false,
+          shuffleOptions: false,
+          showResults: true,
+          passingScore: 60
+        },
+        createdAt: now,
+        updatedAt: now
+      } as Omit<DBEvaluation, 'id'>);
+
+      setEvaluations([...evaluations, newDBEvaluation]);
       setShowCreateModal(false);
     } catch (error) {
       console.error('Error creating evaluation:', error);
     }
   };
 
-  const handleEditEvaluation = async (evaluationData: Partial<Evaluation>) => {
-    if (!selectedEvaluation) return;
-    
+  const handleEditDBEvaluation = async (evaluationData: Partial<DBEvaluation>) => {
+    if (!editingEvaluation) return;
+
     try {
-      const updatedEvaluation = {
-        ...selectedEvaluation,
+      await evaluationService.update(editingEvaluation.id, {
         ...evaluationData,
-        updatedAt: new Date().toISOString()
-      };
-      
-      await localDB.update('evaluations', selectedEvaluation.id, updatedEvaluation);
-      setEvaluations(evaluations.map(e => e.id === selectedEvaluation.id ? updatedEvaluation : e));
+        updatedAt: Date.now()
+      });
+      const updatedDBEvaluation = { ...editingEvaluation, ...evaluationData, updatedAt: Date.now() };
+      setEvaluations(evaluations.map(e => e.id === editingEvaluation.id ? updatedDBEvaluation : e));
       setShowEditModal(false);
-      setSelectedEvaluation(null);
+      setEditingEvaluation(null);
     } catch (error) {
       console.error('Error updating evaluation:', error);
     }
   };
 
-  const handleDeleteEvaluation = async (evaluationId: string) => {
+  const handleDeleteDBEvaluation = async (evaluationId: string) => {
     if (confirm('¿Estás seguro de que quieres eliminar esta evaluación?')) {
       try {
-        await localDB.delete('evaluations', evaluationId);
+        await evaluationService.delete(evaluationId);
         setEvaluations(evaluations.filter(e => e.id !== evaluationId));
       } catch (error) {
         console.error('Error deleting evaluation:', error);
@@ -136,7 +140,7 @@ const EvaluationsPage = () => {
     }
   };
 
-  const getTypeIcon = (type: Evaluation['type']) => {
+  const getTypeIcon = (type: DBEvaluation['type']) => {
     const icons = {
       quiz: CheckCircle,
       tarea: FileText,
@@ -146,12 +150,11 @@ const EvaluationsPage = () => {
     return icons[type];
   };
 
-  const getStatusBadge = (status: Evaluation['status']) => {
-    const badges = {
+  const getStatusBadge = (status: DBEvaluation['status']) => {
+    const badges: Record<DBEvaluation['status'], { color: string; text: string }> = {
       borrador: { color: 'bg-gray-100 text-gray-800', text: 'Borrador' },
-      activa: { color: 'bg-green-100 text-green-800', text: 'Activa' },
-      completada: { color: 'bg-blue-100 text-blue-800', text: 'Completada' },
-      cerrada: { color: 'bg-red-100 text-red-800', text: 'Cerrada' }
+      publicado: { color: 'bg-green-100 text-green-800', text: 'Publicado' },
+      archivado: { color: 'bg-blue-100 text-blue-800', text: 'Archivado' }
     };
     const badge = badges[status];
     
@@ -162,7 +165,7 @@ const EvaluationsPage = () => {
     );
   };
 
-  const getTypeBadge = (type: Evaluation['type']) => {
+  const getTypeBadge = (type: DBEvaluation['type']) => {
     const badges = {
       quiz: { color: 'bg-blue-100 text-blue-800', text: 'Quiz' },
       tarea: { color: 'bg-yellow-100 text-yellow-800', text: 'Tarea' },
@@ -239,8 +242,8 @@ const EvaluationsPage = () => {
                 <CheckCircle className="h-6 w-6 text-blue-600" />
               </div>
               <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Completadas</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.completed}</p>
+                <p className="text-sm font-medium text-gray-600">Archivadas</p>
+                <p className="text-2xl font-bold text-gray-900">{stats.archived}</p>
               </div>
             </div>
           </CardContent>
@@ -305,7 +308,7 @@ const EvaluationsPage = () => {
         </CardContent>
       </Card>
 
-      {/* Evaluations List */}
+      {/* DBEvaluations List */}
       <div className="space-y-4">
         {loading ? (
           Array.from({ length: 5 }).map((_, i) => (
@@ -317,7 +320,7 @@ const EvaluationsPage = () => {
               </CardContent>
             </Card>
           ))
-        ) : filteredEvaluations.length === 0 ? (
+        ) : filteredDBEvaluations.length === 0 ? (
           <Card>
             <CardContent className="p-12 text-center">
               <FileText className="h-16 w-16 text-gray-400 mx-auto mb-4" />
@@ -337,7 +340,7 @@ const EvaluationsPage = () => {
             </CardContent>
           </Card>
         ) : (
-          filteredEvaluations.map((evaluation) => {
+          filteredDBEvaluations.map((evaluation) => {
             const TypeIcon = getTypeIcon(evaluation.type);
             return (
               <Card key={evaluation.id} className="hover:shadow-lg transition-shadow">
@@ -357,22 +360,18 @@ const EvaluationsPage = () => {
                         <div className="flex items-center space-x-6 text-sm text-gray-500">
                           <div className="flex items-center">
                             <BookOpen className="h-4 w-4 mr-1" />
-                            <span>{evaluation.courseName}</span>
+                            <span>Curso: {evaluation.courseId}</span>
                           </div>
-                          <div className="flex items-center">
-                            <Clock className="h-4 w-4 mr-1" />
-                            <span>Vence: {new Date(evaluation.dueDate).toLocaleDateString()}</span>
-                          </div>
-                          <div className="flex items-center">
-                            <Star className="h-4 w-4 mr-1" />
-                            <span>{evaluation.maxScore} puntos</span>
-                          </div>
-                          {!isStudent && (
+                          {evaluation.dueDate && (
                             <div className="flex items-center">
-                              <Users className="h-4 w-4 mr-1" />
-                              <span>{evaluation.submissions} entregas</span>
+                              <Clock className="h-4 w-4 mr-1" />
+                              <span>Vence: {new Date(evaluation.dueDate).toLocaleDateString()}</span>
                             </div>
                           )}
+                          <div className="flex items-center">
+                            <Star className="h-4 w-4 mr-1" />
+                            <span>{evaluation.questions?.length || 0} preguntas</span>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -394,13 +393,13 @@ const EvaluationsPage = () => {
                             <Eye className="h-4 w-4 mr-1" />
                             Ver
                           </Button>
-                          {canManageEvaluations && (evaluation.instructorId === user?.id || user?.role === 'admin') && (
+                          {canManageEvaluations && (evaluation.createdBy === user?.id || user?.role === 'admin') && (
                             <>
                               <Button 
                                 size="sm" 
                                 variant="outline"
                                 onClick={() => {
-                                  setSelectedEvaluation(evaluation);
+                                  setEditingEvaluation(evaluation);
                                   setShowEditModal(true);
                                 }}
                               >
@@ -412,7 +411,7 @@ const EvaluationsPage = () => {
                               <Button 
                                 size="sm" 
                                 variant="outline"
-                                onClick={() => handleDeleteEvaluation(evaluation.id)}
+                                onClick={() => handleDeleteDBEvaluation(evaluation.id)}
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
@@ -429,25 +428,25 @@ const EvaluationsPage = () => {
         )}
       </div>
 
-      {/* Create Evaluation Modal */}
+      {/* Create DBEvaluation Modal */}
       {showCreateModal && (
         <EvaluationModal
           title="Crear Evaluación"
           evaluation={null}
-          onSave={handleCreateEvaluation}
+          onSave={handleCreateDBEvaluation}
           onClose={() => setShowCreateModal(false)}
         />
       )}
 
-      {/* Edit Evaluation Modal */}
-      {showEditModal && selectedEvaluation && (
+      {/* Edit DBEvaluation Modal */}
+      {showEditModal && editingEvaluation && (
         <EvaluationModal
           title="Editar Evaluación"
-          evaluation={selectedEvaluation}
-          onSave={handleEditEvaluation}
+          evaluation={editingEvaluation}
+          onSave={handleEditDBEvaluation}
           onClose={() => {
             setShowEditModal(false);
-            setSelectedEvaluation(null);
+            setEditingEvaluation(null);
           }}
         />
       )}
@@ -463,19 +462,19 @@ const EvaluationModal = ({
   onClose 
 }: { 
   title: string;
-  evaluation: Evaluation | null;
-  onSave: (data: Partial<Evaluation>) => void;
+  evaluation: DBEvaluation | null;
+  onSave: (data: Partial<DBEvaluation>) => void;
   onClose: () => void;
 }) => {
   const [formData, setFormData] = useState({
     title: evaluation?.title || '',
     description: evaluation?.description || '',
-    type: evaluation?.type || 'quiz' as Evaluation['type'],
-    courseName: evaluation?.courseName || '',
+    type: evaluation?.type || 'quiz' as DBEvaluation['type'],
+    courseId: evaluation?.courseId || '',
     dueDate: evaluation?.dueDate || '',
-    maxScore: evaluation?.maxScore || 10,
-    timeLimit: evaluation?.timeLimit || 30,
-    attempts: evaluation?.attempts || 1
+    passingScore: evaluation?.settings?.passingScore || 60,
+    timeLimit: evaluation?.settings?.timeLimit || 30,
+    attempts: evaluation?.settings?.attempts || 1
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -523,7 +522,7 @@ const EvaluationModal = ({
               <select
                 id="type"
                 value={formData.type}
-                onChange={(e) => setFormData({ ...formData, type: e.target.value as Evaluation['type'] })}
+                onChange={(e) => setFormData({ ...formData, type: e.target.value as DBEvaluation['type'] })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 required
               >
@@ -535,12 +534,12 @@ const EvaluationModal = ({
             </div>
 
             <div>
-              <Label htmlFor="courseName">Curso</Label>
+              <Label htmlFor="courseId">ID del Curso</Label>
               <Input
-                id="courseName"
-                value={formData.courseName}
-                onChange={(e) => setFormData({ ...formData, courseName: e.target.value })}
-                placeholder="ej. React Fundamentals"
+                id="courseId"
+                value={formData.courseId}
+                onChange={(e) => setFormData({ ...formData, courseId: e.target.value })}
+                placeholder="ej. course_123"
                 required
               />
             </div>
@@ -559,13 +558,14 @@ const EvaluationModal = ({
             </div>
 
             <div>
-              <Label htmlFor="maxScore">Puntuación máxima</Label>
+              <Label htmlFor="passingScore">Puntuación mínima para aprobar (%)</Label>
               <Input
-                id="maxScore"
+                id="passingScore"
                 type="number"
-                value={formData.maxScore}
-                onChange={(e) => setFormData({ ...formData, maxScore: parseInt(e.target.value) })}
-                min="1"
+                value={formData.passingScore}
+                onChange={(e) => setFormData({ ...formData, passingScore: parseInt(e.target.value) })}
+                min="0"
+                max="100"
                 required
               />
             </div>
