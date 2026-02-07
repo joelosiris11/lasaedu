@@ -29,11 +29,14 @@ const defaultStyle: CertificateStyle = {
 };
 
 export class CertificateGenerator {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private _style: CertificateStyle;
 
   constructor(style?: CertificateStyle) {
     this._style = { ...defaultStyle, ...style };
+  }
+
+  get style(): CertificateStyle {
+    return this._style;
   }
 
   /**

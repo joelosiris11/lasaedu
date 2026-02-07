@@ -49,8 +49,8 @@ export default function SupportPage() {
   const [ticketForm, setTicketForm] = useState({
     subject: '',
     description: '',
-    category: 'technical' as Ticket['category'],
-    priority: 'medium' as Ticket['priority']
+    category: 'tecnico' as Ticket['category'],
+    priority: 'media' as Ticket['priority']
   });
 
   const isSupport = user?.role === 'support' || user?.role === 'admin';
@@ -210,12 +210,12 @@ export default function SupportPage() {
 
   const getPriorityBadge = (priority: Ticket['priority']) => {
     const badges: Record<string, { color: string; text: string }> = {
-      low: { color: 'bg-gray-100 text-gray-600', text: 'Baja' },
-      medium: { color: 'bg-yellow-100 text-yellow-700', text: 'Media' },
-      high: { color: 'bg-orange-100 text-orange-700', text: 'Alta' },
-      critical: { color: 'bg-red-100 text-red-700', text: 'Crítica' }
+      baja: { color: 'bg-gray-100 text-gray-600', text: 'Baja' },
+      media: { color: 'bg-yellow-100 text-yellow-700', text: 'Media' },
+      alta: { color: 'bg-orange-100 text-orange-700', text: 'Alta' },
+      urgente: { color: 'bg-red-100 text-red-700', text: 'Urgente' }
     };
-    const badge = badges[priority] || badges['medium'];
+    const badge = badges[priority] || badges['media'];
     return (
       <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${badge.color}`}>
         {badge.text}
@@ -225,11 +225,11 @@ export default function SupportPage() {
 
   const getCategoryLabel = (category: Ticket['category']) => {
     const labels: Record<string, string> = {
-      technical: 'Técnico',
-      course: 'Curso',
-      payment: 'Pago',
-      account: 'Cuenta',
-      other: 'Otro'
+      tecnico: 'Técnico',
+      academico: 'Académico',
+      pagos: 'Pagos',
+      cuenta: 'Cuenta',
+      otro: 'Otro'
     };
     return labels[category] || 'Otro';
   };
@@ -356,10 +356,10 @@ export default function SupportPage() {
               className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
             >
               <option value="all">Todas las prioridades</option>
-              <option value="critical">Crítica</option>
-              <option value="high">Alta</option>
-              <option value="medium">Media</option>
-              <option value="low">Baja</option>
+              <option value="urgente">Urgente</option>
+              <option value="alta">Alta</option>
+              <option value="media">Media</option>
+              <option value="baja">Baja</option>
             </select>
           </div>
         </CardContent>
@@ -577,11 +577,11 @@ export default function SupportPage() {
                       }))}
                       className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     >
-                      <option value="technical">Técnico</option>
-                      <option value="course">Curso</option>
-                      <option value="payment">Pago</option>
-                      <option value="account">Cuenta</option>
-                      <option value="other">Otro</option>
+                      <option value="tecnico">Técnico</option>
+                      <option value="academico">Académico</option>
+                      <option value="pagos">Pagos</option>
+                      <option value="cuenta">Cuenta</option>
+                      <option value="otro">Otro</option>
                     </select>
                   </div>
                   <div>
@@ -594,10 +594,10 @@ export default function SupportPage() {
                       }))}
                       className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     >
-                      <option value="low">Baja</option>
-                      <option value="medium">Media</option>
-                      <option value="high">Alta</option>
-                      <option value="critical">Crítica</option>
+                      <option value="baja">Baja</option>
+                      <option value="media">Media</option>
+                      <option value="alta">Alta</option>
+                      <option value="urgente">Urgente</option>
                     </select>
                   </div>
                 </div>

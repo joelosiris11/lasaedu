@@ -1,6 +1,6 @@
 import { database } from '@app/config/firebase';
-import { ref, set, push, get, update, remove, child, query, orderByChild, equalTo } from 'firebase/database';
-import type { User, Course, Enrollment } from '@shared/types';
+import { ref, set, get, update, remove, query, orderByChild, equalTo } from 'firebase/database';
+import type { Course, Enrollment } from '@shared/types';
 
 export interface EnrollmentService {
   create: (enrollment: Enrollment) => Promise<void>;
@@ -22,8 +22,6 @@ export interface EnrollmentService {
 
 export class FirebaseEnrollmentService implements EnrollmentService {
   private enrollmentsRef = ref(database, 'enrollments');
-  private usersRef = ref(database, 'users');
-  private coursesRef = ref(database, 'courses');
 
   async create(enrollment: Enrollment): Promise<void> {
     try {
@@ -196,7 +194,7 @@ export class FirebaseEnrollmentService implements EnrollmentService {
       await this.update(enrollment.id, {
         status: 'withdrawn',
         withdrawnAt: Date.now(),
-        withdrawalReason: reason
+        withdrawReason: reason
       });
 
       // Update course enrollment count

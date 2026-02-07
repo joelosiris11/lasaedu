@@ -332,7 +332,7 @@ class CertificateGeneratorService {
     URL.revokeObjectURL(url);
   }
 
-  validateCertificate(verificationCode: string): Promise<CertificateRecord | null> {
+  validateCertificate(_verificationCode: string): Promise<CertificateRecord | null> {
     // In a real implementation, this would query the database
     return Promise.resolve(null);
   }
@@ -362,7 +362,7 @@ class CertificateGeneratorService {
   }
 
   // Analytics
-  getCertificateStats(courseId: string): Promise<{
+  getCertificateStats(_courseId: string): Promise<{
     totalGenerated: number;
     totalDownloads: number;
     conversionRate: number;

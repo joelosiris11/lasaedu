@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@app/store/authStore';
 import { evaluationService } from '@shared/services/dataService';
-import { firebaseDB } from '@shared/services/firebaseDataService';
+import { assessmentService } from '@shared/services/assessmentService';
+import type { Question as ModernQuestion, QuestionOption } from '@shared/types/assessment';
 import { 
   ArrowLeft,
   ArrowRight,
@@ -105,17 +106,112 @@ export default function TakeEvaluationPage() {
     return () => clearInterval(timer);
   }, [timeRemaining, submitted]);
 
+  // Transform modern QuestionOption[] to simple string[] for legacy UI compatibility
+  const transformModernQuestion = (q: ModernQuestion): Question => {
+    let options: string[] | undefined;
+    let correctAnswer: string | string[] | boolean = q.correctAnswer;
+
+    // Handle different question types
+    if (q.type === 'single_choice' || q.type === 'multiple_choice') {
+      if (q.options) {
+        options = q.options.map((opt: QuestionOption) => opt.text);
+        // For single/multiple choice, find the correct option index(es)
+        const correctIndices = q.options
+          .map((opt: QuestionOption, idx: number) => opt.isCorrect ? idx.toString() : null)
+          .filter((v: string | null): v is string => v !== null);
+        correctAnswer = q.type === 'single_choice' ? correctIndices[0] || '0' : correctIndices;
+      }
+    } else if (q.type === 'true_false') {
+      correctAnswer = q.correctAnswer === true || q.correctAnswer === 'true';
+    }
+
+    // Map modern types to legacy types
+    const typeMap: Record<string, Question['type']> = {
+      'single_choice': 'multiple_choice',
+      'multiple_choice': 'multiple_choice',
+      'true_false': 'true_false',
+      'short_answer': 'short_answer',
+      'long_answer': 'essay',
+      'essay': 'essay',
+      'matching': 'matching',
+      'ordering': 'ordering'
+    };
+
+    return {
+      id: q.id,
+      type: typeMap[q.type] || 'short_answer',
+      question: q.question,
+      options,
+      correctAnswer,
+      points: q.points,
+      explanation: q.explanation
+    };
+  };
+
   const loadEvaluation = async (id: string) => {
     try {
+      // First try to load from modern assessmentService
+      const modernAssessment = await assessmentService.getAssessment(id);
+
+      if (modernAssessment && modernAssessment.questionData) {
+        // Load questions from questionData in order
+        const modernQuestions = modernAssessment.questions
+          .sort((a, b) => a.order - b.order)
+          .map(aq => modernAssessment.questionData![aq.questionId])
+          .filter((q): q is ModernQuestion => q !== undefined);
+
+        // Transform to legacy format
+        let questions = modernQuestions.map(transformModernQuestion);
+
+        // Apply shuffle settings
+        if (modernAssessment.settings.shuffleQuestions) {
+          questions = shuffleArray(questions);
+        }
+        if (modernAssessment.settings.shuffleAnswers) {
+          questions = questions.map(q => {
+            if (q.type === 'multiple_choice' && q.options) {
+              return { ...q, options: shuffleArray([...q.options]) };
+            }
+            return q;
+          });
+        }
+
+        const evaluationData: EvaluationData = {
+          id: modernAssessment.id,
+          title: modernAssessment.title,
+          description: modernAssessment.description,
+          type: modernAssessment.type === 'exam' ? 'examen' : modernAssessment.type === 'assignment' ? 'tarea' : 'quiz',
+          courseId: modernAssessment.courseId,
+          courseName: '', // Will be loaded if needed
+          questions,
+          settings: {
+            timeLimit: modernAssessment.settings.timeLimit,
+            attempts: modernAssessment.settings.attempts,
+            shuffleQuestions: modernAssessment.settings.shuffleQuestions || false,
+            shuffleOptions: modernAssessment.settings.shuffleAnswers || false,
+            showResults: modernAssessment.settings.showResults === 'immediately',
+            passingScore: modernAssessment.grading.passingScore,
+            dueDate: modernAssessment.settings.dueDate ? new Date(modernAssessment.settings.dueDate).toISOString() : undefined
+          }
+        };
+
+        setEvaluation(evaluationData);
+        setAnswers(questions.map(q => ({ questionId: q.id, answer: null })));
+
+        if (evaluationData.settings.timeLimit) {
+          setTimeRemaining(evaluationData.settings.timeLimit * 60);
+        }
+        setLoading(false);
+        return;
+      }
+
+      // Fallback to legacy evaluation service
       const data = await evaluationService.getById(id) as EvaluationData | null;
       if (data) {
-        // Shuffle questions if setting is enabled
         let questions = [...data.questions];
         if (data.settings.shuffleQuestions) {
           questions = shuffleArray(questions);
         }
-        
-        // Shuffle options if setting is enabled
         if (data.settings.shuffleOptions) {
           questions = questions.map(q => {
             if (q.type === 'multiple_choice' && q.options) {
@@ -124,15 +220,12 @@ export default function TakeEvaluationPage() {
             return q;
           });
         }
-        
+
         setEvaluation({ ...data, questions });
-        
-        // Initialize answers array
         setAnswers(questions.map(q => ({ questionId: q.id, answer: null })));
-        
-        // Set timer if there's a time limit
+
         if (data.settings.timeLimit) {
-          setTimeRemaining(data.settings.timeLimit * 60); // Convert to seconds
+          setTimeRemaining(data.settings.timeLimit * 60);
         }
       }
     } catch (error) {
@@ -251,7 +344,7 @@ export default function TakeEvaluationPage() {
     };
     
     // Save submission to Firebase
-    await firebaseDB.create('submissions', submission);
+    await evaluationService.createAttempt(submission);
     
     setResult(submissionResult);
     setSubmitted(true);

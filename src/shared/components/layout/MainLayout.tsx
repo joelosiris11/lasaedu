@@ -3,6 +3,7 @@ import { Outlet } from 'react-router-dom';
 import { useAuthStore } from '@app/store/authStore';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
+import { ToastContainer } from '@shared/components/ui/Toast';
 
 interface MainLayoutProps {
   children?: ReactNode;
@@ -18,7 +19,7 @@ const MainLayout = ({ children }: MainLayoutProps) => {
   return (
     <div className="min-h-screen bg-gray-50">
       <Sidebar />
-      
+
       {/* Main content area */}
       <div className="md:ml-64">
         <Header />
@@ -28,6 +29,9 @@ const MainLayout = ({ children }: MainLayoutProps) => {
           </div>
         </main>
       </div>
+
+      {/* Toast notifications */}
+      <ToastContainer />
     </div>
   );
 };

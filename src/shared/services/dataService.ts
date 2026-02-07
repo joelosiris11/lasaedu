@@ -26,6 +26,10 @@ import type {
   DBUserBadge,
   DBLearningStreak,
   DBSystemMetric,
+  DBProgressActivity,
+  DBUserSettings,
+  DBForumPost,
+  DBForumReply,
 } from './firebaseDataService';
 
 // Re-exportar tipos para consumidores
@@ -48,6 +52,10 @@ export type {
   DBUserBadge,
   DBLearningStreak,
   DBSystemMetric,
+  DBProgressActivity,
+  DBUserSettings,
+  DBForumPost,
+  DBForumReply,
 };
 
 // ============================================
@@ -479,17 +487,60 @@ export const activityService = {
 export const gamificationService = {
   // Puntos
   getUserPoints: (userId: string) => firebaseDB.getUserPoints(userId),
+  createUserPoints: (userId: string) => firebaseDB.createUserPoints(userId),
   addPoints: (userId: string, points: number, action: string, description: string) =>
     firebaseDB.addPoints(userId, points, action, description),
-  
+
   // Insignias
   getAllBadges: () => firebaseDB.getBadges(),
   getUserBadges: (userId: string) => firebaseDB.getUserBadges(userId),
   awardBadge: (userId: string, badgeId: string) => firebaseDB.awardBadge(userId, badgeId),
-  
+
   // Racha de aprendizaje
   getUserStreak: (userId: string) => firebaseDB.getLearningStreak(userId),
   updateStreak: (userId: string) => firebaseDB.updateStreak(userId),
+
+  // Leaderboard
+  getLeaderboard: (limit?: number) => firebaseDB.getLeaderboard(limit),
+};
+
+// ============================================
+// PROGRESS ACTIVITY SERVICE
+// ============================================
+
+export const progressActivityService = {
+  getByUser: (userId: string) => firebaseDB.getProgressActivities(userId),
+  log: (activity: Omit<DBProgressActivity, 'id'>) => firebaseDB.logProgressActivity(activity),
+};
+
+// ============================================
+// USER SETTINGS SERVICE
+// ============================================
+
+export const userSettingsService = {
+  getByUser: async (userId: string): Promise<DBUserSettings | null> => {
+    const settings = await firebaseDB.query<DBUserSettings>('userSettings', 'userId', userId);
+    return settings[0] || null;
+  },
+  update: (id: string, data: Partial<DBUserSettings>) => firebaseDB.update<DBUserSettings>('userSettings', id, data),
+  create: (data: Omit<DBUserSettings, 'id'>) => firebaseDB.create<DBUserSettings>('userSettings', data),
+};
+
+// ============================================
+// FORUM SERVICE
+// ============================================
+
+export const forumService = {
+  getPosts: () => firebaseDB.getForumPosts(),
+  getPostsByCourse: (courseId: string) => firebaseDB.getForumPostsByCourse(courseId),
+  getReplies: (postId: string) => firebaseDB.getForumReplies(postId),
+  getAllReplies: () => firebaseDB.getAllForumReplies(),
+  createPost: (data: Omit<DBForumPost, 'id'>) => firebaseDB.createForumPost(data),
+  updatePost: (id: string, data: Partial<DBForumPost>) => firebaseDB.updateForumPost(id, data),
+  deletePost: (id: string) => firebaseDB.deleteForumPost(id),
+  createReply: (data: Omit<DBForumReply, 'id'>) => firebaseDB.createForumReply(data),
+  updateReply: (id: string, data: Partial<DBForumReply>) => firebaseDB.updateForumReply(id, data),
+  deleteReply: (id: string) => firebaseDB.deleteForumReply(id),
 };
 
 // ============================================
@@ -543,6 +594,9 @@ export default {
   supportTickets: supportTicketService,
   activities: activityService,
   gamification: gamificationService,
+  progressActivities: progressActivityService,
+  userSettings: userSettingsService,
+  forums: forumService,
   metrics: metricsService,
   utils: dataUtils,
 };

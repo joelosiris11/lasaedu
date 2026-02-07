@@ -31,7 +31,8 @@ export default function VideoPlayer({
   initialProgress = 0,
   poster
 }: VideoPlayerProps) {
-  const playerRef = useRef<typeof ReactPlayer.prototype>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const playerRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   
   const [playing, setPlaying] = useState(false);
@@ -145,31 +146,30 @@ export default function VideoPlayer({
     >
       {/* Video Player */}
       <div className="aspect-video">
-        <ReactPlayer
-          ref={playerRef}
-          url={url}
-          width="100%"
-          height="100%"
-          playing={playing}
-          volume={volume}
-          muted={muted}
-          playbackRate={playbackRate}
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          onProgress={(state: any) => handleProgress(state)}
-          onDuration={handleDuration}
-          onEnded={() => {
+        {(ReactPlayer as any)({
+          ref: playerRef,
+          url: url,
+          width: "100%",
+          height: "100%",
+          playing: playing,
+          volume: volume,
+          muted: muted,
+          playbackRate: playbackRate,
+          onProgress: handleProgress,
+          onDuration: handleDuration,
+          onEnded: () => {
             setPlaying(false);
             if (!isCompleted) {
               setIsCompleted(true);
               onComplete?.();
             }
-          }}
-          config={{
+          },
+          config: {
             youtube: {},
             vimeo: {}
-          }}
-          light={poster}
-        />
+          },
+          light: poster
+        })}
       </div>
 
       {/* Overlay de completado */}

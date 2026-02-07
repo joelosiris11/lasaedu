@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useAuthStore } from '@app/store/authStore';
 import { 
   lessonService, 
   moduleService, 
@@ -8,19 +7,19 @@ import {
   type DBModule 
 } from '@shared/services/dataService';
 import ContentEditor from '../components/ContentEditor';
-import { 
-  ArrowLeft, 
-  Save, 
-  Eye, 
-  Settings, 
-  Clock, 
-  Users,
+import { RichTextEditor } from '@shared/components/editor';
+import {
+  ArrowLeft,
+  Save,
+  Eye,
+  Settings,
   BookOpen,
   Video,
   Headphones,
   FileText,
   HelpCircle,
-  CheckCircle
+  Layers,
+  Type
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@shared/components/ui/Card';
 import { Button } from '@shared/components/ui/Button';
@@ -90,7 +89,7 @@ export default function LessonBuilderPage() {
   const navigate = useNavigate();
   // const { user } = useAuthStore(); // Unused for now
 
-  const [lesson, setLesson] = useState<DBLesson | null>(null);
+  const [_lesson, setLesson] = useState<DBLesson | null>(null);
   const [module, setModule] = useState<DBModule | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -102,6 +101,8 @@ export default function LessonBuilderPage() {
   const [description, setDescription] = useState('');
   const [lessonType, setLessonType] = useState<'texto' | 'video' | 'quiz' | 'tarea' | 'recurso'>('texto');
   const [content, setContent] = useState<ContentBlock[]>([]);
+  const [editorMode, setEditorMode] = useState<'blocks' | 'wysiwyg'>('blocks');
+  const [wysiwygContent, setWysiwygContent] = useState('');
   const [settings, setSettings] = useState<LessonSettings>({
     isRequired: true,
     allowComments: true,
@@ -135,12 +136,29 @@ export default function LessonBuilderPage() {
           
           // Parse content
           try {
-            const parsedContent = typeof lessonData.content === 'string' 
+            const parsedContent = typeof lessonData.content === 'string'
               ? JSON.parse(lessonData.content)
               : lessonData.content;
-            setContent(Array.isArray(parsedContent) ? parsedContent : []);
+
+            // Check if content is WYSIWYG (has editorMode field) or block-based
+            if (parsedContent && typeof parsedContent === 'object' && parsedContent.editorMode === 'wysiwyg') {
+              setEditorMode('wysiwyg');
+              setWysiwygContent(parsedContent.html || '');
+              setContent([]);
+            } else {
+              setEditorMode('blocks');
+              setContent(Array.isArray(parsedContent) ? parsedContent : []);
+            }
           } catch {
-            setContent([]);
+            // If parsing fails, check if it's HTML content
+            if (typeof lessonData.content === 'string' && lessonData.content.includes('<')) {
+              setEditorMode('wysiwyg');
+              setWysiwygContent(lessonData.content);
+              setContent([]);
+            } else {
+              setEditorMode('blocks');
+              setContent([]);
+            }
           }
 
           // Load settings - handle potential undefined
@@ -172,8 +190,11 @@ export default function LessonBuilderPage() {
       newErrors.description = 'La descripción no puede superar los 500 caracteres';
     }
 
-    if (content.length === 0) {
+    // Validate content based on editor mode
+    if (editorMode === 'blocks' && content.length === 0) {
       newErrors.content = 'La lección debe tener al menos un bloque de contenido';
+    } else if (editorMode === 'wysiwyg' && !wysiwygContent.trim()) {
+      newErrors.content = 'La lección debe tener contenido';
     }
 
     if (lessonType === 'quiz' && settings.passingScore !== undefined && (settings.passingScore < 0 || settings.passingScore > 100)) {
@@ -193,11 +214,16 @@ export default function LessonBuilderPage() {
 
     setSaving(true);
     try {
+      // Prepare content based on editor mode
+      const contentToSave = editorMode === 'wysiwyg'
+        ? JSON.stringify({ editorMode: 'wysiwyg', html: wysiwygContent })
+        : JSON.stringify(content);
+
       const lessonData: Partial<DBLesson> = {
         title: title.trim(),
         description: description.trim() || undefined,
         type: lessonType,
-        content: JSON.stringify(content),
+        content: contentToSave,
         settings,
         moduleId,
         courseId,
@@ -209,7 +235,6 @@ export default function LessonBuilderPage() {
         await lessonService.update(lessonId, lessonData);
       } else {
         // Create new lesson
-        const moduleData = await moduleService.getById(moduleId);
         const existingLessons = await lessonService.getByModule(moduleId);
         
         const newLesson: Omit<DBLesson, 'id'> = {
@@ -392,21 +417,70 @@ export default function LessonBuilderPage() {
           </Card>
 
           {/* Content Editor */}
-          <div>
-            {errors.content && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
-                <p className="text-red-800">{errors.content}</p>
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Contenido de la Lección</CardTitle>
+                <div className="flex items-center gap-2 bg-gray-100 rounded-lg p-1">
+                  <button
+                    onClick={() => setEditorMode('blocks')}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                      editorMode === 'blocks'
+                        ? 'bg-white text-blue-600 shadow-sm'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    <Layers className="w-4 h-4" />
+                    Bloques
+                  </button>
+                  <button
+                    onClick={() => setEditorMode('wysiwyg')}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                      editorMode === 'wysiwyg'
+                        ? 'bg-white text-blue-600 shadow-sm'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    <Type className="w-4 h-4" />
+                    WYSIWYG
+                  </button>
+                </div>
               </div>
-            )}
-            <ContentEditor
-              initialContent={JSON.stringify(content)}
-              onSave={setContent}
-              onContentChange={handleContentChange}
-              lessonType={lessonType === 'quiz' ? 'text' : lessonType === 'texto' ? 'text' : lessonType === 'recurso' ? 'audio' : lessonType === 'tarea' ? 'text' : 'text'}
-              courseId={courseId}
-              lessonId={lessonId}
-            />
-          </div>
+              <p className="text-sm text-gray-600 mt-2">
+                {editorMode === 'blocks'
+                  ? 'Editor de bloques: añade texto, imágenes, videos y más como bloques independientes'
+                  : 'Editor WYSIWYG: escribe y formatea contenido como en un procesador de texto'
+                }
+              </p>
+            </CardHeader>
+            <CardContent>
+              {errors.content && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                  <p className="text-red-800">{errors.content}</p>
+                </div>
+              )}
+
+              {editorMode === 'blocks' ? (
+                <ContentEditor
+                  initialContent={JSON.stringify(content)}
+                  onSave={setContent}
+                  onContentChange={handleContentChange}
+                  lessonType={lessonType === 'quiz' ? 'text' : lessonType === 'texto' ? 'text' : lessonType === 'recurso' ? 'audio' : lessonType === 'tarea' ? 'text' : 'text'}
+                  courseId={courseId}
+                  lessonId={lessonId}
+                />
+              ) : (
+                <div className="min-h-[400px]">
+                  <RichTextEditor
+                    content={wysiwygContent}
+                    onChange={setWysiwygContent}
+                    placeholder="Comienza a escribir el contenido de tu lección..."
+                    className="min-h-[400px]"
+                  />
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
       )}
 

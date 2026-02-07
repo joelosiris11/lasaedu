@@ -1,5 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getDatabase, ref, set } from 'firebase/database';
+import { getAuth, connectAuthEmulator, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 
 const firebaseConfig = {
   apiKey: "demo-api-key",
@@ -11,10 +12,35 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
+const auth = getAuth(app);
+connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
 
 async function seedData() {
   console.log('Sembrando datos en Firebase Emulator...');
   const timestamp = Date.now();
+
+  // Create users in Firebase Auth first
+  const authUsers = [
+    { email: 'admin@lasaedu.com', password: 'password123' },
+    { email: 'profesor@lasaedu.com', password: 'password123' },
+    { email: 'estudiante@lasaedu.com', password: 'password123' },
+    { email: 'ana@lasaedu.com', password: 'password123' },
+    { email: 'soporte@lasaedu.com', password: 'password123' }
+  ];
+
+  for (const u of authUsers) {
+    try {
+      await createUserWithEmailAndPassword(auth, u.email, u.password);
+      await signOut(auth);
+    } catch (e) {
+      if (e.code === 'auth/email-already-in-use') {
+        console.log(`  Auth: ${u.email} ya existe, saltando...`);
+      } else {
+        console.error(`  Auth error for ${u.email}:`, e.message);
+      }
+    }
+  }
+  console.log('Usuarios Auth creados (5)');
 
   const users = {
     admin_1: { id: 'admin_1', email: 'admin@lasaedu.com', name: 'Administrador', role: 'admin', emailVerified: true, createdAt: timestamp, updatedAt: timestamp },
@@ -24,7 +50,7 @@ async function seedData() {
     support_1: { id: 'support_1', email: 'soporte@lasaedu.com', name: 'Ana Soporte', role: 'support', emailVerified: true, createdAt: timestamp, updatedAt: timestamp }
   };
   await set(ref(db, 'users'), users);
-  console.log('Usuarios creados (5)');
+  console.log('Usuarios DB creados (5)');
 
   const courses = {
     course_1: { id: 'course_1', title: 'Introduccion a Python', description: 'Aprende Python desde cero', instructor: 'Prof. Maria Garcia', instructorId: 'teacher_1', category: 'programacion', level: 'principiante', duration: '8 semanas', status: 'publicado', rating: 4.8, studentsCount: 156, createdAt: timestamp, updatedAt: timestamp },
@@ -124,8 +150,8 @@ async function seedData() {
   console.log('Actividades creadas (3)');
 
   const userPoints = {
-    student_1: { id: 'student_1', totalPoints: 425, level: 3, levelName: 'Estudiante', nextLevelPoints: 600, rank: 2, createdAt: timestamp, updatedAt: timestamp },
-    student_2: { id: 'student_2', totalPoints: 750, level: 4, levelName: 'Aplicado', nextLevelPoints: 1000, rank: 1, createdAt: timestamp, updatedAt: timestamp }
+    student_1: { id: 'student_1', userId: 'student_1', totalPoints: 425, level: 3, levelName: 'Estudiante', nextLevelPoints: 600, rank: 2, history: [], createdAt: timestamp, updatedAt: timestamp },
+    student_2: { id: 'student_2', userId: 'student_2', totalPoints: 750, level: 4, levelName: 'Aplicado', nextLevelPoints: 1000, rank: 1, history: [], createdAt: timestamp, updatedAt: timestamp }
   };
   await set(ref(db, 'userPoints'), userPoints);
   console.log('Puntos de usuario creados (2)');
@@ -142,10 +168,10 @@ async function seedData() {
   console.log('Insignias creadas (6)');
 
   const userBadges = {
-    ub_1: { id: 'ub_1', odId: 'student_1', badgeId: 'badge_1', earnedAt: new Date(timestamp - 604800000).toISOString(), notified: true, createdAt: timestamp - 604800000 },
-    ub_2: { id: 'ub_2', odId: 'student_1', badgeId: 'badge_4', earnedAt: new Date().toISOString(), notified: false, createdAt: timestamp },
-    ub_3: { id: 'ub_3', odId: 'student_2', badgeId: 'badge_1', earnedAt: new Date(timestamp - 2592000000).toISOString(), notified: true, createdAt: timestamp - 2592000000 },
-    ub_4: { id: 'ub_4', odId: 'student_2', badgeId: 'badge_3', earnedAt: new Date(timestamp - 86400000).toISOString(), notified: true, createdAt: timestamp - 86400000 }
+    ub_1: { id: 'ub_1', userId: 'student_1', badgeId: 'badge_1', earnedAt: new Date(timestamp - 604800000).toISOString(), notified: true, createdAt: timestamp - 604800000 },
+    ub_2: { id: 'ub_2', userId: 'student_1', badgeId: 'badge_4', earnedAt: new Date().toISOString(), notified: false, createdAt: timestamp },
+    ub_3: { id: 'ub_3', userId: 'student_2', badgeId: 'badge_1', earnedAt: new Date(timestamp - 2592000000).toISOString(), notified: true, createdAt: timestamp - 2592000000 },
+    ub_4: { id: 'ub_4', userId: 'student_2', badgeId: 'badge_3', earnedAt: new Date(timestamp - 86400000).toISOString(), notified: true, createdAt: timestamp - 86400000 }
   };
   await set(ref(db, 'userBadges'), userBadges);
   console.log('Insignias de usuario creadas (4)');
@@ -162,6 +188,39 @@ async function seedData() {
   systemMetrics[today.replace(/-/g, '_')] = { id: today.replace(/-/g, '_'), date: today, metrics: { activeUsers: 4, newUsers: 1, courseEnrollments: 4, lessonsCompleted: 12, evaluationsSubmitted: 2, certificatesIssued: 1, supportTickets: 2 }, createdAt: timestamp };
   await set(ref(db, 'systemMetrics'), systemMetrics);
   console.log('Metricas del sistema creadas (1)');
+
+  const forumPosts = {
+    post_1: { id: 'post_1', courseId: 'course_1', courseName: 'Introduccion a Python', authorId: 'student_1', authorName: 'Carlos Rodriguez', authorRole: 'student', title: 'Duda sobre variables en Python', content: 'No entiendo bien la diferencia entre tipos mutables e inmutables. Alguien puede explicar?', isPinned: false, isResolved: true, likesCount: 3, likedBy: ['student_2', 'teacher_1'], repliesCount: 2, views: 15, tags: ['python', 'variables'], createdAt: timestamp - 172800000, updatedAt: timestamp - 86400000 },
+    post_2: { id: 'post_2', courseId: 'course_2', courseName: 'Desarrollo Web con React', authorId: 'student_2', authorName: 'Ana Lopez', authorRole: 'student', title: 'Como usar useEffect correctamente?', content: 'Tengo problemas con las dependencias del useEffect. Mi componente se re-renderiza infinitamente.', isPinned: true, isResolved: false, likesCount: 5, likedBy: ['student_1', 'teacher_1'], repliesCount: 1, views: 28, tags: ['react', 'hooks', 'useEffect'], createdAt: timestamp - 86400000, updatedAt: timestamp - 3600000 }
+  };
+  await set(ref(db, 'forumPosts'), forumPosts);
+  console.log('Forum posts creados (2)');
+
+  const forumReplies = {
+    reply_1: { id: 'reply_1', postId: 'post_1', authorId: 'teacher_1', authorName: 'Prof. Maria Garcia', authorRole: 'teacher', content: 'Los tipos inmutables como int, str y tuple no pueden cambiar despues de crearse. Los mutables como list y dict si pueden modificarse.', isAnswer: true, likesCount: 4, likedBy: ['student_1', 'student_2'], createdAt: timestamp - 86400000, updatedAt: timestamp - 86400000 },
+    reply_2: { id: 'reply_2', postId: 'post_1', authorId: 'student_2', authorName: 'Ana Lopez', authorRole: 'student', content: 'Gracias profesora, ahora me queda mas claro!', isAnswer: false, likesCount: 1, likedBy: ['student_1'], createdAt: timestamp - 43200000, updatedAt: timestamp - 43200000 }
+  };
+  await set(ref(db, 'forumReplies'), forumReplies);
+  console.log('Forum replies creados (2)');
+
+  const progressActivities = {
+    pa_1: { id: 'pa_1', userId: 'student_1', type: 'lesson_completed', courseId: 'course_1', lessonId: 'lesson_3', details: 'Completo leccion Variables en Python', points: 10, timestamp: new Date(timestamp - 3600000).toISOString(), createdAt: timestamp - 3600000 },
+    pa_2: { id: 'pa_2', userId: 'student_2', type: 'course_completed', courseId: 'course_1', details: 'Completo curso Introduccion a Python', points: 100, timestamp: new Date(timestamp - 86400000).toISOString(), createdAt: timestamp - 86400000 }
+  };
+  await set(ref(db, 'progressActivities'), progressActivities);
+  console.log('Progress activities creados (2)');
+
+  const evaluationAttempts = {
+    attempt_1: { id: 'attempt_1', evaluationId: 'eval_1', userId: 'student_1', courseId: 'course_1', answers: [{ questionId: 'q1', answer: 'x = 5', isCorrect: true, pointsEarned: 10 }], score: 10, maxScore: 10, percentage: 100, passed: true, timeSpent: 120, startedAt: new Date(timestamp - 7200000).toISOString(), completedAt: new Date(timestamp - 7080000).toISOString(), status: 'completed', createdAt: timestamp - 7200000, updatedAt: timestamp - 7080000 }
+  };
+  await set(ref(db, 'evaluationAttempts'), evaluationAttempts);
+  console.log('Evaluation attempts creados (1)');
+
+  const userSettingsData = {
+    settings_1: { id: 'settings_1', userId: 'student_1', theme: 'light', language: 'es', timezone: 'America/Mexico_City', notifications: { email: { courseUpdates: true, grades: true, messages: true, announcements: true, marketing: false }, push: { enabled: true, courseUpdates: true, grades: true, messages: true }, sms: { enabled: false, urgentOnly: true } }, privacy: { showProfile: true, showProgress: true, showBadges: true, showActivity: true }, accessibility: { fontSize: 'medium', highContrast: false, reduceMotion: false }, createdAt: timestamp, updatedAt: timestamp }
+  };
+  await set(ref(db, 'userSettings'), userSettingsData);
+  console.log('User settings creados (1)');
 
   console.log('');
   console.log('=== BASE DE DATOS SEMBRADA EXITOSAMENTE ===');

@@ -1,23 +1,23 @@
-import { 
-  collection, 
-  doc, 
-  getDoc, 
-  getDocs, 
-  setDoc, 
-  updateDoc, 
-  query, 
-  where, 
-  orderBy,
-  addDoc
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  updateDoc,
+  query,
+  where,
+  orderBy
 } from 'firebase/firestore';
 import { db } from '@app/config/firebase';
-import type { 
-  LearningProgress, 
-  UserLearningAnalytics, 
+import type {
+  LearningProgress,
+  UserLearningAnalytics,
   CourseProgress,
   ProgressActivity,
   ProgressMilestone,
-  ProgressGoal
+  ProgressGoal,
+  AssessmentProgressSummary
 } from '@shared/types/progress';
 
 class ProgressTrackingService {
@@ -355,7 +355,7 @@ class ProgressTrackingService {
           timeSpent: lp.timeSpent,
           lastAccessedAt: lp.lastAccessedAt
         })),
-        assessmentProgress: [] // TODO: Implement assessment progress
+        assessmentProgress: [] as AssessmentProgressSummary[] // TODO: Implement assessment progress
       };
     }));
 

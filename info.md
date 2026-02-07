@@ -1,634 +1,379 @@
-# 📚 LasaEdu - Sistema de Gestión de Aprendizaje (LMS)
+# LasaEdu - Sistema de Gestion de Aprendizaje (LMS)
 
-## Documentación Técnica Completa
+## Documentacion Tecnica Completa
 
----
-
-## 📋 Índice
-
-1. [Resumen del Proyecto](#resumen-del-proyecto)
-2. [Stack Tecnológico](#stack-tecnológico)
-3. [Arquitectura del Sistema](#arquitectura-del-sistema)
-4. [Estructura de Directorios](#estructura-de-directorios)
-5. [Flujo de Datos](#flujo-de-datos)
-6. [Módulos del Sistema](#módulos-del-sistema)
-7. [Servicios y Utilidades](#servicios-y-utilidades)
-8. [Estado Actual de Completitud](#estado-actual-de-completitud)
-9. [Tareas Pendientes para 100%](#tareas-pendientes-para-100)
-10. [Guía de Desarrollo](#guía-de-desarrollo)
+**Ultima actualizacion:** Febrero 2026
 
 ---
 
-## 🎯 Resumen del Proyecto
+## Resumen del Proyecto
 
-**LasaEdu** es una plataforma LMS (Learning Management System) completa diseñada para instituciones educativas. Permite la gestión de cursos, estudiantes, profesores, evaluaciones, certificados y más.
+**LasaEdu** es una plataforma LMS completa diseñada para instituciones educativas. Permite la gestion de cursos, estudiantes, profesores, evaluaciones, certificados y mas.
 
-### Características Principales
-- 👥 **4 roles de usuario**: Admin, Teacher, Student, Support
-- 📖 **Gestión de cursos**: Creación, módulos, lecciones
-- 📝 **Evaluaciones**: Quizzes, exámenes, tareas, proyectos
-- 🏆 **Gamificación**: Puntos, insignias, rachas, leaderboard
-- 💬 **Comunicación**: Chat, canales, mensajería
-- 🎓 **Certificados**: Generación automática
-- 📊 **Analytics**: Reportes y métricas
-- 🎫 **Soporte**: Sistema de tickets
+### Caracteristicas Principales
+- **4 roles de usuario**: Admin, Teacher, Student, Support
+- **Gestion de cursos**: Creacion, modulos, lecciones
+- **Evaluaciones**: Quizzes, examenes, tareas, proyectos
+- **Gamificacion**: Puntos, insignias, rachas, leaderboard
+- **Comunicacion**: Chat, canales, mensajeria
+- **Certificados**: Generacion automatica
+- **Analytics**: Reportes y metricas
+- **Soporte**: Sistema de tickets
+- **Foros**: Posts y respuestas por curso
 
 ---
 
-## 🛠 Stack Tecnológico
+## Stack Tecnologico
 
 ### Frontend
-| Tecnología | Versión | Propósito |
-|------------|---------|-----------|
+| Tecnologia | Version | Proposito |
+|---|---|---|
 | React | 19.2.0 | UI Framework |
-| TypeScript | 5.x | Tipado estático |
+| TypeScript | 5.x | Tipado estatico |
 | Vite | 7.3.1 | Build tool |
 | TailwindCSS | 3.x | Estilos |
 | Zustand | 5.0.10 | Estado global |
-| React Router | 7.12.0 | Navegación |
+| React Router | 7.12.0 | Navegacion |
 | React Hook Form | 7.71.0 | Formularios |
-| Zod | 4.3.5 | Validación |
+| Zod | 4.3.5 | Validacion |
 | Lucide React | 0.562.0 | Iconos |
 
 ### Backend/Database
-| Tecnología | Versión | Propósito |
-|------------|---------|-----------|
+| Tecnologia | Version | Proposito |
+|---|---|---|
+| Firebase Auth | 12.7.0 | Autenticacion |
 | Firebase Realtime DB | 12.7.0 | Base de datos |
 | Firebase Storage | 12.7.0 | Almacenamiento archivos |
 | Firebase Emulator | Local | Desarrollo local |
 
 ### Testing
-| Tecnología | Propósito |
-|------------|-----------|
+| Tecnologia | Proposito |
+|---|---|
 | Vitest | Unit testing |
 | Testing Library | Component testing |
 | jsdom | DOM simulation |
 
 ---
 
-## 🏗 Arquitectura del Sistema
+## Arquitectura del Sistema
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         FRONTEND (React)                         │
-├─────────────────────────────────────────────────────────────────┤
-│  Pages/Views    │    Components    │    Hooks    │    Store     │
-│  ─────────────  │    ──────────    │    ─────    │    ─────     │
-│  • Dashboards   │    • UI (Button) │    • useDashboard          │
-│  • Courses      │    • Layout      │    • useAuth (Zustand)     │
-│  • Users        │    • Forms       │    • Custom hooks          │
-│  • Evaluations  │    • Cards       │                            │
-├─────────────────────────────────────────────────────────────────┤
-│                      SERVICE LAYER                               │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │                    dataService.ts                         │   │
-│  │  • dashboardService  • courseService  • userService      │   │
-│  │  • evaluationService • gradeService   • certificateService│   │
-│  │  • gamificationService • supportService • messageService │   │
-│  └──────────────────────────────────────────────────────────┘   │
-├─────────────────────────────────────────────────────────────────┤
-│                    DATA ABSTRACTION LAYER                        │
-│  ┌───────────────────────┐    ┌────────────────────────────┐   │
-│  │  firebaseDataService  │ OR │       localDB.ts           │   │
-│  │  (Firebase Realtime)  │    │    (localStorage mock)     │   │
-│  └───────────────────────┘    └────────────────────────────┘   │
-├─────────────────────────────────────────────────────────────────┤
-│                         DATABASE                                 │
-│  Firebase Realtime Database (Emulator: localhost:9000)          │
-└─────────────────────────────────────────────────────────────────┘
+Pages/Components
+       |
+   dataService.ts          (servicios de alto nivel)
+       |
+   firebaseDataService.ts  (CRUD bajo nivel - Firebase Realtime DB)
+       |
+   Firebase Realtime Database (Emulator: localhost:9000)
+```
+
+**Regla:** Las paginas importan de `dataService.ts`, NUNCA directamente de `firebaseDataService.ts`.
+
+### Servicios Disponibles (dataService.ts)
+
+```
+dashboardService, userService, courseService, moduleService, lessonService,
+enrollmentService, legacyEnrollmentService, evaluationService, gradeService,
+certificateService, conversationService, messageService, notificationService,
+supportTicketService, activityService, gamificationService, progressActivityService,
+userSettingsService, forumService, metricsService, dataUtils
 ```
 
 ---
 
-## 📁 Estructura de Directorios
+## Estructura de Directorios
 
 ```
 lasaedu/
-├── src/
-│   ├── app/                    # Configuración core de la app
-│   │   ├── config/
-│   │   │   └── firebase.ts     # Configuración Firebase
-│   │   ├── router/
-│   │   │   └── index.tsx       # Rutas de la aplicación
-│   │   └── store/
-│   │       └── authStore.ts    # Estado de autenticación (Zustand)
-│   │
-│   ├── modules/                # Módulos funcionales
-│   │   ├── analytics/          # Reportes y estadísticas
-│   │   ├── auth/               # Autenticación
-│   │   ├── certificates/       # Certificados
-│   │   ├── communication/      # Mensajería y chat
-│   │   ├── courses/            # Gestión de cursos
-│   │   ├── dashboard/          # Dashboards por rol
-│   │   ├── evaluations/        # Evaluaciones
-│   │   ├── gamification/       # Sistema de puntos/insignias
-│   │   ├── grades/             # Calificaciones
-│   │   ├── progress/           # Progreso del estudiante
-│   │   ├── settings/           # Configuración de usuario
-│   │   ├── support/            # Sistema de tickets
-│   │   └── users/              # Gestión de usuarios
-│   │
-│   ├── shared/                 # Recursos compartidos
-│   │   ├── components/
-│   │   │   ├── layout/         # Header, Sidebar, MainLayout
-│   │   │   └── ui/             # Button, Card, Input, Label
-│   │   ├── hooks/
-│   │   │   └── useDashboard.ts # Hooks para datos del dashboard
-│   │   ├── services/
-│   │   │   ├── dataService.ts          # Capa de abstracción unificada
-│   │   │   ├── firebaseDataService.ts  # Implementación Firebase
-│   │   │   └── seedDatabase.ts         # Semilla de datos
-│   │   ├── types/
-│   │   │   └── index.ts        # Tipos TypeScript
-│   │   └── utils/
-│   │       ├── cn.ts           # Utilidad classnames
-│   │       ├── localDB.ts      # Mock database (localStorage)
-│   │       ├── mockData.ts     # Datos de prueba
-│   │       └── storage.ts      # Utilidades de almacenamiento
-│   │
-│   ├── pages/
-│   │   └── index.ts            # Barrel exports
-│   │
-│   ├── App.tsx                 # Componente raíz
-│   ├── main.tsx                # Entry point
-│   └── index.css               # Estilos globales (Tailwind)
-│
-├── public/                     # Assets estáticos
-├── database.rules.json         # Reglas de seguridad Firebase
-├── firebase.json               # Configuración Firebase
-├── storage.rules               # Reglas de Storage
-├── seed-data.mjs               # Script de semilla
-├── package.json
-├── vite.config.ts
-├── tailwind.config.js
-└── tsconfig.json
+  src/
+    app/
+      config/firebase.ts       # Configuracion Firebase + emuladores
+      router/index.tsx          # Rutas de la aplicacion
+      store/authStore.ts        # Estado de autenticacion (Zustand)
+    modules/
+      auth/                     # Login, registro, recuperacion
+      analytics/                # ReportsPage
+      certificates/             # CertificatesPage
+      communication/            # CommunicationPage (mensajeria)
+      courses/                  # CourseCatalogPage, LessonBuilderPage, ContentEditor
+      dashboard/                # AdminDashboard, TeacherDashboard, StudentDashboard, SupportDashboard
+      enrollments/              # EnrollmentManagementPage
+      evaluations/              # EvaluationsPage, TakeEvaluationPage, EvaluationBuilderPage
+      forums/                   # ForumsPage
+      gamification/             # GamificationPage
+      grades/                   # GradesPage
+      notifications/            # NotificationSystemPage
+      progress/                 # MyProgressPage
+      settings/                 # SettingsPage
+      support/                  # SupportPage
+      users/                    # UsersPage, UserManagementPage
+    shared/
+      components/
+        layout/                 # Header, Sidebar, MainLayout
+        ui/                     # Button, Card, Input, Label
+        media/                  # VideoPlayer
+      services/
+        dataService.ts          # Capa de abstraccion unificada
+        firebaseDataService.ts  # Implementacion Firebase
+        assessmentService.ts    # Servicio de assessments (Firestore)
+        certificateGenerator.ts # Generador de certificados
+        enrollmentService.ts    # Servicio de enrollment
+        fileUploadService.ts    # Subida de archivos
+        progressTrackingService.ts # Tracking de progreso
+      types/
+        index.ts                # Tipos TypeScript principales
+        assessment.ts           # Tipos de assessments
+        progress.ts             # Tipos de progreso
+      utils/
+        cn.ts                   # Utilidad classnames
+        storage.ts              # Utilidades de almacenamiento
+  seed-data.mjs                 # Script de semilla (Auth + DB)
+  database.rules.json           # Reglas de seguridad Firebase
+  firebase.json                 # Configuracion Firebase emulators
+  storage.rules                 # Reglas de Storage
 ```
 
 ---
 
-## 🔄 Flujo de Datos
-
-### 1. Autenticación
-```
-LoginPage → authService.login() → authStore (Zustand) → localStorage
-                                          ↓
-                                   ProtectedRoute
-                                          ↓
-                              DashboardRedirect (por rol)
-```
-
-### 2. Carga de Datos (Dashboard)
-```
-Dashboard Component
-       ↓
-useDashboard hook (useSystemStats, useRecentActivity, etc.)
-       ↓
-dashboardService.getSystemStats()
-       ↓
-firebaseDataService.getUsers(), getCourses(), etc.
-       ↓
-Firebase Realtime Database (Emulator)
-```
-
-### 3. CRUD de Cursos
-```
-CoursesPage
-    ↓
-courseService.getAll() / create() / update() / delete()
-    ↓
-firebaseDataService → ref(database, 'courses')
-    ↓
-Firebase Realtime Database
-```
-
----
-
-## 📦 Módulos del Sistema
-
-### 1. **auth** - Autenticación
-**Archivos:**
-- `services/authService.ts` - Login, registro, logout
-- `components/ProtectedRoute.tsx` - Guardia de rutas
-- `pages/LoginPage.tsx` - Formulario de login
-- `pages/RegisterPage.tsx` - Registro de usuarios
-- `pages/RecoveryPage.tsx` - Recuperación de contraseña
-
-**Estado:** ⚠️ 70% - Usa usuarios mock, no Firebase Auth real
-
-### 2. **dashboard** - Paneles de Control
-**Archivos:**
-- `pages/AdminDashboard.tsx` - Vista administrador
-- `pages/TeacherDashboard.tsx` - Vista profesor
-- `pages/StudentDashboard.tsx` - Vista estudiante
-- `pages/SupportDashboard.tsx` - Vista soporte
-
-**Estado:** ✅ 90% - Conectado a Firebase, falta optimización
-
-### 3. **courses** - Gestión de Cursos
-**Archivos:**
-- `pages/CoursesPage.tsx` - Listado y CRUD de cursos
-- `pages/CourseDetailPage.tsx` - Detalle con módulos/lecciones
-- `pages/CourseCatalogPage.tsx` - Catálogo público
-
-**Estado:** ✅ 85% - CRUD funcional, falta reproductor de video
-
-### 4. **evaluations** - Evaluaciones
-**Archivos:**
-- `pages/EvaluationsPage.tsx` - Listado de evaluaciones
-- `pages/EvaluationBuilderPage.tsx` - Constructor de evaluaciones
-- `pages/TakeEvaluationPage.tsx` - Tomar evaluación
-
-**Estado:** ⚠️ 60% - Usa localDB, no migrado a Firebase
-
-### 5. **grades** - Calificaciones
-**Archivos:**
-- `pages/GradesPage.tsx` - Libro de calificaciones
-
-**Estado:** ⚠️ 50% - Interfaz básica, usa localDB
-
-### 6. **certificates** - Certificados
-**Archivos:**
-- `pages/CertificatesPage.tsx` - Gestión de certificados
-
-**Estado:** ⚠️ 40% - Mockup, sin generación PDF real
-
-### 7. **communication** - Mensajería
-**Archivos:**
-- `pages/CommunicationPage.tsx` - Chat y canales
-
-**Estado:** ⚠️ 50% - Usa localDB, sin WebSocket real-time
-
-### 8. **gamification** - Gamificación
-**Archivos:**
-- `pages/GamificationPage.tsx` - Puntos, badges, leaderboard
-
-**Estado:** ⚠️ 60% - Datos mock, no integrado con eventos reales
-
-### 9. **support** - Soporte
-**Archivos:**
-- `pages/SupportPage.tsx` - Sistema de tickets
-
-**Estado:** ⚠️ 55% - Usa localDB, falta migrar a Firebase
-
-### 10. **users** - Usuarios
-**Archivos:**
-- `pages/UsersPage.tsx` - CRUD de usuarios (solo admin)
-
-**Estado:** ⚠️ 50% - Usa localDB, no Firebase
-
-### 11. **analytics** - Reportes
-**Archivos:**
-- `pages/ReportsPage.tsx` - Dashboard de métricas
-
-**Estado:** ⚠️ 40% - Datos mock, sin gráficas reales
-
-### 12. **settings** - Configuración
-**Archivos:**
-- `pages/SettingsPage.tsx` - Perfil y preferencias
-
-**Estado:** ⚠️ 60% - Interfaz completa, persistencia parcial
-
-### 13. **progress** - Progreso
-**Archivos:**
-- `pages/MyProgressPage.tsx` - Progreso del estudiante
-
-**Estado:** ⚠️ 45% - Datos básicos, sin tracking detallado
-
----
-
-## 🔧 Servicios y Utilidades
-
-### dataService.ts (Capa de Abstracción)
-```typescript
-// Servicios disponibles:
-dashboardService    // Estadísticas del sistema
-userService         // CRUD usuarios
-courseService       // CRUD cursos
-moduleService       // CRUD módulos
-lessonService       // CRUD lecciones
-enrollmentService   // Inscripciones
-evaluationService   // Evaluaciones
-gradeService        // Calificaciones
-certificateService  // Certificados
-conversationService // Conversaciones
-messageService      // Mensajes
-notificationService // Notificaciones
-supportTicketService // Tickets de soporte
-activityService     // Log de actividades
-gamificationService // Puntos e insignias
-metricsService      // Métricas del sistema
-```
-
-### firebaseDataService.ts
-- **Colecciones:** users, courses, modules, lessons, enrollments, evaluations, grades, certificates, conversations, messages, notifications, supportTickets, activities, userPoints, badges, userBadges, learningStreaks, systemMetrics
-- **Métodos genéricos:** getAll, getById, create, update, delete, query, subscribe
-- **Métodos específicos por entidad**
-
-### localDB.ts (Mock para desarrollo)
-- Usa localStorage como persistencia
-- API compatible con Firebase
-- Útil para desarrollo offline
-
----
-
-## 📊 Estado Actual de Completitud
-
-| Módulo | Firebase | UI | Funcionalidad | Total |
-|--------|----------|-----|---------------|-------|
-| Auth | 30% | 90% | 70% | **63%** |
-| Dashboard | 95% | 95% | 90% | **93%** |
-| Courses | 90% | 85% | 80% | **85%** |
-| Course Detail | 90% | 80% | 75% | **82%** |
-| Evaluations | 20% | 80% | 50% | **50%** |
-| Grades | 20% | 70% | 40% | **43%** |
-| Certificates | 30% | 70% | 30% | **43%** |
-| Communication | 20% | 75% | 45% | **47%** |
-| Gamification | 40% | 80% | 50% | **57%** |
-| Support | 30% | 80% | 55% | **55%** |
-| Users | 20% | 85% | 50% | **52%** |
-| Analytics | 20% | 70% | 30% | **40%** |
-| Settings | 30% | 85% | 55% | **57%** |
-| Progress | 30% | 60% | 40% | **43%** |
-
-### **Promedio General: ~58%**
-
----
-
-## 🚀 Tareas Pendientes para 100%
-
-### 🔴 CRÍTICAS (Bloquean funcionalidad)
-
-#### 1. **Autenticación Real con Firebase Auth**
-```
-Archivos a modificar:
-- src/modules/auth/services/authService.ts
-- src/app/store/authStore.ts
-- src/app/config/firebase.ts
-
-Tareas:
-□ Integrar Firebase Authentication
-□ Implementar login con email/password real
-□ Añadir login social (Google, Facebook)
-□ Implementar refresh token real
-□ Verificación de email
-□ Reset de contraseña funcional
-□ Bloqueo por intentos fallidos
-```
-
-#### 2. **Migrar Módulos de localDB a Firebase**
-```
-Módulos pendientes:
-□ evaluations → evaluationService (firebaseDataService)
-□ grades → gradeService
-□ certificates → certificateService  
-□ communication → conversationService, messageService
-□ gamification → gamificationService
-□ support → supportTicketService
-□ users → userService
-□ analytics → metricsService
-□ settings → userSettingsService
-```
-
-#### 3. **Sistema de Evaluaciones Completo**
-```
-Archivos:
-- src/modules/evaluations/pages/EvaluationBuilderPage.tsx
-- src/modules/evaluations/pages/TakeEvaluationPage.tsx
-
-Tareas:
-□ Migrar a Firebase
-□ Banco de preguntas
-□ Diferentes tipos de preguntas (matching, ordering)
-□ Timer para evaluaciones
-□ Anti-trampas (cambio de pestaña, copiar/pegar)
-□ Auto-calificación
-□ Retroalimentación automática
-□ Intentos múltiples
-□ Randomización de preguntas/opciones
-```
-
-### 🟠 IMPORTANTES (Mejoran UX significativamente)
-
-#### 4. **Sistema de Notificaciones Real-time**
-```
-Tareas:
-□ Implementar Firebase Cloud Messaging
-□ Notificaciones push en navegador
-□ Centro de notificaciones en UI
-□ Preferencias de notificación
-□ Notificaciones por email (SendGrid/Firebase Extensions)
-```
-
-#### 5. **Reproductor de Contenido Multimedia**
-```
-Archivos:
-- src/modules/courses/components/VideoPlayer.tsx (crear)
-- src/modules/courses/components/PDFViewer.tsx (crear)
-
-Tareas:
-□ Integrar reproductor de video (Video.js, Plyr, o HLS.js)
-□ Soporte para YouTube/Vimeo embeds
-□ Visor de PDF integrado
-□ Tracking de progreso por video
-□ Bookmarks y notas
-```
-
-#### 6. **Generación de Certificados PDF**
-```
-Tareas:
-□ Integrar biblioteca PDF (jsPDF o pdfmake)
-□ Diseñar plantillas de certificado
-□ QR de verificación
-□ Firma digital
-□ Exportación a LinkedIn
-```
-
-#### 7. **Chat en Tiempo Real**
-```
-Tareas:
-□ Migrar a Firebase Realtime listeners
-□ Indicador de "escribiendo..."
-□ Lectura de mensajes
-□ Notificaciones de nuevos mensajes
-□ Subida de archivos/imágenes
-□ Emojis
-```
-
-#### 8. **Sistema de Gamificación Activo**
-```
-Tareas:
-□ Eventos automáticos para puntos:
-  - Completar lección (+10 pts)
-  - Completar módulo (+50 pts)
-  - Completar curso (+200 pts)
-  - Evaluación perfecta (+100 pts)
-  - Racha diaria (+5 pts)
-□ Desbloqueo automático de badges
-□ Leaderboard real con ranking
-□ Animaciones de logros
-□ Compartir logros en redes
-```
-
-### 🟡 MEJORAS (Pulido y optimización)
-
-#### 9. **Testing**
-```
-Tareas:
-□ Unit tests para servicios (>80% coverage)
-□ Integration tests para flujos principales
-□ E2E tests con Playwright
-□ Tests de accesibilidad
-```
-
-#### 10. **Optimización de Performance**
-```
-Tareas:
-□ Lazy loading de módulos
-□ Virtualización de listas largas
-□ Caché de datos con React Query o SWR
-□ Optimización de re-renders
-□ Bundle splitting
-□ Service Worker para offline
-```
-
-#### 11. **UI/UX Improvements**
-```
-Tareas:
-□ Dark mode completo
-□ Responsive design refinado
-□ Skeleton loaders
-□ Transiciones y animaciones
-□ Breadcrumbs
-□ Shortcuts de teclado
-□ Tour de onboarding
-□ Estados vacíos mejorados
-```
-
-#### 12. **Reportes y Analytics Avanzados**
-```
-Tareas:
-□ Integrar librería de gráficos (Chart.js, Recharts)
-□ Exportación a Excel/CSV
-□ Reportes programados
-□ Dashboards personalizables
-□ Métricas de engagement
-□ Predicción de abandono
-```
-
-#### 13. **Seguridad**
-```
-Tareas:
-□ Rate limiting
-□ CSRF protection
-□ Input sanitization
-□ Audit logging
-□ Roles y permisos granulares
-□ 2FA (Two-Factor Authentication)
-```
-
-#### 14. **Internacionalización (i18n)**
-```
-Tareas:
-□ Integrar react-i18next
-□ Extraer strings a archivos de traducción
-□ Soporte para español e inglés
-□ Selector de idioma
-□ Formateo de fechas/números por locale
-```
-
-#### 15. **Accesibilidad (a11y)**
-```
-Tareas:
-□ ARIA labels
-□ Navegación por teclado
-□ Alto contraste
-□ Screen reader friendly
-□ Focus management
-```
-
----
-
-## 📝 Guía de Desarrollo
-
-### Iniciar el Proyecto
+## Levantar el Proyecto
+
+### Prerequisitos
+
+- **Node.js** (v18+)
+- **Java** (OpenJDK) - necesario para Firebase Emulator
+  ```bash
+  brew install openjdk
+  # Si java no esta en PATH:
+  export PATH="/opt/homebrew/opt/openjdk/bin:$PATH"
+  # Para hacerlo permanente, agregar a ~/.zshrc
+  ```
+
+### Pasos
 
 ```bash
 # 1. Instalar dependencias
 npm install
 
-# 2. Iniciar Firebase Emulator (requiere Java 17+)
-export JAVA_HOME="/Applications/Unity/Hub/Editor/6000.2.2f1/PlaybackEngines/AndroidPlayer/OpenJDK"
-firebase emulators:start --only database
+# 2. Iniciar Firebase Emulator (terminal 1)
+export PATH="/opt/homebrew/opt/openjdk/bin:$PATH"
+npm run firebase:emulator
 
-# 3. Sembrar datos de prueba (en otra terminal)
+# 3. Sembrar datos (terminal 2, una sola vez)
 node seed-data.mjs
 
-# 4. Iniciar servidor de desarrollo
+# 4. Iniciar app (terminal 2)
 npm run dev
-
-# 5. Abrir en navegador
-open http://localhost:5173
 ```
 
-### Usuarios de Prueba
-| Email | Rol | Descripción |
-|-------|-----|-------------|
-| admin@lasaedu.com | admin | Acceso total |
-| profesor@lasaedu.com | teacher | Gestión de cursos |
-| estudiante@lasaedu.com | student | Vista estudiante |
-| ana@lasaedu.com | student | Estudiante adicional |
-| soporte@lasaedu.com | support | Atención a usuarios |
+### URLs
 
-### URLs Importantes
-- **App**: http://localhost:5173
-- **Firebase Emulator UI**: http://127.0.0.1:4000
-- **Database Emulator**: http://127.0.0.1:9000
+| Servicio | URL |
+|---|---|
+| App (Vite) | http://localhost:5173/ |
+| Firebase Emulator UI | http://127.0.0.1:4000/ |
+| Auth Emulator | http://127.0.0.1:9099 |
+| Database Emulator | http://127.0.0.1:9000 |
+| Storage Emulator | http://127.0.0.1:9199 |
 
-### Agregar Nueva Funcionalidad
+### Scripts Disponibles
 
-1. **Crear componente de página** en `src/modules/[modulo]/pages/`
-2. **Agregar ruta** en `src/app/router/index.tsx`
-3. **Crear servicio** (si es necesario) en `dataService.ts`
-4. **Agregar al sidebar** en `src/shared/components/layout/Sidebar.tsx`
-5. **Exportar** en `src/pages/index.ts`
+| Comando | Descripcion |
+|---|---|
+| `npm run dev` | Servidor de desarrollo (Vite) |
+| `npm run build` | Build de produccion (tsc + vite) |
+| `npm run lint` | Linter (eslint) |
+| `npm run test` | Tests (vitest) |
+| `npm run firebase:emulator` | Iniciar emuladores Firebase |
+| `npm run firebase:emulator:export` | Exportar datos del emulador |
+| `npm run firebase:emulator:import` | Importar datos al emulador |
 
-### Convenciones de Código
+---
+
+## Usuarios de Prueba
+
+| Email | Password | Rol | Descripcion |
+|---|---|---|---|
+| admin@lasaedu.com | password123 | admin | Acceso total |
+| profesor@lasaedu.com | password123 | teacher | Gestion de cursos |
+| estudiante@lasaedu.com | password123 | student | Vista estudiante |
+| ana@lasaedu.com | password123 | student | Estudiante adicional |
+| soporte@lasaedu.com | password123 | support | Atencion a usuarios |
+
+Los usuarios se crean tanto en **Firebase Auth** (para login) como en **Realtime Database** (para datos de perfil).
+
+---
+
+## Flujo de Datos
+
+### Autenticacion
+```
+LoginPage -> authService.login()
+  -> signInWithEmailAndPassword() (Firebase Auth)
+  -> firebaseDB.getUserByEmail() (Realtime DB)
+  -> authStore (Zustand) + localStorage
+  -> ProtectedRoute -> DashboardRedirect (por rol)
+```
+
+### CRUD General
+```
+Page Component
+  -> servicio de dataService.ts (ej: courseService.getAll())
+  -> firebaseDataService (Firebase Realtime DB)
+  -> Firebase Database Emulator
+```
+
+---
+
+## Esquema Firebase (Colecciones)
+
+| Coleccion | Descripcion |
+|---|---|
+| users | Usuarios del sistema |
+| courses | Cursos disponibles |
+| modules | Modulos de cada curso |
+| lessons | Lecciones de cada modulo |
+| enrollments | Inscripciones de estudiantes |
+| evaluations | Evaluaciones/examenes |
+| evaluationAttempts | Intentos de evaluacion |
+| grades | Calificaciones |
+| certificates | Certificados emitidos |
+| conversations | Conversaciones de mensajeria |
+| messages | Mensajes individuales |
+| notifications | Notificaciones del sistema |
+| supportTickets | Tickets de soporte |
+| activities | Registro de actividades |
+| userPoints | Puntos de gamificacion |
+| userBadges | Insignias ganadas por usuarios |
+| badges | Catalogo de insignias |
+| learningStreaks | Rachas de aprendizaje |
+| forumPosts | Posts del foro |
+| forumReplies | Respuestas del foro |
+| progressActivities | Actividades de progreso |
+| userSettings | Configuracion de usuario |
+| systemMetrics | Metricas del sistema |
+
+### Mapeos de Campos Importantes
+
+| Contexto | Campo UI/Ingles | Campo Firebase |
+|---|---|---|
+| Soporte | category: 'technical' | category: 'tecnico' |
+| Soporte | category: 'course' | category: 'academico' |
+| Soporte | category: 'payment' | category: 'pagos' |
+| Soporte | category: 'account' | category: 'cuenta' |
+| Soporte | category: 'other' | category: 'otro' |
+| Soporte | priority: 'low' | priority: 'baja' |
+| Soporte | priority: 'medium' | priority: 'media' |
+| Soporte | priority: 'high' | priority: 'alta' |
+| Soporte | priority: 'critical' | priority: 'urgente' |
+| Mensajeria | channels | conversations |
+| Mensajeria | channelId | conversationId |
+| Mensajeria | members | participants |
+| Evaluaciones | submissions | evaluationAttempts |
+
+---
+
+## Migracion Completada (Feb 2026)
+
+Se migro TODO el proyecto de `localDB` (almacenamiento local) a Firebase:
+
+### Resumen
+- **67 llamadas a localDB** reemplazadas en **13 archivos**
+- **Archivos eliminados:** `localDB.ts`, `mockData.ts`, `CertificatesPageOld.tsx`
+- **Archivos de servicio limpiados:** dead code branches removidos de `firebaseDataService.ts`
+- **Seed data actualizado:** `seed-data.mjs` ahora crea usuarios en Firebase Auth + Database
+- **~70 errores TypeScript pre-existentes** corregidos
+- **Verificacion:** `grep -r "localDB" src/` = 0 resultados, `tsc --noEmit` = 0 errores
+
+### Servicios Nuevos Agregados
+- `forumService` - CRUD de posts y replies del foro
+- `progressActivityService` - Actividades de progreso por usuario
+- `userSettingsService` - Configuracion de usuario
+
+### Archivos Migrados
+1. CourseCatalogPage.tsx
+2. CertificatesPage.tsx
+3. GamificationPage.tsx
+4. EvaluationsPage.tsx
+5. SupportPage.tsx
+6. GradesPage.tsx
+7. TakeEvaluationPage.tsx
+8. SettingsPage.tsx
+9. UsersPage.tsx
+10. ReportsPage.tsx
+11. MyProgressPage.tsx
+12. CommunicationPage.tsx
+13. ForumsPage.tsx
+
+### Errores Pre-existentes Corregidos
+- CertificatesPage: mapeo de campos DBCertificate
+- EnrollmentManagementPage: tipos, campos, variables no usadas
+- 6+ archivos: imports no usados de lucide-react y types
+- QuestionBuilder: metadata type extendido
+- assessmentService: imports y vars no usados
+- certificateGenerator: getter para _style
+- certificateGeneratorNew: params no usados prefijados
+- enrollmentService: imports no usados, withdrawalReason -> withdrawReason
+- fileUploadService: snapshot.totalBytes -> file.size
+- progressTrackingService: tipo AssessmentProgressSummary
+- VideoPlayer: @ts-expect-error para react-player types
+
+---
+
+## Convenciones de Codigo
 
 ```typescript
-// Nombres de archivos: PascalCase para componentes
+// Archivos: PascalCase para componentes
 CoursesPage.tsx
 CourseDetailPage.tsx
 
-// Nombres de variables/funciones: camelCase
+// Variables/funciones: camelCase
 const courseService = { ... }
 const handleSubmit = () => { ... }
 
-// Tipos: PascalCase con prefijo DB para entidades de base de datos
+// Tipos DB: prefijo DB
 interface DBCourse { ... }
 interface DBUser { ... }
 
 // Hooks: prefijo use
 const useSystemStats = () => { ... }
+
+// Variables no usadas: prefijo _
+const [_lesson, setLesson] = useState(...)
+const _handleCreate = async () => { ... }
 ```
 
----
+### Agregar Nueva Funcionalidad
 
-## 🔗 Referencias
-
-- [Firebase Documentation](https://firebase.google.com/docs)
-- [React Documentation](https://react.dev)
-- [Zustand Documentation](https://zustand-demo.pmnd.rs/)
-- [TailwindCSS Documentation](https://tailwindcss.com/docs)
-- [Vite Documentation](https://vitejs.dev/guide/)
+1. Crear componente de pagina en `src/modules/[modulo]/pages/`
+2. Agregar ruta en `src/app/router/index.tsx`
+3. Crear servicio (si es necesario) en `dataService.ts`
+4. Agregar al sidebar en `src/shared/components/layout/Sidebar.tsx`
+5. Exportar en `src/pages/index.ts`
 
 ---
 
-## 📞 Contacto
+## Tareas Pendientes
 
-**Proyecto:** LasaEdu LMS  
-**Versión:** 0.0.0 (Alpha)  
-**Última actualización:** Enero 2026
+### Funcionalidad
+- Login social (Google, Facebook)
+- Verificacion de email
+- 2FA (Two-Factor Authentication)
+- Reproductor de video integrado
+- Generacion de certificados PDF
+- Chat en tiempo real (Firebase listeners)
+- Gamificacion activa (eventos automaticos de puntos)
+- Notificaciones push (Firebase Cloud Messaging)
+
+### Mejoras Tecnicas
+- Testing (unit, integration, E2E)
+- Lazy loading de modulos
+- Cache de datos (React Query/SWR)
+- Dark mode
+- Internacionalizacion (i18n)
+- Accesibilidad (a11y)
+- Graficos en reportes (Chart.js/Recharts)
+- Exportacion a Excel/CSV
 
 ---
 
-*Este documento se actualizará conforme avance el desarrollo del proyecto.*
+*Este documento se actualizara conforme avance el desarrollo del proyecto.*

@@ -71,9 +71,6 @@ export const useAuthStore = create<AuthStore>()(
             };
 
             set({ user, session, isAuthenticated: true, isLoading: false });
-
-            // Also save to localStorage for backward compatibility
-            localStorage.setItem('userRole', user.role);
           } catch (error: any) {
             // Map Firebase Auth error messages to Spanish
             let errorMessage = 'Error al iniciar sesión';
@@ -100,12 +97,10 @@ export const useAuthStore = create<AuthStore>()(
           set({ isLoading: true });
           try {
             await authService.logout();
-            localStorage.removeItem('userRole');
             set({ user: null, session: null, isAuthenticated: false, isLoading: false, error: null });
           } catch (error: any) {
             console.error('Logout error:', error);
             // Force local cleanup anyway
-            localStorage.removeItem('userRole');
             set({ user: null, session: null, isAuthenticated: false, isLoading: false, error: null });
           }
         },
@@ -133,9 +128,6 @@ export const useAuthStore = create<AuthStore>()(
             };
 
             set({ user, session, isAuthenticated: true, isLoading: false });
-
-            // Also save to localStorage for backward compatibility
-            localStorage.setItem('userRole', user.role);
           } catch (error: any) {
             // Map Firebase Auth error messages to Spanish
             let errorMessage = 'Error al registrarse';
@@ -234,7 +226,6 @@ export const useAuthStore = create<AuthStore>()(
                     };
 
                     set({ user, session, isAuthenticated: true, initialized: true });
-                    localStorage.setItem('userRole', user.role);
                   }
                 } catch (error) {
                   console.error('Error fetching user data:', error);
@@ -247,7 +238,6 @@ export const useAuthStore = create<AuthStore>()(
               // User is signed out
               const wasAuthenticated = get().isAuthenticated;
               if (wasAuthenticated) {
-                localStorage.removeItem('userRole');
                 set({ user: null, session: null, isAuthenticated: false, initialized: true });
               } else {
                 set({ initialized: true });

@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '@app/store/authStore';
 import { courseService, evaluationService, enrollmentService } from '@shared/services/dataService';
-import { firebaseDB } from '@shared/services/firebaseDataService';
 import { 
   BookOpen,
   Search,
@@ -44,14 +43,6 @@ interface Submission {
   submittedAt: string;
   gradedAt?: string;
   feedback?: string;
-}
-
-interface Enrollment {
-  id: string;
-  courseId: string;
-  studentId: string;
-  studentName: string;
-  status: string;
 }
 
 interface StudentGrade {
@@ -153,8 +144,21 @@ export default function GradesPage() {
         }));
       }
 
-      // Get all submissions from Firebase
-      const allSubmissions = await firebaseDB.getAll<Submission>('submissions');
+      // Get all submissions (evaluation attempts) from Firebase
+      const allAttempts = await Promise.all(
+        courseEvaluations.map(e => evaluationService.getAttemptsByEvaluation(e.id))
+      );
+      const allSubmissions: Submission[] = allAttempts.flat().map(a => ({
+        id: a.id,
+        evaluationId: a.evaluationId,
+        userId: a.userId,
+        userName: '',
+        score: a.score,
+        totalPoints: a.maxScore,
+        percentage: a.percentage,
+        submittedAt: a.completedAt,
+        feedback: a.feedback,
+      }));
 
       // Calculate grades for each student
       const grades: StudentGrade[] = students.map(student => {

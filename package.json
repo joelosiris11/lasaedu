@@ -14,7 +14,9 @@
     "test:coverage": "vitest run --coverage",
     "firebase:emulator": "firebase emulators:start --project demo-project",
     "firebase:emulator:export": "firebase emulators:export ./firebase-data --project demo-project",
-    "firebase:emulator:import": "firebase emulators:start --project demo-project --import ./firebase-data"
+    "firebase:emulator:import": "firebase emulators:start --project demo-project --import ./firebase-data",
+    "deploy": "npm run build && firebase deploy --only hosting",
+    "deploy:preview": "npm run build && firebase hosting:channel:deploy preview"
   },
   "dependencies": {
     "@headlessui/react": "^2.2.9",
@@ -22,6 +24,14 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.1",
     "@testing-library/user-event": "^14.6.1",
+    "@tiptap/extension-image": "^3.19.0",
+    "@tiptap/extension-link": "^3.19.0",
+    "@tiptap/extension-placeholder": "^3.19.0",
+    "@tiptap/extension-text-align": "^3.19.0",
+    "@tiptap/extension-youtube": "^3.19.0",
+    "@tiptap/pm": "^3.19.0",
+    "@tiptap/react": "^3.19.0",
+    "@tiptap/starter-kit": "^3.19.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/react-router-dom": "^5.3.3",

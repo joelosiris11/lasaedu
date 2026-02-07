@@ -90,8 +90,8 @@ class FileUploadService {
       if (onProgress) {
         onProgress({
           percent: 100,
-          bytesTransferred: snapshot.totalBytes,
-          totalBytes: snapshot.totalBytes
+          bytesTransferred: file.size,
+          totalBytes: file.size
         });
       }
 

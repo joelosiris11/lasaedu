@@ -12,7 +12,6 @@ import {
   BookOpen,
   Award,
   CheckCircle,
-  XCircle,
   Download
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@shared/components/ui/Card';
@@ -36,20 +35,20 @@ interface UserFormData {
 }
 
 export default function UserManagementPage() {
-  const { user } = useAuthStore();
+  const { user: _user } = useAuthStore();
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<UserWithStats[]>([]);
-  const [courses, setCourses] = useState<DBCourse[]>([]);
-  const [enrollments, setEnrollments] = useState<DBEnrollment[]>([]);
+  const [_courses, setCourses] = useState<DBCourse[]>([]);
+  const [_enrollments, setEnrollments] = useState<DBEnrollment[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [statusFilter, _setStatusFilter] = useState('all');
   const [sortBy, setSortBy] = useState<'name' | 'email' | 'role' | 'created' | 'lastActivity'>('created');
   const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [editingUser, setEditingUser] = useState<UserWithStats | null>(null);
-  const [formData, setFormData] = useState<UserFormData>({
+  const [_showCreateModal, setShowCreateModal] = useState(false);
+  const [_showEditModal, setShowEditModal] = useState(false);
+  const [, setEditingUser] = useState<UserWithStats | null>(null);
+  const [, setFormData] = useState<UserFormData>({
     name: '',
     email: '',
     role: 'student',
@@ -95,96 +94,6 @@ export default function UserManagementPage() {
       console.error('Error loading user data:', error);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleCreateUser = async () => {
-    if (!formData.name || !formData.email) {
-      alert('Por favor completa los campos obligatorios');
-      return;
-    }
-
-    try {
-      const newUser: Omit<DBUser, 'id'> = {
-        email: formData.email.trim(),
-        name: formData.name.trim(),
-        role: formData.role,
-        emailVerified: false,
-        loginAttempts: 0,
-        profile: {
-          phone: formData.phone || undefined,
-          bio: formData.bio || undefined,
-          avatar: formData.avatar || undefined
-        },
-        preferences: {
-          language: 'es',
-          timezone: 'UTC',
-          notifications: {
-            email: true,
-            push: false,
-            sms: false,
-            marketing: false
-          },
-          privacy: {
-            showProfile: true,
-            showProgress: true,
-            showBadges: true
-          }
-        },
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        lastActive: Date.now()
-      };
-
-      await userService.create(newUser);
-      await loadData();
-      
-      // Reset form and close modal
-      setFormData({
-        name: '',
-        email: '',
-        role: 'student',
-        password: '',
-        phone: '',
-        bio: '',
-        avatar: ''
-      });
-      setShowCreateModal(false);
-    } catch (error) {
-      console.error('Error creating user:', error);
-      alert('Error al crear el usuario');
-    }
-  };
-
-  const handleEditUser = async () => {
-    if (!editingUser || !formData.name || !formData.email) {
-      alert('Por favor completa los campos obligatorios');
-      return;
-    }
-
-    try {
-      const updatedUser: Partial<DBUser> = {
-        name: formData.name,
-        email: formData.email,
-        role: formData.role,
-        profile: {
-          ...editingUser.profile,
-          phone: formData.phone || undefined,
-          bio: formData.bio || undefined,
-          avatar: formData.avatar || undefined
-        },
-        updatedAt: Date.now()
-      };
-
-      await userService.update(editingUser.id, updatedUser);
-      await loadData();
-      
-      setShowEditModal(false);
-      setEditingUser(null);
-      
-    } catch (error) {
-      console.error('Error updating user:', error);
-      alert('Error al actualizar el usuario');
     }
   };
 

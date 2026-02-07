@@ -4,22 +4,18 @@ import { useAuthStore } from '@app/store/authStore';
 import { assessmentService } from '@shared/services/assessmentService';
 import { courseService } from '@shared/services/dataService';
 import type { Assessment, Question, AssessmentType } from '@shared/types/assessment';
-// import QuestionBuilder from '../components/QuestionBuilder';
-import { 
+import QuestionBuilder from '../components/QuestionBuilder';
+import {
   ArrowLeft,
-  Plus, 
+  Plus,
   Trash2,
   Save,
   Eye,
   Settings,
   ListChecks,
   Clock,
-  AlertCircle,
   Edit,
   Play,
-  Calendar,
-  Users,
-  Target,
   BarChart3
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@shared/components/ui/Card';
@@ -114,21 +110,18 @@ export default function EvaluationBuilderPage() {
         const existingAssessment = await assessmentService.getAssessment(evaluationId);
         if (existingAssessment) {
           setAssessment(existingAssessment);
-          // TODO: Load actual questions from question bank
-          const mockQuestions: Question[] = existingAssessment.questions.map((aq, index) => ({
-            id: aq.questionId,
-            type: 'single_choice',
-            question: `Pregunta de ejemplo ${index + 1}`,
-            options: [
-              { id: '1', text: 'Opción A', isCorrect: true },
-              { id: '2', text: 'Opción B', isCorrect: false }
-            ],
-            correctAnswer: '1',
-            points: aq.points,
-            difficulty: 'medium',
-            tags: []
-          }));
-          setQuestions(mockQuestions);
+
+          // Load questions from questionData if available
+          if (existingAssessment.questionData) {
+            const loadedQuestions: Question[] = existingAssessment.questions
+              .sort((a, b) => a.order - b.order)
+              .map(aq => existingAssessment.questionData![aq.questionId])
+              .filter((q): q is Question => q !== undefined);
+            setQuestions(loadedQuestions);
+          } else {
+            // Fallback for old assessments without questionData
+            setQuestions([]);
+          }
         }
       }
     } catch (error) {
@@ -184,6 +177,11 @@ export default function EvaluationBuilderPage() {
           points: question.points,
           required: true
         })),
+        // Store full question data indexed by questionId
+        questionData: questions.reduce((acc, q) => {
+          acc[q.id] = q;
+          return acc;
+        }, {} as Record<string, typeof questions[0]>),
         settings: assessment.settings!,
         grading: assessment.grading!,
         createdBy: user!.id,
@@ -214,21 +212,6 @@ export default function EvaluationBuilderPage() {
     await handleSave();
   };
 
-  const handleQuestionSave = (question: Question) => {
-    if (editingQuestion) {
-      setQuestions(prev => prev.map(q => q.id === question.id ? question : q));
-    } else {
-      setQuestions(prev => [...prev, question]);
-    }
-    setShowQuestionBuilder(false);
-    setEditingQuestion(undefined);
-    
-    // Clear questions error if questions now exist
-    if (errors.questions) {
-      setErrors(prev => ({ ...prev, questions: '' }));
-    }
-  };
-
   const handleEditQuestion = (question: Question) => {
     setEditingQuestion(question);
     setShowQuestionBuilder(true);
@@ -238,6 +221,11 @@ export default function EvaluationBuilderPage() {
     if (confirm('¿Estás seguro de eliminar esta pregunta?')) {
       setQuestions(prev => prev.filter(q => q.id !== questionId));
     }
+  };
+
+  const handleAddQuestion = () => {
+    setEditingQuestion(undefined);
+    setShowQuestionBuilder(true);
   };
 
   const getTotalPoints = () => {
@@ -269,16 +257,47 @@ export default function EvaluationBuilderPage() {
     );
   }
 
+  const handleQuestionSave = (question: Question) => {
+    if (editingQuestion) {
+      // Update existing question
+      setQuestions(prev => prev.map(q => q.id === question.id ? question : q));
+    } else {
+      // Add new question
+      setQuestions(prev => [...prev, question]);
+    }
+    setShowQuestionBuilder(false);
+    setEditingQuestion(undefined);
+
+    // Clear questions error if questions now exist
+    if (errors.questions) {
+      setErrors(prev => ({ ...prev, questions: '' }));
+    }
+  };
+
+  const handleQuestionCancel = () => {
+    setShowQuestionBuilder(false);
+    setEditingQuestion(undefined);
+  };
+
   if (showQuestionBuilder) {
     return (
       <div className="max-w-4xl mx-auto p-6">
-        <div className="text-center py-12">
-          <h2 className="text-xl font-semibold mb-4">Constructor de Preguntas</h2>
-          <p className="text-gray-600 mb-6">Esta funcionalidad estará disponible próximamente</p>
-          <Button onClick={() => setShowQuestionBuilder(false)}>
-            Volver
+        <div className="mb-4">
+          <Button
+            variant="ghost"
+            onClick={handleQuestionCancel}
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Volver a la Evaluación
           </Button>
         </div>
+        <QuestionBuilder
+          question={editingQuestion}
+          onSave={handleQuestionSave}
+          onCancel={handleQuestionCancel}
+          courseId={assessment.courseId}
+          assessmentId={evaluationId}
+        />
       </div>
     );
   }
@@ -456,7 +475,7 @@ export default function EvaluationBuilderPage() {
                 {questions.length} preguntas • Total: {getTotalPoints()} puntos
               </p>
             </div>
-            <Button onClick={() => setShowQuestionBuilder(true)}>
+            <Button onClick={handleAddQuestion}>
               <Plus className="w-4 h-4 mr-2" />
               Agregar Pregunta
             </Button>
@@ -479,7 +498,7 @@ export default function EvaluationBuilderPage() {
                   <p className="text-gray-600 mb-6">
                     Agrega preguntas para comenzar a crear tu evaluación
                   </p>
-                  <Button onClick={() => setShowQuestionBuilder(true)}>
+                  <Button onClick={handleAddQuestion}>
                     <Plus className="w-4 h-4 mr-2" />
                     Crear Primera Pregunta
                   </Button>

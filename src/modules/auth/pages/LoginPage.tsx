@@ -134,11 +134,8 @@ export default function LoginPage() {
                 <Link to="/recovery" className="text-muted-foreground hover:text-primary hover:underline">
                     ¿Olvidaste tu contraseña?
                 </Link>
-                <div className="text-muted-foreground">
-                    ¿No tienes cuenta?{' '}
-                    <Link to="/register" className="text-primary hover:underline">
-                        Regístrate
-                    </Link>
+                <div className="text-xs text-muted-foreground">
+                    ¿Necesitas acceso? Contacta al administrador.
                 </div>
             </div>
             

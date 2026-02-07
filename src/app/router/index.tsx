@@ -1,4 +1,5 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom';
+import { useAuthStore } from '@app/store/authStore';
 import {
   LoginPage,
   RegisterPage,
@@ -59,24 +60,13 @@ const UnauthorizedPage = () => (
 
 // Componente para redirigir al dashboard apropiado según el rol
 const DashboardRedirect = () => {
-  // Intentar obtener el rol del usuario desde el auth-storage persistido
-  let userRole = null;
-  try {
-    const authStorage = localStorage.getItem('auth-storage');
-    if (authStorage) {
-      const parsed = JSON.parse(authStorage);
-      userRole = parsed?.state?.user?.role;
-    }
-  } catch (e) {
-    console.error('Error reading auth storage:', e);
+  const { user, isAuthenticated } = useAuthStore();
+
+  if (!isAuthenticated || !user) {
+    return <Navigate to="/login" replace />;
   }
-  
-  // Fallback al localStorage directo
-  if (!userRole) {
-    userRole = localStorage.getItem('userRole');
-  }
-  
-  switch (userRole) {
+
+  switch (user.role) {
     case 'admin':
       return <AdminDashboard />;
     case 'teacher':

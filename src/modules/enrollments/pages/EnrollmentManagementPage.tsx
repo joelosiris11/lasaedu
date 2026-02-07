@@ -36,18 +36,24 @@ export default function EnrollmentManagementPage() {
   const { user } = useAuthStore();
   const [loading, setLoading] = useState(true);
   const [enrollments, setEnrollments] = useState<EnrollmentData[]>([]);
-  const [users, setUsers] = useState<DBUser[]>([]);
+  const [students, setStudents] = useState<DBUser[]>([]);
   const [courses, setCourses] = useState<DBCourse[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [courseFilter, setCourseFilter] = useState<string>('all');
   const [selectedEnrollments, setSelectedEnrollments] = useState<Set<string>>(new Set());
+  const [showEnrollModal, setShowEnrollModal] = useState(false);
+  const [enrollFormData, setEnrollFormData] = useState({ userId: '', courseId: '' });
+
+  const isAdmin = user?.role === 'admin';
+  const isTeacher = user?.role === 'teacher';
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [user]);
 
   const loadData = async () => {
+    if (!user) return;
     setLoading(true);
     try {
       // Load all data in parallel
@@ -57,20 +63,37 @@ export default function EnrollmentManagementPage() {
         dataService.courses.getAll()
       ]);
 
+      // Filter courses for teachers - only their own courses
+      let filteredCourses = coursesData;
+      if (isTeacher) {
+        filteredCourses = coursesData.filter(c => c.instructorId === user.id);
+      }
+
+      // Get course IDs that this user can manage
+      const managedCourseIds = new Set(filteredCourses.map(c => c.id));
+
       // Create lookup maps for faster access
       const usersMap = new Map(usersData.map(u => [u.id, u]));
       const coursesMap = new Map(coursesData.map(c => [c.id, c]));
 
+      // Filter enrollments - teachers only see enrollments in their courses
+      const filteredEnrollments = enrollmentsData.filter(e =>
+        isAdmin || managedCourseIds.has(e.courseId)
+      );
+
       // Enrich enrollments with user and course data
-      const enrichedEnrollments: EnrollmentData[] = enrollmentsData.map(enrollment => ({
+      const enrichedEnrollments: EnrollmentData[] = filteredEnrollments.map(enrollment => ({
         ...enrollment,
         user: usersMap.get(enrollment.userId),
         course: coursesMap.get(enrollment.courseId)
       }));
 
+      // Get only students for the enrollment modal
+      const studentUsers = usersData.filter(u => u.role === 'student');
+
       setEnrollments(enrichedEnrollments);
-      setUsers(usersData);
-      setCourses(coursesData);
+      setStudents(studentUsers);
+      setCourses(filteredCourses);
     } catch (error) {
       console.error('Error loading enrollment data:', error);
     } finally {
@@ -124,22 +147,48 @@ export default function EnrollmentManagementPage() {
     }
   };
 
-  const createManualEnrollment = async (userId: string, courseId: string) => {
+  const createManualEnrollment = async () => {
+    if (!enrollFormData.userId || !enrollFormData.courseId) {
+      alert('Selecciona un estudiante y un curso');
+      return;
+    }
+
+    // Check if already enrolled
+    const existingEnrollment = enrollments.find(
+      e => e.userId === enrollFormData.userId && e.courseId === enrollFormData.courseId
+    );
+    if (existingEnrollment) {
+      alert('El estudiante ya está inscrito en este curso');
+      return;
+    }
+
     try {
       const newEnrollment = {
-        id: `enrollment_${Date.now()}`,
-        userId,
-        courseId,
-        status: 'active',
-        enrolledAt: Date.now(),
-        lastUpdated: Date.now(),
+        userId: enrollFormData.userId,
+        courseId: enrollFormData.courseId,
+        status: 'active' as const,
+        enrolledAt: new Date().toISOString(),
         progress: 0,
-        source: 'manual'
+        completedLessons: [] as string[],
+        completedModules: [] as string[],
+        totalTimeSpent: 0,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
       };
 
       await dataService.enrollments.create(newEnrollment);
+
+      // Update course student count
+      const course = courses.find(c => c.id === enrollFormData.courseId);
+      if (course) {
+        await dataService.courses.update(enrollFormData.courseId, {
+          studentsCount: (course.studentsCount || 0) + 1
+        });
+      }
+
       await loadData(); // Reload to get enriched data
-      
+      setShowEnrollModal(false);
+      setEnrollFormData({ userId: '', courseId: '' });
       alert('Inscripción creada exitosamente');
     } catch (error) {
       console.error('Error creating manual enrollment:', error);
@@ -156,7 +205,7 @@ export default function EnrollmentManagementPage() {
       'Estado': enrollment.status,
       'Progreso': `${enrollment.progress || 0}%`,
       'Fecha Inscripción': new Date(enrollment.enrolledAt).toLocaleDateString('es-ES'),
-      'Última Actualización': new Date(enrollment.lastUpdated || enrollment.enrolledAt).toLocaleDateString('es-ES')
+      'Última Actualización': new Date(enrollment.updatedAt || enrollment.enrolledAt).toLocaleDateString('es-ES')
     }));
 
     const csv = [
@@ -228,9 +277,14 @@ export default function EnrollmentManagementPage() {
     <div className="max-w-7xl mx-auto p-6">
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Gestión de Inscripciones</h1>
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">
+          {isTeacher ? 'Inscripciones de Mis Cursos' : 'Gestión de Inscripciones'}
+        </h1>
         <p className="text-gray-600">
-          Administra las inscripciones de estudiantes a cursos
+          {isTeacher
+            ? 'Administra las inscripciones de estudiantes en tus cursos'
+            : 'Administra las inscripciones de estudiantes a cursos'
+          }
         </p>
       </div>
 
@@ -444,18 +498,18 @@ export default function EnrollmentManagementPage() {
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                         enrollment.status === 'completed' ? 'bg-green-100 text-green-800' :
                         enrollment.status === 'active' ? 'bg-blue-100 text-blue-800' :
-                        enrollment.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                        enrollment.status === 'dropped' ? 'bg-red-100 text-red-800' :
+                        (enrollment.status as string) === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                        (enrollment.status as string) === 'dropped' ? 'bg-red-100 text-red-800' :
                         'bg-gray-100 text-gray-800'
                       }`}>
                         {enrollment.status === 'completed' && <CheckCircle className="w-3 h-3 mr-1" />}
                         {enrollment.status === 'active' && <Clock className="w-3 h-3 mr-1" />}
-                        {enrollment.status === 'pending' && <AlertTriangle className="w-3 h-3 mr-1" />}
-                        {enrollment.status === 'dropped' && <XCircle className="w-3 h-3 mr-1" />}
+                        {(enrollment.status as string) === 'pending' && <AlertTriangle className="w-3 h-3 mr-1" />}
+                        {(enrollment.status as string) === 'dropped' && <XCircle className="w-3 h-3 mr-1" />}
                         {enrollment.status === 'completed' ? 'Completada' :
                          enrollment.status === 'active' ? 'Activa' :
-                         enrollment.status === 'pending' ? 'Pendiente' :
-                         enrollment.status === 'dropped' ? 'Abandonada' :
+                         (enrollment.status as string) === 'pending' ? 'Pendiente' :
+                         (enrollment.status as string) === 'dropped' ? 'Abandonada' :
                          enrollment.status}
                       </span>
                     </td>
@@ -520,7 +574,7 @@ export default function EnrollmentManagementPage() {
               <p className="text-sm text-gray-600 mb-3">
                 Inscribe manualmente a un estudiante en un curso
               </p>
-              <Button size="sm" variant="outline">
+              <Button size="sm" variant="outline" onClick={() => setShowEnrollModal(true)}>
                 Inscribir Estudiante
               </Button>
             </div>
@@ -549,6 +603,68 @@ export default function EnrollmentManagementPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Enrollment Modal */}
+      {showEnrollModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <h3 className="text-lg font-semibold mb-4">Inscribir Estudiante</h3>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Estudiante
+                </label>
+                <select
+                  value={enrollFormData.userId}
+                  onChange={(e) => setEnrollFormData({ ...enrollFormData, userId: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Selecciona un estudiante</option>
+                  {students.map(student => (
+                    <option key={student.id} value={student.id}>
+                      {student.name} ({student.email})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Curso
+                </label>
+                <select
+                  value={enrollFormData.courseId}
+                  onChange={(e) => setEnrollFormData({ ...enrollFormData, courseId: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Selecciona un curso</option>
+                  {courses.map(course => (
+                    <option key={course.id} value={course.id}>
+                      {course.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowEnrollModal(false);
+                  setEnrollFormData({ userId: '', courseId: '' });
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button onClick={createManualEnrollment}>
+                Inscribir
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

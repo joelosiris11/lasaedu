@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@app/store/authStore';
-import { 
-  Home, 
-  BookOpen, 
-  Users, 
-  Settings, 
-  HelpCircle, 
-  LogOut, 
-  Menu, 
+import {
+  Home,
+  BookOpen,
+  Users,
+  Settings,
+  HelpCircle,
+  LogOut,
+  Menu,
   X,
   FileText,
   BarChart3,
@@ -19,7 +19,10 @@ import {
   ClipboardList,
   Compass,
   TrendingUp,
-  MessageSquare
+  MessageSquare,
+  UserCog,
+  Bell,
+  UserPlus
 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import type { UserRole } from '@shared/types';
@@ -32,19 +35,41 @@ interface SidebarItem {
 }
 
 const sidebarItems: SidebarItem[] = [
+  // Todos los roles
   { icon: Home, label: 'Dashboard', path: '/dashboard' },
+
+  // Admin: gestión completa
+  { icon: UserCog, label: 'Gestión Usuarios', path: '/user-management', roles: ['admin'] },
+  { icon: Users, label: 'Usuarios', path: '/users', roles: ['admin'] },
+  { icon: UserPlus, label: 'Inscripciones', path: '/enrollments', roles: ['admin', 'teacher'] },
+  { icon: Bell, label: 'Notificaciones', path: '/notifications', roles: ['admin', 'teacher'] },
+
+  // Cursos y catálogo
   { icon: Compass, label: 'Catálogo', path: '/catalog', roles: ['admin', 'teacher', 'student'] },
   { icon: BookOpen, label: 'Cursos', path: '/courses', roles: ['admin', 'teacher', 'student'] },
+
+  // Solo estudiantes
   { icon: TrendingUp, label: 'Mi Progreso', path: '/progress', roles: ['student'] },
-  { icon: Users, label: 'Usuarios', path: '/users', roles: ['admin'] },
+
+  // Evaluaciones y calificaciones
   { icon: FileText, label: 'Evaluaciones', path: '/evaluations', roles: ['admin', 'teacher', 'student'] },
   { icon: ClipboardList, label: 'Calificaciones', path: '/grades', roles: ['admin', 'teacher', 'student'] },
+
+  // Certificados y gamificación
   { icon: Award, label: 'Certificados', path: '/certificates', roles: ['admin', 'teacher', 'student'] },
   { icon: Trophy, label: 'Gamificación', path: '/gamification', roles: ['admin', 'teacher', 'student'] },
+
+  // Reportes (solo admin y teacher)
   { icon: BarChart3, label: 'Reportes', path: '/reports', roles: ['admin', 'teacher'] },
+
+  // Comunicación
   { icon: MessageCircle, label: 'Comunicación', path: '/communication', roles: ['admin', 'teacher', 'student'] },
   { icon: MessageSquare, label: 'Foros', path: '/forums', roles: ['admin', 'teacher', 'student'] },
+
+  // Soporte
   { icon: HelpCircle, label: 'Soporte', path: '/support', roles: ['admin', 'support', 'student', 'teacher'] },
+
+  // Configuración (todos)
   { icon: Settings, label: 'Configuración', path: '/settings' },
 ];
 

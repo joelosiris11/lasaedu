@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { useAuthStore } from '@app/store/authStore';
-import { Bell, Search, User, ChevronDown } from 'lucide-react';
+import { Search, User, ChevronDown } from 'lucide-react';
 import { Button } from '../ui/Button';
+import { NotificationCenter } from './NotificationCenter';
 
 export const Header = () => {
   const { user } = useAuthStore();
-  const [showNotifications, setShowNotifications] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
 
   return (
@@ -25,48 +25,8 @@ export const Header = () => {
 
         {/* Right Side: Notifications + Profile */}
         <div className="flex items-center space-x-4">
-          {/* Notifications */}
-          <div className="relative">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowNotifications(!showNotifications)}
-              className="relative"
-            >
-              <Bell className="h-5 w-5" />
-              {/* Notification badge */}
-              <span className="absolute -top-1 -right-1 h-4 w-4 bg-red-500 rounded-full text-xs text-white flex items-center justify-center">
-                3
-              </span>
-            </Button>
-
-            {/* Notifications Dropdown */}
-            {showNotifications && (
-              <div className="absolute right-0 mt-2 w-80 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
-                <div className="p-3 border-b border-gray-200">
-                  <h3 className="font-semibold text-gray-800">Notificaciones</h3>
-                </div>
-                <div className="max-h-64 overflow-y-auto">
-                  {[
-                    { id: 1, title: 'Nueva tarea asignada', message: 'Tienes una nueva evaluación en React Avanzado', time: '2 min' },
-                    { id: 2, title: 'Calificación disponible', message: 'Tu examen de JavaScript ha sido calificado', time: '1h' },
-                    { id: 3, title: 'Recordatorio', message: 'La sesión en vivo comienza en 30 minutos', time: '2h' }
-                  ].map((notif) => (
-                    <div key={notif.id} className="p-3 border-b border-gray-100 hover:bg-gray-50 cursor-pointer">
-                      <div className="text-sm font-medium text-gray-800">{notif.title}</div>
-                      <div className="text-xs text-gray-600 mt-1">{notif.message}</div>
-                      <div className="text-xs text-gray-400 mt-1">{notif.time}</div>
-                    </div>
-                  ))}
-                </div>
-                <div className="p-3 border-t border-gray-200">
-                  <button className="w-full text-sm text-blue-600 hover:text-blue-800">
-                    Ver todas las notificaciones
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+          {/* Notifications - Real-time component */}
+          <NotificationCenter />
 
           {/* Profile Dropdown */}
           <div className="relative">

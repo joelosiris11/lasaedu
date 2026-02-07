@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import {
   Plus,
   X,
@@ -92,12 +92,12 @@ const DIFFICULTY_LEVELS = [
   { value: 'hard', label: 'Difícil', color: 'text-red-600' }
 ];
 
-export default function QuestionBuilder({ 
-  question, 
-  onSave, 
+export default function QuestionBuilder({
+  question,
+  onSave,
   onCancel,
-  courseId,
-  assessmentId 
+  courseId: _courseId,
+  assessmentId: _assessmentId
 }: QuestionBuilderProps) {
   const [questionData, setQuestionData] = useState<Partial<Question>>(question || {
     type: 'single_choice',
@@ -115,7 +115,6 @@ export default function QuestionBuilder({
   const [showPreview, setShowPreview] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [tagInput, setTagInput] = useState('');
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const validateQuestion = (): boolean => {
     const newErrors: Record<string, string> = {};

@@ -27,6 +27,8 @@
  * - progressActivities: Actividades de progreso
  * - userSettings: Configuraciones de usuario
  * - systemMetrics: Métricas del sistema
+ * - forumPosts: Publicaciones del foro
+ * - forumReplies: Respuestas del foro
  */
 
 import { database } from '@app/config/firebase';
@@ -44,11 +46,6 @@ import {
   off,
   DataSnapshot
 } from 'firebase/database';
-import { localDB } from '@shared/utils/localDB';
-import { isUsingEmulator } from '@app/config/firebase';
-
-// Usar Firebase siempre (base de datos real)
-const USE_FIREBASE = true;
 
 // ============================================
 // INTERFACES DE DATOS - Todas las colecciones
@@ -536,13 +533,54 @@ export interface DBSystemMetric {
   createdAt: number;
 }
 
+// Publicación del foro
+export interface DBForumPost {
+  id: string;
+  courseId: string;
+  courseName: string;
+  moduleId?: string;
+  moduleName?: string;
+  lessonId?: string;
+  lessonName?: string;
+  authorId: string;
+  authorName: string;
+  authorRole: 'student' | 'teacher' | 'admin';
+  authorAvatar?: string;
+  title: string;
+  content: string;
+  isPinned: boolean;
+  isResolved: boolean;
+  likesCount: number;
+  likedBy: string[];
+  repliesCount: number;
+  views: number;
+  tags: string[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+// Respuesta del foro
+export interface DBForumReply {
+  id: string;
+  postId: string;
+  parentReplyId?: string;
+  authorId: string;
+  authorName: string;
+  authorRole: 'student' | 'teacher' | 'admin';
+  authorAvatar?: string;
+  content: string;
+  isAnswer: boolean;
+  likesCount: number;
+  likedBy: string[];
+  createdAt: number;
+  updatedAt: number;
+}
+
 // ============================================
 // SERVICIO DE DATOS FIREBASE
 // ============================================
 
 class FirebaseDataService {
-  private useFirebase = USE_FIREBASE;
-
   // ============================================
   // MÉTODOS GENÉRICOS CRUD
   // ============================================
@@ -551,10 +589,6 @@ class FirebaseDataService {
    * Obtener todos los registros de una colección
    */
   async getAll<T>(collection: string): Promise<T[]> {
-    if (!this.useFirebase) {
-      return localDB.getCollection<T>(collection);
-    }
-
     try {
       const snapshot = await get(ref(database, collection));
       if (!snapshot.exists()) return [];
@@ -574,10 +608,6 @@ class FirebaseDataService {
    * Obtener un registro por ID
    */
   async getById<T>(collection: string, id: string): Promise<T | null> {
-    if (!this.useFirebase) {
-      return localDB.getById<T & { id: string }>(collection, id) as T | null;
-    }
-
     try {
       const snapshot = await get(ref(database, `${collection}/${id}`));
       if (!snapshot.exists()) return null;
@@ -600,10 +630,6 @@ class FirebaseDataService {
       updatedAt: timestamp
     };
 
-    if (!this.useFirebase) {
-      return localDB.add(collection, record as any) as unknown as T;
-    }
-
     try {
       const newRef = push(ref(database, collection));
       const newRecord = { ...record, id: newRef.key! };
@@ -624,10 +650,6 @@ class FirebaseDataService {
       updatedAt: Date.now()
     };
 
-    if (!this.useFirebase) {
-      return localDB.update(collection, id, updateData as any) as unknown as T | null;
-    }
-
     try {
       await update(ref(database, `${collection}/${id}`), updateData);
       return this.getById<T>(collection, id);
@@ -641,10 +663,6 @@ class FirebaseDataService {
    * Eliminar un registro
    */
   async delete(collection: string, id: string): Promise<boolean> {
-    if (!this.useFirebase) {
-      return localDB.delete(collection, id);
-    }
-
     try {
       await remove(ref(database, `${collection}/${id}`));
       return true;
@@ -658,14 +676,10 @@ class FirebaseDataService {
    * Buscar registros con filtro
    */
   async query<T>(
-    collection: string, 
-    field: string, 
+    collection: string,
+    field: string,
     value: string | number | boolean
   ): Promise<T[]> {
-    if (!this.useFirebase) {
-      return localDB.where<T>(collection, (item: any) => item[field] === value);
-    }
-
     try {
       const q = query(ref(database, collection), orderByChild(field), equalTo(value as any));
       const snapshot = await get(q);
@@ -686,21 +700,11 @@ class FirebaseDataService {
    * Suscribirse a cambios en tiempo real
    */
   subscribe<T>(
-    collection: string, 
+    collection: string,
     callback: (data: T[]) => void,
     id?: string
   ): () => void {
     const path = id ? `${collection}/${id}` : collection;
-    
-    if (!this.useFirebase) {
-      // Para localDB, devolvemos los datos una vez
-      const data = id 
-        ? [localDB.getById<T & { id: string }>(collection, id)].filter(Boolean)
-        : localDB.getCollection<T>(collection);
-      callback(data as T[]);
-      return () => {};
-    }
-
     const dbRef = ref(database, path);
     
     const handleSnapshot = (snapshot: DataSnapshot) => {
@@ -1194,6 +1198,50 @@ class FirebaseDataService {
     return activities.sort((a, b) => b.timestamp - a.timestamp).slice(0, limit);
   }
 
+  // --- FORO ---
+  async getForumPosts(): Promise<DBForumPost[]> {
+    return this.getAll<DBForumPost>('forumPosts');
+  }
+
+  async getForumPostsByCourse(courseId: string): Promise<DBForumPost[]> {
+    return this.query<DBForumPost>('forumPosts', 'courseId', courseId);
+  }
+
+  async getForumReplies(postId: string): Promise<DBForumReply[]> {
+    return this.query<DBForumReply>('forumReplies', 'postId', postId);
+  }
+
+  async getAllForumReplies(): Promise<DBForumReply[]> {
+    return this.getAll<DBForumReply>('forumReplies');
+  }
+
+  async createForumPost(post: Omit<DBForumPost, 'id'>): Promise<DBForumPost> {
+    return this.create<DBForumPost>('forumPosts', post);
+  }
+
+  async updateForumPost(id: string, data: Partial<DBForumPost>): Promise<DBForumPost | null> {
+    return this.update<DBForumPost>('forumPosts', id, data);
+  }
+
+  async deleteForumPost(id: string): Promise<boolean> {
+    // Delete all replies for this post first
+    const replies = await this.getForumReplies(id);
+    await Promise.all(replies.map(r => this.delete('forumReplies', r.id)));
+    return this.delete('forumPosts', id);
+  }
+
+  async createForumReply(reply: Omit<DBForumReply, 'id'>): Promise<DBForumReply> {
+    return this.create<DBForumReply>('forumReplies', reply);
+  }
+
+  async updateForumReply(id: string, data: Partial<DBForumReply>): Promise<DBForumReply | null> {
+    return this.update<DBForumReply>('forumReplies', id, data);
+  }
+
+  async deleteForumReply(id: string): Promise<boolean> {
+    return this.delete('forumReplies', id);
+  }
+
   // --- MÉTRICAS DEL SISTEMA ---
   async getSystemMetrics(date?: string): Promise<DBSystemMetric | null> {
     const targetDate = date || new Date().toISOString().split('T')[0];
@@ -1244,21 +1292,7 @@ class FirebaseDataService {
    * Limpiar base de datos (solo para desarrollo)
    */
   async clearDatabase(): Promise<void> {
-    if (this.useFirebase) {
-      console.warn('clearDatabase no disponible para Firebase');
-      return;
-    }
-
-    const collections = [
-      'users', 'courses', 'modules', 'lessons', 'enrollments',
-      'evaluations', 'evaluationAttempts', 'grades', 'certificates',
-      'messages', 'conversations', 'notifications', 'supportTickets',
-      'activities', 'userPoints', 'badges', 'userBadges',
-      'learningStreaks', 'progressActivities', 'userSettings', 'systemMetrics'
-    ];
-
-    collections.forEach(collection => localDB.clear(collection));
-    console.log('Database cleared');
+    console.warn('clearDatabase no disponible para Firebase');
   }
 
   /**
@@ -1321,7 +1355,9 @@ export type {
   DBLearningStreak as LearningStreak,
   DBProgressActivity as ProgressActivity,
   DBUserSettings as UserSettings,
-  DBSystemMetric as SystemMetric
+  DBSystemMetric as SystemMetric,
+  DBForumPost as ForumPost,
+  DBForumReply as ForumReply
 };
 
 export default firebaseDB;

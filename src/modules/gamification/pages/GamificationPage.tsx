@@ -109,6 +109,13 @@ export default function GamificationPage() {
         points = await gamificationService.createUserPoints(user.id);
       }
 
+      // Load user badges
+      const userBadges = await gamificationService.getUserBadges(user?.id || '');
+      const badgeIds = userBadges.map(b => b.badgeId);
+
+      // Load user streak
+      const streak = await gamificationService.getUserStreak(user?.id || '');
+
       // Map to local interface if points exist
       const mappedPoints: UserPoints | null = points ? {
         id: points.id,
@@ -117,14 +124,14 @@ export default function GamificationPage() {
         level: points.level || 1,
         currentLevelPoints: (points.totalPoints || 0) % 100,
         pointsToNextLevel: points.nextLevelPoints || 100,
-        streak: 0,
-        lastActivityDate: new Date().toISOString(),
-        badges: [],
+        streak: streak?.currentStreak || 0,
+        lastActivityDate: streak?.lastActiveDate || new Date().toISOString(),
+        badges: badgeIds,
         achievements: []
       } : null;
 
       setUserPoints(mappedPoints);
-      setUnlockedBadges(mappedPoints?.badges || []);
+      setUnlockedBadges(badgeIds);
 
       // Load leaderboard from Firebase
       const leaderboardData = await gamificationService.getLeaderboard(10);

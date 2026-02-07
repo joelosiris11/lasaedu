@@ -15,4 +15,30 @@ export default defineConfig({
       '@assets': path.resolve(__dirname, './src/assets'),
     },
   },
+  build: {
+    // Generate source maps for debugging
+    sourcemap: false,
+    // Minify with esbuild (faster) or terser (smaller)
+    minify: 'esbuild',
+    // Target modern browsers
+    target: 'es2020',
+    // Chunk splitting for better caching
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Vendor chunks
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-firebase': ['firebase/app', 'firebase/auth', 'firebase/database'],
+          'vendor-ui': ['lucide-react'],
+          'vendor-utils': ['zustand', 'jspdf', 'date-fns'],
+        },
+      },
+    },
+    // Increase chunk size warning limit
+    chunkSizeWarningLimit: 1000,
+  },
+  // Optimize dependencies
+  optimizeDeps: {
+    include: ['react', 'react-dom', 'react-router-dom', 'firebase/app', 'firebase/auth', 'firebase/database'],
+  },
 })

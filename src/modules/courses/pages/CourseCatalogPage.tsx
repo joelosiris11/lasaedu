@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@app/store/authStore';
-import { courseService, legacyEnrollmentService, gamificationService } from '@shared/services/dataService';
+import { courseService, legacyEnrollmentService } from '@shared/services/dataService';
 import type { DBCourse, DBEnrollment } from '@shared/services/dataService';
 import { 
   BookOpen, 
@@ -35,14 +35,12 @@ export default function CourseCatalogPage() {
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [levelFilter, setLevelFilter] = useState('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [enrolling, setEnrolling] = useState<string | null>(null);
-  const [showEnrollSuccess, setShowEnrollSuccess] = useState(false);
 
   // Role checks
   const isStudent = user?.role === 'student';
   const isTeacher = user?.role === 'teacher';
-  const isAdmin = user?.role === 'admin';
-  const canEnroll = isStudent; // Only students can enroll in courses
+  // Note: isAdmin removed - currently not used in this component
+  // Students cannot self-enroll - admin enrolls them
 
   useEffect(() => {
     loadData();
@@ -68,77 +66,6 @@ export default function CourseCatalogPage() {
     }
   };
 
-  const handleEnroll = async (courseId: string) => {
-    if (!user) {
-      navigate('/login');
-      return;
-    }
-
-    // Only students can enroll
-    if (!canEnroll) {
-      console.warn('Only students can enroll in courses');
-      return;
-    }
-
-    setEnrolling(courseId);
-    
-    try {
-      // Check if already enrolled
-      const existing = enrollments.find(e => e.courseId === courseId);
-      if (existing) {
-        navigate(`/courses/${courseId}`);
-        return;
-      }
-
-      // Create enrollment using Firebase service
-      const now = Date.now();
-      const newEnrollment = await legacyEnrollmentService.create({
-        courseId,
-        userId: user.id,
-        enrolledAt: new Date().toISOString(),
-        progress: 0,
-        status: 'active',
-        completedLessons: [],
-        completedModules: [],
-        totalTimeSpent: 0,
-        lastAccessedAt: new Date().toISOString(),
-        createdAt: now,
-        updatedAt: now
-      });
-
-      setEnrollments([...enrollments, newEnrollment as Enrollment]);
-
-      // Update course student count
-      const course = courses.find(c => c.id === courseId);
-      if (course) {
-        await courseService.update(courseId, {
-          studentsCount: (course.studentsCount || 0) + 1
-        });
-        setCourses(courses.map(c =>
-          c.id === courseId ? { ...c, studentsCount: (c.studentsCount || 0) + 1 } : c
-        ));
-      }
-
-      // Award points for enrollment (gamification)
-      await gamificationService.addPoints(
-        user.id,
-        50,
-        'course_enrollment',
-        `Inscripción en: ${course?.title}`
-      );
-
-      setShowEnrollSuccess(true);
-      setTimeout(() => {
-        setShowEnrollSuccess(false);
-        navigate(`/courses/${courseId}`);
-      }, 2000);
-    } catch (error) {
-      console.error('Error enrolling:', error);
-    } finally {
-      setEnrolling(null);
-    }
-  };
-
   const isEnrolled = (courseId: string) => {
     return enrollments.some(e => e.courseId === courseId);
   };
@@ -148,7 +75,15 @@ export default function CourseCatalogPage() {
     return enrollment?.progress || 0;
   };
 
+  // Students only see courses they're enrolled in
+  // Admin and Teachers see all published courses
   const filteredCourses = courses.filter(course => {
+    // For students, only show enrolled courses
+    if (isStudent) {
+      const isEnrolledInCourse = enrollments.some(e => e.courseId === course.id);
+      if (!isEnrolledInCourse) return false;
+    }
+
     const matchesSearch = course.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          course.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          course.instructor.toLowerCase().includes(searchTerm.toLowerCase());
@@ -176,23 +111,14 @@ export default function CourseCatalogPage() {
 
   return (
     <div className="space-y-6">
-      {/* Success Message */}
-      {showEnrollSuccess && (
-        <div className="fixed top-4 right-4 z-50 bg-green-500 text-white px-6 py-4 rounded-lg shadow-lg flex items-center animate-fade-in">
-          <CheckCircle className="h-6 w-6 mr-3" />
-          <div>
-            <p className="font-medium">¡Inscripción exitosa!</p>
-            <p className="text-sm opacity-90">Redirigiendo al curso...</p>
-          </div>
-        </div>
-      )}
-
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Catálogo de Cursos</h1>
+        <h1 className="text-2xl font-bold text-gray-900">
+          {isStudent ? 'Mis Cursos' : 'Catálogo de Cursos'}
+        </h1>
         <p className="text-gray-600">
-          {canEnroll
-            ? 'Explora y inscríbete en los cursos disponibles'
+          {isStudent
+            ? 'Cursos en los que estás inscrito'
             : isTeacher
               ? 'Explora los cursos disponibles en la plataforma'
               : 'Vista general de todos los cursos publicados'
@@ -200,30 +126,19 @@ export default function CourseCatalogPage() {
         </p>
       </div>
 
-      {/* Stats Cards - Only show enrollment stats for students */}
+      {/* Stats Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-blue-100 text-sm">Cursos Disponibles</p>
-                <p className="text-2xl font-bold">{stats.totalCourses}</p>
-              </div>
-              <BookOpen className="h-8 w-8 text-blue-200" />
-            </div>
-          </CardContent>
-        </Card>
-
-        {canEnroll ? (
+        {isStudent ? (
+          // Student stats - only their enrolled courses
           <>
-            <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white">
+            <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white">
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-green-100 text-sm">Mis Cursos</p>
+                    <p className="text-blue-100 text-sm">Mis Cursos</p>
                     <p className="text-2xl font-bold">{stats.enrolled}</p>
                   </div>
-                  <GraduationCap className="h-8 w-8 text-green-200" />
+                  <BookOpen className="h-8 w-8 text-blue-200" />
                 </div>
               </CardContent>
             </Card>
@@ -251,9 +166,34 @@ export default function CourseCatalogPage() {
                 </div>
               </CardContent>
             </Card>
+
+            <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-green-100 text-sm">Categorías</p>
+                    <p className="text-2xl font-bold">{categories.length}</p>
+                  </div>
+                  <GraduationCap className="h-8 w-8 text-green-200" />
+                </div>
+              </CardContent>
+            </Card>
           </>
         ) : (
+          // Admin/Teacher stats - all courses
           <>
+            <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-blue-100 text-sm">Cursos Publicados</p>
+                    <p className="text-2xl font-bold">{stats.totalCourses}</p>
+                  </div>
+                  <BookOpen className="h-8 w-8 text-blue-200" />
+                </div>
+              </CardContent>
+            </Card>
+
             <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white">
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
@@ -342,8 +282,15 @@ export default function CourseCatalogPage() {
         <Card>
           <CardContent className="p-12 text-center">
             <BookOpen className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No se encontraron cursos</h3>
-            <p className="text-gray-500">Intenta con otros filtros de búsqueda</p>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              {isStudent ? 'No tienes cursos asignados' : 'No se encontraron cursos'}
+            </h3>
+            <p className="text-gray-500">
+              {isStudent
+                ? 'El administrador te inscribirá en los cursos correspondientes'
+                : 'Intenta con otros filtros de búsqueda'
+              }
+            </p>
           </CardContent>
         </Card>
       ) : viewMode === 'grid' ? (
@@ -412,40 +359,30 @@ export default function CourseCatalogPage() {
                     </div>
                   )}
 
-                  {canEnroll ? (
-                    <Button
-                      className="w-full"
-                      variant={enrolled ? 'outline' : 'default'}
-                      onClick={() => enrolled ? navigate(`/courses/${course.id}`) : handleEnroll(course.id)}
-                      disabled={enrolling === course.id}
-                    >
-                      {enrolling === course.id ? (
-                        <>
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
-                          Inscribiendo...
-                        </>
-                      ) : enrolled ? (
+                  <Button
+                    className="w-full"
+                    variant={isStudent && progress > 0 ? 'default' : 'outline'}
+                    onClick={() => navigate(`/courses/${course.id}`)}
+                  >
+                    {isStudent ? (
+                      progress > 0 ? (
                         <>
                           <Play className="h-4 w-4 mr-2" />
                           Continuar
                         </>
                       ) : (
                         <>
-                          <GraduationCap className="h-4 w-4 mr-2" />
-                          Inscribirse
+                          <Play className="h-4 w-4 mr-2" />
+                          Comenzar
                         </>
-                      )}
-                    </Button>
-                  ) : (
-                    <Button
-                      className="w-full"
-                      variant="outline"
-                      onClick={() => navigate(`/courses/${course.id}`)}
-                    >
-                      <BookOpen className="h-4 w-4 mr-2" />
-                      Ver Curso
-                    </Button>
-                  )}
+                      )
+                    ) : (
+                      <>
+                        <BookOpen className="h-4 w-4 mr-2" />
+                        Ver Curso
+                      </>
+                    )}
+                  </Button>
                 </CardContent>
               </Card>
             );
@@ -510,22 +447,12 @@ export default function CourseCatalogPage() {
                           </span>
                         </div>
                         
-                        {canEnroll ? (
-                          <Button
-                            variant={enrolled ? 'outline' : 'default'}
-                            onClick={() => enrolled ? navigate(`/courses/${course.id}`) : handleEnroll(course.id)}
-                            disabled={enrolling === course.id}
-                          >
-                            {enrolling === course.id ? 'Inscribiendo...' : enrolled ? 'Continuar' : 'Inscribirse'}
-                          </Button>
-                        ) : (
-                          <Button
-                            variant="outline"
-                            onClick={() => navigate(`/courses/${course.id}`)}
-                          >
-                            Ver Curso
-                          </Button>
-                        )}
+                        <Button
+                          variant={isStudent && progress > 0 ? 'default' : 'outline'}
+                          onClick={() => navigate(`/courses/${course.id}`)}
+                        >
+                          {isStudent ? (progress > 0 ? 'Continuar' : 'Comenzar') : 'Ver Curso'}
+                        </Button>
                       </div>
 
                       {enrolled && progress > 0 && (

@@ -27,6 +27,8 @@ export interface Question {
     partialCredit?: boolean;
     randomizeOptions?: boolean;
     allowMultipleAttempts?: boolean;
+    allowedTypes?: string;
+    maxSize?: number;
   };
 }
 
@@ -74,6 +76,7 @@ export interface Assessment {
   instructions: string;
   settings: AssessmentSettings;
   questions: AssessmentQuestion[];
+  questionData?: Record<string, Question>; // Full question data indexed by questionId
   grading: GradingSettings;
   createdBy: string;
   createdAt: number;

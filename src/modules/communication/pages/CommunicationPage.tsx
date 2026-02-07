@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '@app/store/authStore';
-// Services imported for future use
-// import { conversationService, messageService } from '@shared/services/dataService';
-import { firebaseDB } from '@shared/services/firebaseDataService';
+import { conversationService, messageService } from '@shared/services/dataService';
+import type { DBConversation, DBMessage } from '@shared/services/firebaseDataService';
 import { 
   MessageSquare, 
   Plus, 
@@ -59,7 +58,29 @@ const CommunicationPage = () => {
   const loadChannels = async () => {
     setLoading(true);
     try {
-      const channelsData = await firebaseDB.getAll<Channel>('channels') || [];
+      const conversationsData = await conversationService.getAll() || [];
+
+      // Map conversations to Channel format
+      const channelsData: Channel[] = conversationsData.map((conv: DBConversation) => ({
+        id: conv.id,
+        name: conv.name || 'Conversación',
+        description: '',
+        type: conv.type === 'direct' ? 'private' as const : conv.type === 'course' ? 'course' as const : 'general' as const,
+        courseId: conv.courseId,
+        members: conv.participants || [],
+        isPrivate: conv.type === 'direct',
+        createdBy: conv.createdBy,
+        createdAt: new Date(conv.createdAt).toISOString(),
+        lastMessage: conv.lastMessage ? {
+          id: '',
+          senderId: conv.lastMessage.senderId,
+          senderName: '',
+          content: conv.lastMessage.content,
+          timestamp: new Date(conv.lastMessage.timestamp).toISOString(),
+          type: 'text' as const
+        } : undefined,
+        unreadCount: conv.unreadCount?.[user?.id || ''] || 0
+      }));
 
       // Filtrar canales según el rol del usuario
       const userChannels = channelsData.filter(channel => {
@@ -86,10 +107,15 @@ const CommunicationPage = () => {
 
   const loadMessages = async (channelId: string) => {
     try {
-      const messagesData = await firebaseDB.getAll<Message & { channelId: string }>('messages') || [];
-      const channelMessages = messagesData.filter(msg =>
-        msg.channelId === channelId
-      ).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+      const messagesData = await messageService.getByConversation(channelId) || [];
+      const channelMessages: Message[] = messagesData.map((msg: DBMessage) => ({
+        id: msg.id,
+        senderId: msg.senderId,
+        senderName: msg.senderName,
+        content: msg.content,
+        timestamp: new Date(msg.createdAt).toISOString(),
+        type: msg.type === 'file' ? 'file' as const : msg.type === 'image' ? 'image' as const : 'text' as const,
+      })).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
       setMessages(channelMessages);
     } catch (error) {
@@ -110,27 +136,36 @@ const CommunicationPage = () => {
   const handleSendMessage = async () => {
     if (!newMessage.trim() || !selectedChannel || !user) return;
 
-    const message: Message & { channelId: string } = {
-      id: Date.now().toString(),
-      channelId: selectedChannel.id,
-      senderId: user.id,
-      senderName: user.name,
-      content: newMessage.trim(),
-      timestamp: new Date().toISOString(),
-      type: 'text'
-    };
-
     try {
-      await firebaseDB.create('messages', message);
-      setMessages([...messages, message]);
+      const dbMessage = await messageService.create({
+        conversationId: selectedChannel.id,
+        senderId: user.id,
+        senderName: user.name,
+        content: newMessage.trim(),
+        type: 'text',
+        readBy: [user.id],
+        edited: false,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+
+      const localMessage: Message = {
+        id: dbMessage.id,
+        senderId: user.id,
+        senderName: user.name,
+        content: newMessage.trim(),
+        timestamp: new Date().toISOString(),
+        type: 'text'
+      };
+
+      setMessages([...messages, localMessage]);
       setNewMessage('');
 
-      // Actualizar último mensaje del canal
+      // Actualizar último mensaje del canal (messageService.create already updates the conversation)
       const updatedChannel = {
         ...selectedChannel,
-        lastMessage: message
+        lastMessage: localMessage
       };
-      await firebaseDB.update('channels', selectedChannel.id, updatedChannel);
       setChannels(channels.map(c => c.id === selectedChannel.id ? updatedChannel : c));
       setSelectedChannel(updatedChannel);
 
@@ -142,21 +177,35 @@ const CommunicationPage = () => {
   const handleCreateChannel = async (channelData: Partial<Channel>) => {
     if (!user) return;
 
-    const channelToCreate = {
-      name: channelData.name || '',
-      description: channelData.description || '',
-      type: channelData.type || 'general',
-      courseId: channelData.courseId,
-      courseName: channelData.courseName,
-      members: [user.id],
-      isPrivate: channelData.isPrivate || false,
-      createdBy: user.id,
-      createdAt: new Date().toISOString(),
-      unreadCount: 0
-    };
+    const convType = channelData.type === 'private' ? 'direct' as const :
+                     channelData.type === 'course' ? 'course' as const : 'group' as const;
 
     try {
-      const newChannel = await firebaseDB.create<Channel>('channels', channelToCreate as any);
+      const newConv = await conversationService.create({
+        type: convType,
+        name: channelData.name || '',
+        participants: [user.id],
+        courseId: channelData.courseId,
+        unreadCount: {},
+        createdBy: user.id,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+
+      const newChannel: Channel = {
+        id: newConv.id,
+        name: channelData.name || '',
+        description: channelData.description || '',
+        type: channelData.type || 'general',
+        courseId: channelData.courseId,
+        courseName: channelData.courseName,
+        members: [user.id],
+        isPrivate: channelData.isPrivate || false,
+        createdBy: user.id,
+        createdAt: new Date().toISOString(),
+        unreadCount: 0
+      };
+
       setChannels([...channels, newChannel]);
       setShowCreateChannel(false);
       setSelectedChannel(newChannel);

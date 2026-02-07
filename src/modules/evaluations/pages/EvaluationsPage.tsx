@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '@app/store/authStore';
-import { evaluationService } from '@shared/services/dataService';
-import type { DBEvaluation } from '@shared/services/dataService';
+import { evaluationService, legacyEnrollmentService } from '@shared/services/dataService';
+import type { DBEvaluation, DBEnrollment } from '@shared/services/dataService';
 import { 
   Plus, 
   Search, 
@@ -26,20 +26,29 @@ import { Label } from '@shared/components/ui/Label';
 const EvaluationsPage = () => {
   const { user } = useAuthStore();
   const [evaluations, setEvaluations] = useState<DBEvaluation[]>([]);
+  const [enrollments, setEnrollments] = useState<DBEnrollment[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  // const [categoryFilter, setCategoryFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingEvaluation, setEditingEvaluation] = useState<DBEvaluation | null>(null);
 
-  const loadEvaluations = async () => {
+  const loadData = async () => {
     setLoading(true);
     try {
-      const data = await evaluationService.getAll();
-      setEvaluations(data);
+      const [evaluationsData, enrollmentsData] = await Promise.all([
+        evaluationService.getAll(),
+        user?.role === 'student' ? legacyEnrollmentService.getAll() : Promise.resolve([])
+      ]);
+      setEvaluations(evaluationsData);
+
+      // Filter enrollments for current student
+      if (user?.role === 'student') {
+        const userEnrollments = enrollmentsData.filter(e => e.userId === user.id);
+        setEnrollments(userEnrollments);
+      }
     } catch (error) {
       console.error('Error loading evaluations:', error);
     } finally {
@@ -48,8 +57,11 @@ const EvaluationsPage = () => {
   };
 
   useEffect(() => {
-    loadEvaluations();
-  }, []);
+    loadData();
+  }, [user]);
+
+  // Get enrolled course IDs for students
+  const enrolledCourseIds = enrollments.map(e => e.courseId);
 
   // Filtrar evaluaciones según rol y filtros
   const filteredDBEvaluations = evaluations.filter(evaluation => {
@@ -63,9 +75,10 @@ const EvaluationsPage = () => {
       return evaluation.createdBy === user.id && matchesSearch && matchesType && matchesStatus;
     }
 
-    // Si es estudiante, solo ver evaluaciones publicadas
+    // Si es estudiante, solo ver evaluaciones publicadas de cursos inscritos
     if (user?.role === 'student') {
-      return evaluation.status === 'publicado' && matchesSearch && matchesType && matchesStatus;
+      const isEnrolledInCourse = enrolledCourseIds.includes(evaluation.courseId);
+      return isEnrolledInCourse && evaluation.status === 'publicado' && matchesSearch && matchesType && matchesStatus;
     }
 
     return matchesSearch && matchesType && matchesStatus;

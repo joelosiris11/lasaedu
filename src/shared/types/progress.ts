@@ -105,7 +105,7 @@ export interface ModuleProgress {
 export interface LessonProgressSummary {
   lessonId: string;
   lessonTitle: string;
-  status: 'not_started' | 'in_progress' | 'completed';
+  status: 'not_started' | 'in_progress' | 'completed' | 'failed';
   progressPercentage: number;
   timeSpent: number;
   lastAccessedAt?: number;

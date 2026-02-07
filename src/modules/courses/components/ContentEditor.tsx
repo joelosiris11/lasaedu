@@ -1,25 +1,21 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
-  Bold, 
-  Italic, 
-  Underline, 
-  List, 
-  ListOrdered, 
-  Link, 
-  Image, 
-  Video, 
-  FileText, 
+  Bold,
+  Italic,
+  Underline,
+  List,
+  ListOrdered,
+  Link,
+  Image,
+  Video,
   Save,
   Eye,
-  Upload,
   Type,
   AlignLeft,
   AlignCenter,
   AlignRight,
   Quote,
   Code,
-  Undo,
-  Redo,
   Loader2
 } from 'lucide-react';
 import { Button } from '@shared/components/ui/Button';
@@ -27,6 +23,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@shared/components/ui/
 import { Input } from '@shared/components/ui/Input';
 import { Label } from '@shared/components/ui/Label';
 import { fileUploadService } from '@shared/services/fileUploadService';
+import VideoPlayer from '@shared/components/media/VideoPlayer';
 
 interface ContentEditorProps {
   initialContent?: string;
@@ -49,6 +46,7 @@ interface ContentBlock {
     duration?: number; // For video/audio
     size?: number; // For files
     language?: string; // For code blocks
+    source?: 'youtube' | 'vimeo' | 'url' | 'upload'; // For video sources
   };
   formatting?: {
     bold?: boolean;
@@ -74,11 +72,11 @@ const TOOLBAR_ITEMS = [
   { icon: AlignRight, action: 'alignRight', tooltip: 'Alinear derecha' }
 ];
 
-export default function ContentEditor({ 
-  initialContent, 
-  onSave, 
-  onContentChange, 
-  lessonType,
+export default function ContentEditor({
+  initialContent,
+  onSave,
+  onContentChange,
+  lessonType: _lessonType,
   courseId,
   lessonId
 }: ContentEditorProps) {
@@ -96,10 +94,38 @@ export default function ContentEditor({
   const [mediaType, setMediaType] = useState<'image' | 'video' | 'audio' | 'file'>('image');
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [mediaInputMode, setMediaInputMode] = useState<'upload' | 'url'>('url');
+  const [mediaUrl, setMediaUrl] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const editorRef = useRef<HTMLDivElement>(null);
 
+  // Detect video source type
+  const isYouTubeUrl = (url: string) => {
+    return url.includes('youtube.com') || url.includes('youtu.be');
+  };
+
+  const isVimeoUrl = (url: string) => {
+    return url.includes('vimeo.com');
+  };
+
+  const handleAddMediaByUrl = () => {
+    if (!mediaUrl.trim()) return;
+
+    const newBlock: ContentBlock = {
+      id: generateId(),
+      type: mediaType,
+      content: mediaUrl,
+      metadata: {
+        caption: '',
+        source: isYouTubeUrl(mediaUrl) ? 'youtube' : isVimeoUrl(mediaUrl) ? 'vimeo' : 'url'
+      },
+      order: contentBlocks.length
+    };
+
+    setContentBlocks(prev => [...prev, newBlock]);
+    setMediaUrl('');
+    setShowMediaDialog(false);
+  };
   useEffect(() => {
     if (initialContent) {
       try {
@@ -359,11 +385,28 @@ export default function ContentEditor({
         );
       
       case 'video':
+        // Use VideoPlayer for YouTube/Vimeo, native video for uploads
+        const source = block.metadata?.source;
+        if (source === 'youtube' || source === 'vimeo') {
+          return (
+            <div className="mb-4">
+              <VideoPlayer
+                url={block.content}
+                title={block.metadata?.caption}
+              />
+              {block.metadata?.caption && (
+                <p className="text-sm text-gray-600 mt-2 text-center">
+                  {block.metadata.caption}
+                </p>
+              )}
+            </div>
+          );
+        }
         return (
           <div className="mb-4">
-            <video 
-              src={block.content} 
-              controls 
+            <video
+              src={block.content}
+              controls
               className="w-full rounded-lg"
               poster={block.metadata?.url}
             />
@@ -579,61 +622,148 @@ export default function ContentEditor({
       {/* Media Upload Dialog */}
       {showMediaDialog && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <Card className="w-96">
+          <Card className="w-[450px]">
             <CardHeader>
-              <CardTitle>Agregar {mediaType === 'image' ? 'Imagen' : mediaType === 'video' ? 'Video' : 'Audio'}</CardTitle>
+              <CardTitle>
+                Agregar {mediaType === 'image' ? 'Imagen' : mediaType === 'video' ? 'Video' : 'Audio'}
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div>
-                <Label>Subir archivo</Label>
-                <Input
-                  ref={fileInputRef}
-                  type="file"
-                  onChange={handleFileUpload}
-                  accept={
-                    mediaType === 'image' ? 'image/*' : 
-                    mediaType === 'video' ? 'video/*' : 
-                    mediaType === 'audio' ? 'audio/*' :
-                    '.pdf,.doc,.docx'
-                  }
-                  disabled={uploading}
-                />
-                {uploading && (
-                  <div className="mt-2">
-                    <div className="bg-gray-200 rounded-full h-2">
-                      <div 
-                        className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                        style={{ width: `${uploadProgress}%` }}
-                      ></div>
-                    </div>
-                    <p className="text-sm text-gray-600 mt-1">
-                      Subiendo... {Math.round(uploadProgress)}%
-                    </p>
+              {/* Tabs for URL vs Upload */}
+              {(mediaType === 'image' || mediaType === 'video') && (
+                <div className="flex border-b">
+                  <button
+                    onClick={() => setMediaInputMode('url')}
+                    className={`flex-1 py-2 px-4 text-sm font-medium border-b-2 transition-colors ${
+                      mediaInputMode === 'url'
+                        ? 'border-blue-500 text-blue-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    {mediaType === 'video' ? 'URL de YouTube/Vimeo' : 'URL de imagen'}
+                  </button>
+                  <button
+                    onClick={() => setMediaInputMode('upload')}
+                    className={`flex-1 py-2 px-4 text-sm font-medium border-b-2 transition-colors ${
+                      mediaInputMode === 'upload'
+                        ? 'border-blue-500 text-blue-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    Subir archivo
+                  </button>
+                </div>
+              )}
+
+              {/* URL Input */}
+              {mediaInputMode === 'url' && (mediaType === 'image' || mediaType === 'video') ? (
+                <div className="space-y-4">
+                  <div>
+                    <Label>
+                      {mediaType === 'video' ? 'URL del video' : 'URL de la imagen'}
+                    </Label>
+                    <Input
+                      type="url"
+                      value={mediaUrl}
+                      onChange={(e) => setMediaUrl(e.target.value)}
+                      placeholder={
+                        mediaType === 'video'
+                          ? 'https://www.youtube.com/watch?v=...'
+                          : 'https://ejemplo.com/imagen.jpg'
+                      }
+                    />
+                    {mediaType === 'video' && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        Soporta YouTube y Vimeo
+                      </p>
+                    )}
                   </div>
-                )}
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setShowMediaDialog(false)}
-                  disabled={uploading}
-                >
-                  Cancelar
-                </Button>
-                <Button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploading}
-                >
-                  {uploading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Subiendo...
-                    </>
-                  ) : (
-                    'Seleccionar archivo'
+
+                  {/* Preview for images */}
+                  {mediaType === 'image' && mediaUrl && (
+                    <div className="border rounded-lg p-2">
+                      <p className="text-xs text-gray-500 mb-2">Vista previa:</p>
+                      <img
+                        src={mediaUrl}
+                        alt="Preview"
+                        className="max-h-32 rounded"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = 'none';
+                        }}
+                      />
+                    </div>
                   )}
-                </Button>
-              </div>
+
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setShowMediaDialog(false);
+                        setMediaUrl('');
+                      }}
+                    >
+                      Cancelar
+                    </Button>
+                    <Button onClick={handleAddMediaByUrl} disabled={!mediaUrl.trim()}>
+                      Insertar
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                /* File Upload */
+                <div className="space-y-4">
+                  <div>
+                    <Label>Subir archivo</Label>
+                    <Input
+                      ref={fileInputRef}
+                      type="file"
+                      onChange={handleFileUpload}
+                      accept={
+                        mediaType === 'image' ? 'image/*' :
+                        mediaType === 'video' ? 'video/*' :
+                        mediaType === 'audio' ? 'audio/*' :
+                        '.pdf,.doc,.docx'
+                      }
+                      disabled={uploading}
+                    />
+                    {uploading && (
+                      <div className="mt-2">
+                        <div className="bg-gray-200 rounded-full h-2">
+                          <div
+                            className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                            style={{ width: `${uploadProgress}%` }}
+                          ></div>
+                        </div>
+                        <p className="text-sm text-gray-600 mt-1">
+                          Subiendo... {Math.round(uploadProgress)}%
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowMediaDialog(false)}
+                      disabled={uploading}
+                    >
+                      Cancelar
+                    </Button>
+                    <Button
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploading}
+                    >
+                      {uploading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Subiendo...
+                        </>
+                      ) : (
+                        'Seleccionar archivo'
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

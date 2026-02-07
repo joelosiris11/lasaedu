@@ -125,11 +125,11 @@ export default function MyProgressPage() {
         id: a.id,
         userId: a.userId,
         type: a.type as ProgressActivity['type'],
-        courseId: a.metadata?.courseId,
-        lessonId: a.metadata?.lessonId,
+        courseId: (a.metadata?.courseId as string) || undefined,
+        lessonId: (a.metadata?.lessonId as string) || undefined,
         timestamp: new Date(a.timestamp).toISOString(),
         details: a.description,
-        points: a.metadata?.points
+        points: (a.metadata?.points as number) || undefined
       }));
       setActivities(mappedActivities);
 

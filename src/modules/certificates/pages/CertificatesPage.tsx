@@ -73,14 +73,14 @@ export default function CertificatesPage() {
             certificate: existingCert ? {
               id: existingCert.id,
               userId: existingCert.userId,
-              userName: existingCert.userName,
+              userName: existingCert.studentName,
               courseId: existingCert.courseId,
-              courseTitle: existingCert.courseTitle,
+              courseTitle: existingCert.courseName,
               instructorName: existingCert.instructorName,
-              completedAt: existingCert.completedAt,
-              score: existingCert.score,
-              hours: existingCert.hours,
-              certificateNumber: existingCert.certificateNumber
+              completedAt: new Date(existingCert.completionDate).getTime(),
+              score: existingCert.grade,
+              hours: 40,
+              certificateNumber: existingCert.credentialId
             } : undefined
           };
         })
@@ -145,21 +145,6 @@ export default function CertificatesPage() {
     } catch (error) {
       console.error('Error downloading certificate:', error);
       alert('Error al descargar el certificado. Inténtalo de nuevo.');
-    }
-  };
-
-  const shareCertificate = (certificate: CertificateData) => {
-    if (navigator.share) {
-      navigator.share({
-        title: `Certificado de ${certificate.courseTitle}`,
-        text: `He completado exitosamente el curso "${certificate.courseTitle}" en LasaEdu`,
-        url: `${window.location.origin}/verify/${certificate.certificateNumber}`
-      });
-    } else {
-      // Fallback: copy to clipboard
-      const shareText = `¡He completado exitosamente el curso "${certificate.courseTitle}" en LasaEdu! Certificado N°: ${certificate.certificateNumber}`;
-      navigator.clipboard.writeText(shareText);
-      alert('Información copiada al portapapeles');
     }
   };
 

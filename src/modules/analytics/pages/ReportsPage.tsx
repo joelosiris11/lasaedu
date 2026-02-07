@@ -7,7 +7,8 @@ import {
   supportTicketService,
   legacyEnrollmentService as enrollmentService
 } from '@shared/services/dataService';
-import { 
+import { analyticsService } from '@shared/services/analyticsService';
+import {
   exportUsers,
   exportGrades,
   exportProgress,
@@ -114,48 +115,32 @@ export default function ReportsPage() {
         { role: 'Estudiantes en mis cursos', count: new Set(enrollments.map(e => e.userId)).size }
       ];
 
-      // Monthly stats (mock data)
-      const monthlyStats = [
-        { month: 'Ene', newUsers: 45, newEnrollments: 78, completions: 23 },
-        { month: 'Feb', newUsers: 52, newEnrollments: 89, completions: 31 },
-        { month: 'Mar', newUsers: 61, newEnrollments: 102, completions: 45 },
-        { month: 'Abr', newUsers: 48, newEnrollments: 95, completions: 38 },
-        { month: 'May', newUsers: 72, newEnrollments: 118, completions: 52 },
-        { month: 'Jun', newUsers: 68, newEnrollments: 110, completions: 48 }
-      ];
+      // Get real analytics data
+      const [monthlyStatsData, topCoursesData, userActivityData] = await Promise.all([
+        analyticsService.getMonthlyStats(6),
+        analyticsService.getTopCourses('enrollments', 5),
+        analyticsService.getDailyActivityStats(7)
+      ]);
 
-      // Top courses
-      const topCourses = courses.slice(0, 5).map((course: any, index: number) => ({
-        id: course.id,
-        title: course.title || `Curso ${index + 1}`,
-        enrollments: Math.floor(Math.random() * 100) + 20,
-        completionRate: Math.floor(Math.random() * 40) + 60,
-        rating: parseFloat((Math.random() * 1.5 + 3.5).toFixed(1))
+      // Monthly stats from real data
+      const monthlyStats = monthlyStatsData.map(stat => ({
+        month: stat.month,
+        newUsers: stat.newUsers,
+        newEnrollments: stat.newEnrollments,
+        completions: stat.completions
       }));
 
-      // Fill with mock data if not enough courses
-      while (topCourses.length < 5) {
-        topCourses.push({
-          id: `course_${topCourses.length + 1}`,
-          title: `Curso Popular ${topCourses.length + 1}`,
-          enrollments: Math.floor(Math.random() * 100) + 20,
-          completionRate: Math.floor(Math.random() * 40) + 60,
-          rating: parseFloat((Math.random() * 1.5 + 3.5).toFixed(1))
-        });
-      }
+      // Top courses from real analytics
+      const topCourses = topCoursesData.map(course => ({
+        id: course.id,
+        title: course.title,
+        enrollments: course.enrollments,
+        completionRate: course.completionRate,
+        rating: course.avgGrade ? course.avgGrade / 20 : 4.0 // Convert to 5-point scale
+      }));
 
-      // User activity (last 7 days)
-      const userActivity = [];
-      for (let i = 6; i >= 0; i--) {
-        const date = new Date();
-        date.setDate(date.getDate() - i);
-        userActivity.push({
-          date: date.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric' }),
-          activeUsers: Math.floor(Math.random() * 50) + 30,
-          lessonsCompleted: Math.floor(Math.random() * 100) + 50,
-          evaluationsSubmitted: Math.floor(Math.random() * 30) + 10
-        });
-      }
+      // User activity from real data
+      const userActivity = userActivityData
 
       setReportData({
         totalUsers: isAdmin ? users.length : new Set(enrollments.map(e => e.userId)).size,

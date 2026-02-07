@@ -1,16 +1,14 @@
-import { 
-  collection, 
-  doc, 
-  getDoc, 
-  getDocs, 
-  setDoc, 
-  updateDoc, 
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  updateDoc,
   deleteDoc,
-  query, 
-  where, 
+  query,
+  where,
   orderBy,
-  addDoc,
-  serverTimestamp 
+  addDoc
 } from 'firebase/firestore';
 import { db } from '@app/config/firebase';
 import type { 
@@ -300,7 +298,7 @@ class AssessmentService {
       const questionPoints = assessmentQuestion.points;
       maxScore += questionPoints;
 
-      const { points, isCorrect } = this.scoreQuestion(question, userAnswer);
+      const { points } = this.scoreQuestion(question, userAnswer);
       const earnedPoints = (points / question.points) * questionPoints;
       totalScore += earnedPoints;
 
@@ -395,7 +393,7 @@ class AssessmentService {
     }
   }
 
-  private getQuestionsFromAssessment(assessment: Assessment): Question[] {
+  private getQuestionsFromAssessment(_assessment: Assessment): Question[] {
     // This would typically fetch from question banks
     // For now, return empty array - implement based on your data structure
     return [];
