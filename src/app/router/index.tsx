@@ -36,6 +36,11 @@ import NotificationSystemPage from '@modules/notifications/pages/NotificationSys
 import UserManagementPage from '@modules/users/pages/UserManagementPage';
 import ForumsPage from '@modules/forums/pages/ForumsPage';
 
+// E-learning standards (SCORM / LTI / xAPI)
+import SCORMManagementPage from '@modules/elearning-standards/pages/SCORMManagementPage';
+import LTIManagementPage from '@modules/elearning-standards/pages/LTIManagementPage';
+import XAPIReportsPage from '@modules/elearning-standards/pages/XAPIReportsPage';
+
 // Componente para página no encontrada
 const NotFoundPage = () => (
   <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50">
@@ -290,6 +295,30 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute allowedRoles={['student']}>
             <MyProgressPage />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: 'scorm-management',
+        element: (
+          <ProtectedRoute allowedRoles={['admin', 'teacher']}>
+            <SCORMManagementPage />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: 'lti-management',
+        element: (
+          <ProtectedRoute allowedRoles={['admin', 'teacher']}>
+            <LTIManagementPage />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: 'xapi-reports',
+        element: (
+          <ProtectedRoute allowedRoles={['admin', 'teacher']}>
+            <XAPIReportsPage />
           </ProtectedRoute>
         )
       },

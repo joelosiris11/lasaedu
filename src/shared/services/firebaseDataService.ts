@@ -133,7 +133,7 @@ export interface DBLesson {
   courseId: string;
   title: string;
   description: string;
-  type: 'video' | 'texto' | 'quiz' | 'tarea' | 'recurso';
+  type: 'video' | 'texto' | 'quiz' | 'tarea' | 'recurso' | 'scorm' | 'lti' | 'h5p';
   content: string;
   videoUrl?: string;
   duration: string;
@@ -145,6 +145,9 @@ export interface DBLesson {
     url: string;
     type: string;
   }[];
+  scormPackageId?: string;
+  ltiToolId?: string;
+  h5pContentId?: string;
   status: 'borrador' | 'publicado';
   createdAt: number;
   updatedAt: number;

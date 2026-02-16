@@ -1,0 +1,263 @@
+================================================================================
+  LASA EDU - TAREAS PENDIENTES (Comparación con Moodle)
+  Fecha: 2026-02-16
+  Última actualización: 2026-02-16
+================================================================================
+
+Estas son las funcionalidades que Moodle tiene y LASA EDU aún no implementa.
+Organizadas por prioridad de impacto.
+
+================================================================================
+  PRIORIDAD CRÍTICA
+================================================================================
+
+[✔] 1. Soporte SCORM / xAPI / LTI  <<<< COMPLETADO
+      Subtareas completadas:
+        [✔] Instalar dependencia jszip
+        [✔] Crear tipos TypeScript (src/shared/types/elearning-standards.ts)
+        [✔] Extender LessonType con 'scorm' | 'lti' (types/index.ts)
+        [✔] Extender DBLesson.type y agregar scormPackageId/ltiToolId
+            (firebaseDataService.ts)
+        [✔] Implementar servicios SCORM (parser, package, RTE, data)
+        [✔] Implementar servicios xAPI (vocabulary, service)
+        [✔] Implementar servicio LTI
+        [✔] Crear componentes UI (SCORMPlayer, SCORMUploader, LTIToolLauncher,
+            LTIToolConfigForm, LTIToolList, XAPIStatementViewer)
+        [✔] Crear páginas de gestión (SCORMManagement, LTIManagement, XAPIReports)
+        [✔] Integrar con código existente (LessonBuilder, LessonView,
+            gamificationEngine, dataService, router)
+        [✔] Crear tests unitarios (47 tests pasando)
+        [✔] Verificar build y tests finales
+
+[ ] 2. Contenido Interactivo H5P
+      - Motor H5P integrado para renderizar contenido interactivo
+      - Biblioteca de contenido H5P (videos interactivos, presentaciones,
+        juegos, drag-and-drop avanzado, hotspots, etc.)
+      - Editor visual para crear contenido H5P
+      - Banco de contenido reutilizable entre cursos
+
+[ ] 3. Autenticación Multi-factor (MFA/2FA)
+      - Autenticación de dos factores con TOTP (Google Authenticator, etc.)
+      - Verificación por SMS como segundo factor
+      - Login social: Google, Facebook, LinkedIn
+      - Soporte LDAP/SAML para entornos empresariales/universitarios
+
+[ ] 4. Wiki Colaborativa
+      - Módulo wiki por curso
+      - Edición colaborativa en tiempo real o por turnos
+      - Historial de revisiones completo
+      - Comparación de versiones (diff)
+      - Permisos de edición configurables (todos, solo profesores, grupos)
+
+[ ] 5. Glosario
+      - Glosario de términos por curso
+      - Glosario global de la plataforma
+      - Auto-enlace de términos en contenido de lecciones
+      - Exportar/importar glosarios
+      - Los estudiantes pueden proponer términos (aprobación del profesor)
+
+[ ] 6. Taller / Workshop (Evaluación entre Pares)
+      - Sistema de evaluación entre pares (peer review)
+      - Rúbricas de evaluación peer-to-peer
+      - Fases: envío, evaluación, calificación
+      - Calibración de evaluadores
+      - Feedback anónimo entre compañeros
+
+
+================================================================================
+  PRIORIDAD IMPORTANTE
+================================================================================
+
+[ ] 7. Rutas de Aprendizaje / Learning Plans
+      - Rutas de aprendizaje configurables por admin/profesor
+      - Framework de competencias (crear, asignar, evaluar)
+      - Mapeo competencia-actividad
+      - Planes individuales de aprendizaje por estudiante
+      - Progreso de competencias visible para el estudiante
+
+[ ] 8. Calendario Global con Eventos
+      - Calendario visual global (vista mes, semana, día)
+      - Eventos automáticos: fechas de entrega, exámenes, inicio de cursos
+      - Eventos manuales: creados por profesores o admins
+      - Recordatorios automáticos antes de fechas límite
+      - Exportar calendario (formato iCal)
+      - Sincronización con Google Calendar / Outlook
+
+[ ] 9. Acceso Offline / App Móvil (PWA)
+      - Progressive Web App funcional
+      - Descargar contenido de lecciones para acceso offline
+      - Completar actividades sin conexión
+      - Sincronización automática al reconectarse
+      - Notificaciones push nativas
+
+[ ] 10. Blog Personal del Estudiante
+       - Blog personal por usuario
+       - Portafolio de aprendizaje (evidencias de trabajo)
+       - Sistema de reflexiones vinculado a cursos
+       - Comentarios del profesor en entradas del blog
+       - Visibilidad configurable (público, solo profesor, privado)
+
+[ ] 11. Videoconferencia Integrada
+       - Integración con BigBlueButton, Zoom o Google Meet
+       - Crear sesiones en vivo desde el curso
+       - Pizarra colaborativa
+       - Grabación de sesiones
+       - Chat en vivo durante la sesión
+       - Enlace directo desde la lección/módulo
+
+[ ] 12. Banco de Preguntas Avanzado
+       - Banco de preguntas compartido entre cursos
+       - Categorías y etiquetas para organizar preguntas
+       - Versionado de preguntas (historial de cambios)
+       - Importar preguntas (formatos Aiken, GIFT, XML de Moodle)
+       - Exportar preguntas en formatos estándar
+       - Estadísticas por pregunta (dificultad, discriminación)
+
+[ ] 13. Grupos y Agrupamientos
+       - Crear grupos dentro de un curso
+       - Asignar estudiantes a grupos (manual o automático)
+       - Actividades y recursos visibles solo para ciertos grupos
+       - Foros por grupo
+       - Calificaciones por grupo
+       - Agrupamientos (conjuntos de grupos)
+
+[ ] 14. Restricciones de Acceso Condicional
+       - Mostrar/ocultar actividades según condiciones:
+         * Fecha (desde/hasta)
+         * Nota obtenida en otra actividad
+         * Finalización de otra actividad
+         * Pertenencia a un grupo
+         * Campo del perfil del usuario
+       - Combinar condiciones con AND/OR
+       - Mostrar actividad bloqueada con mensaje vs ocultarla completamente
+
+
+================================================================================
+  PRIORIDAD DESEABLE
+================================================================================
+
+[ ] 15. Libro / Recurso tipo Libro
+       - Recurso tipo libro con capítulos y subcapítulos
+       - Navegación por tabla de contenidos
+       - Impresión del libro completo
+       - Exportación a PDF
+
+[ ] 16. Lección Interactiva con Ramificación
+       - Lecciones con lógica condicional
+       - Si responde A → ir a página X, si responde B → ir a página Y
+       - Árboles de decisión en el contenido
+       - Puntuación acumulada por camino recorrido
+
+[ ] 17. Base de Datos de Actividades
+       - Actividad tipo base de datos colaborativa
+       - Estudiantes crean, editan y buscan entradas
+       - Plantillas personalizables para las entradas
+       - Aprobación de entradas por el profesor
+
+[ ] 18. Sistema de Plugins/Extensiones
+       - Arquitectura extensible con hooks/plugins
+       - API para desarrollar módulos de terceros
+       - Marketplace de extensiones
+       - Instalación/desinstalación de plugins desde admin
+
+[ ] 19. Cumplimiento WCAG 2.1 AA
+       - Auditoría completa de accesibilidad
+       - Toolkit de accesibilidad integrado (análisis automático de contenido)
+       - Navegación completa por teclado
+       - Compatibilidad con lectores de pantalla
+       - Contraste de colores verificado en toda la UI
+
+[ ] 20. GDPR / Privacidad de Datos
+       - Portal de privacidad para el usuario
+       - "Exportar mis datos" (descarga completa de datos personales)
+       - "Solicitar eliminación de mi cuenta" con flujo de aprobación
+       - Gestión de consentimientos (cookies, datos, marketing)
+       - Políticas de privacidad aceptables antes de usar la plataforma
+       - Registro de procesamiento de datos
+
+[ ] 21. Integración con IA
+       - Conectar con APIs de IA (OpenAI, Anthropic, Gemini)
+       - Generación automática de preguntas desde contenido
+       - Resúmenes automáticos de lecciones
+       - Asistente inteligente para estudiantes
+       - Recomendaciones personalizadas de cursos/contenido
+       - Feedback automático en tareas de texto
+
+[ ] 22. Soporte Multi-idioma Completo (i18n)
+       - Sistema de internacionalización con archivos de traducción
+       - Español (actual), Inglés, Portugués como mínimo
+       - Selector de idioma en la interfaz
+       - Contenido de cursos traducible
+       - Fechas, números y monedas localizados
+
+[ ] 23. Copias de Seguridad de Cursos
+       - Backup individual de un curso completo (contenido + config)
+       - Restore de un curso desde backup
+       - Importar curso desde otra instancia
+       - Exportar curso como paquete descargable
+       - Backups automáticos programados
+
+[ ] 24. Encuestas y Feedback
+       - Módulo de encuestas anónimas
+       - Votaciones rápidas (Choice: una pregunta, múltiples opciones)
+       - Feedback del curso al finalizar
+       - Resultados visibles para profesores
+       - Plantillas de encuesta reutilizables
+
+
+================================================================================
+  ARCHIVOS CREADOS / MODIFICADOS (Tarea 1 - SCORM/xAPI/LTI)
+================================================================================
+
+  Archivos creados:
+    [✔] src/shared/types/elearning-standards.ts
+    [✔] src/shared/services/scorm/scormManifestParser.ts
+    [✔] src/shared/services/scorm/scormPackageService.ts
+    [✔] src/shared/services/scorm/scormRTE.ts
+    [✔] src/shared/services/scorm/scormDataService.ts
+    [✔] src/shared/services/xapi/xapiVocabulary.ts
+    [✔] src/shared/services/xapi/xapiService.ts
+    [✔] src/shared/services/lti/ltiService.ts
+    [✔] src/modules/elearning-standards/components/SCORMPlayer.tsx
+    [✔] src/modules/elearning-standards/components/SCORMUploader.tsx
+    [✔] src/modules/elearning-standards/components/LTIToolLauncher.tsx
+    [✔] src/modules/elearning-standards/components/LTIToolConfigForm.tsx
+    [✔] src/modules/elearning-standards/components/LTIToolList.tsx
+    [✔] src/modules/elearning-standards/components/XAPIStatementViewer.tsx
+    [✔] src/modules/elearning-standards/pages/SCORMManagementPage.tsx
+    [✔] src/modules/elearning-standards/pages/LTIManagementPage.tsx
+    [✔] src/modules/elearning-standards/pages/XAPIReportsPage.tsx
+    [✔] src/shared/services/scorm/__tests__/scormManifestParser.test.ts
+    [✔] src/shared/services/scorm/__tests__/scormRTE.test.ts
+
+  Archivos modificados:
+    [✔] src/shared/types/index.ts (LessonType extendido)
+    [✔] src/shared/services/firebaseDataService.ts (DBLesson extendido)
+    [✔] package.json (jszip agregado)
+    [✔] src/shared/services/dataService.ts (re-exportar nuevos servicios)
+    [✔] src/shared/services/gamificationEngine.ts (POINT_ACTIONS SCORM/LTI)
+    [✔] src/modules/courses/pages/LessonBuilderPage.tsx (tipos scorm/lti)
+    [✔] src/modules/courses/pages/LessonViewPage.tsx (renderizado scorm/lti)
+    [✔] src/app/router/index.tsx (3 rutas nuevas)
+
+
+================================================================================
+  NOTAS
+================================================================================
+
+- Las tareas están ordenadas por prioridad dentro de cada sección.
+- Se recomienda abordarlas en el orden listado.
+- Cada tarea puede requerir múltiples sprints dependiendo de su complejidad.
+- Las tareas críticas son necesarias para competir con Moodle a nivel funcional.
+- Las tareas importantes mejoran significativamente la experiencia educativa.
+- Las tareas deseables completan la paridad de funcionalidades con Moodle.
+
+Leyenda:
+  [✔] = Completado
+  [~] = En progreso
+  [ ] = Pendiente
+
+Total de tareas: 24
+  - Críticas:    6  (1 completada, 5 pendientes)
+  - Importantes: 8
+  - Deseables:  10

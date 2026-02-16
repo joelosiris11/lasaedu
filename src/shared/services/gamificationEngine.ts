@@ -42,6 +42,10 @@ export const POINT_ACTIONS = {
   // Certificados
   EARN_CERTIFICATE: { points: 150, action: 'certificate_earn', description: 'Obtener certificado' },
   SHARE_CERTIFICATE: { points: 30, action: 'certificate_share', description: 'Compartir certificado' },
+
+  // SCORM / LTI
+  COMPLETE_SCORM: { points: 15, action: 'scorm_complete', description: 'Completar un paquete SCORM' },
+  COMPLETE_LTI: { points: 10, action: 'lti_complete', description: 'Completar una actividad LTI' },
 } as const;
 
 // ============================================
@@ -478,6 +482,42 @@ class GamificationEngine {
       userName,
       certificateId,
       platform
+    });
+  }
+
+  /**
+   * Registrar completado de paquete SCORM
+   */
+  async onSCORMComplete(
+    userId: string,
+    packageId: string,
+    courseId: string,
+    userName: string,
+    score?: number
+  ): Promise<void> {
+    await this.awardPoints(userId, 'COMPLETE_SCORM', {
+      userName,
+      packageId,
+      courseId,
+      score
+    });
+  }
+
+  /**
+   * Registrar completado de actividad LTI
+   */
+  async onLTIComplete(
+    userId: string,
+    toolId: string,
+    courseId: string,
+    userName: string,
+    grade?: number
+  ): Promise<void> {
+    await this.awardPoints(userId, 'COMPLETE_LTI', {
+      userName,
+      toolId,
+      courseId,
+      grade
     });
   }
 

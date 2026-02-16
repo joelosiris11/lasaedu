@@ -570,6 +570,16 @@ export const dataService = {
 };
 // ============================================
 
+// ============================================
+// SCORM / xAPI / LTI
+// ============================================
+
+export { scormManifestParser } from './scorm/scormManifestParser';
+export { scormPackageService } from './scorm/scormPackageService';
+export { scormDataService } from './scorm/scormDataService';
+export { xapiService } from './xapi/xapiService';
+export { ltiService } from './lti/ltiService';
+
 export const dataUtils = {
   seedDatabase: () => firebaseDB.seedDatabase(),
   clearDatabase: () => firebaseDB.clearDatabase(),

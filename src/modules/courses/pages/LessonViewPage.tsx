@@ -13,6 +13,8 @@ import {
 } from '@shared/services/dataService';
 import { gamificationEngine } from '@shared/services/gamificationEngine';
 import VideoPlayer from '@shared/components/media/VideoPlayer';
+import SCORMPlayer from '@modules/elearning-standards/components/SCORMPlayer';
+import LTIToolLauncher from '@modules/elearning-standards/components/LTIToolLauncher';
 import { 
   ArrowLeft,
   ArrowRight,
@@ -397,15 +399,38 @@ export default function LessonViewPage() {
                     Comenzar Quiz
                   </Button>
                 </div>
+              ) : currentLesson.type === 'scorm' && currentLesson.scormPackageId ? (
+                <SCORMPlayer
+                  packageId={currentLesson.scormPackageId}
+                  lessonId={currentLesson.id}
+                  courseId={courseId!}
+                  userId={user!.id}
+                  onComplete={async (data) => {
+                    await gamificationEngine.onSCORMComplete(
+                      user!.id, currentLesson.scormPackageId!, courseId!, user!.name, data.scoreRaw
+                    );
+                    handleLessonComplete();
+                  }}
+                />
+              ) : currentLesson.type === 'lti' && currentLesson.ltiToolId ? (
+                <LTIToolLauncher
+                  toolId={currentLesson.ltiToolId}
+                  lessonId={currentLesson.id}
+                  courseId={courseId!}
+                  userId={user!.id}
+                  userName={user!.name}
+                  userEmail={user!.email}
+                  userRole={user!.role as 'admin' | 'teacher' | 'student'}
+                />
               ) : (
                 <div className="p-6">
                   <div className="bg-gray-100 rounded-lg p-6 text-center">
                     <File className="h-16 w-16 text-gray-400 mx-auto mb-4" />
                     <p className="text-gray-600">Contenido de tipo: {currentLesson.type}</p>
                     {currentLesson.content && (
-                      <a 
-                        href={currentLesson.content} 
-                        target="_blank" 
+                      <a
+                        href={currentLesson.content}
+                        target="_blank"
                         rel="noopener noreferrer"
                         className="mt-4 inline-block text-blue-600 hover:underline"
                       >

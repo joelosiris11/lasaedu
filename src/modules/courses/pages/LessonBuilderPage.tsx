@@ -18,6 +18,8 @@ import {
   Headphones,
   FileText,
   HelpCircle,
+  Package,
+  ExternalLink,
   Layers,
   Type
 } from 'lucide-react';
@@ -45,6 +47,8 @@ interface LessonSettings {
   maxAttempts?: number;
   availableFrom?: string;
   availableUntil?: string;
+  scormPackageId?: string;
+  ltiToolId?: string;
 }
 
 const LESSON_TYPES = [
@@ -72,11 +76,23 @@ const LESSON_TYPES = [
     icon: BookOpen, 
     description: 'Tareas y actividades prácticas' 
   },
-  { 
-    value: 'quiz' as const, 
-    label: 'Quiz/Evaluación', 
-    icon: HelpCircle, 
-    description: 'Preguntas y evaluaciones interactivas' 
+  {
+    value: 'quiz' as const,
+    label: 'Quiz/Evaluación',
+    icon: HelpCircle,
+    description: 'Preguntas y evaluaciones interactivas'
+  },
+  {
+    value: 'scorm' as const,
+    label: 'Paquete SCORM',
+    icon: Package,
+    description: 'Paquete SCORM 1.2 o 2004 compatible'
+  },
+  {
+    value: 'lti' as const,
+    label: 'Herramienta LTI',
+    icon: ExternalLink,
+    description: 'Integración con herramienta externa LTI'
   }
 ] as const;
 
@@ -99,7 +115,7 @@ export default function LessonBuilderPage() {
   // Form state
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [lessonType, setLessonType] = useState<'texto' | 'video' | 'quiz' | 'tarea' | 'recurso'>('texto');
+  const [lessonType, setLessonType] = useState<'texto' | 'video' | 'quiz' | 'tarea' | 'recurso' | 'scorm' | 'lti'>('texto');
   const [content, setContent] = useState<ContentBlock[]>([]);
   const [editorMode, setEditorMode] = useState<'blocks' | 'wysiwyg'>('blocks');
   const [wysiwygContent, setWysiwygContent] = useState('');
@@ -131,7 +147,7 @@ export default function LessonBuilderPage() {
           setTitle(lessonData.title);
           setDescription(lessonData.description || '');
           // Map DB type to component type
-          const mappedType: 'texto' | 'video' | 'quiz' | 'tarea' | 'recurso' = lessonData.type || 'texto';
+          const mappedType = (lessonData.type || 'texto') as typeof lessonType;
           setLessonType(mappedType);
           
           // Parse content
@@ -634,6 +650,52 @@ export default function LessonBuilderPage() {
                   {errors.passingScore && (
                     <p className="text-red-500 text-sm mt-1">{errors.passingScore}</p>
                   )}
+                </div>
+              </div>
+            )}
+
+            {/* SCORM-specific settings */}
+            {lessonType === 'scorm' && (
+              <div className="space-y-4">
+                <h3 className="font-medium">Configuración SCORM</h3>
+                <p className="text-sm text-gray-500">
+                  Sube un paquete SCORM (.zip) desde la página de gestión de paquetes SCORM
+                  y luego asócialo a esta lección usando el ID del paquete.
+                </p>
+                <div>
+                  <Label htmlFor="scormPackageId">ID del Paquete SCORM</Label>
+                  <Input
+                    id="scormPackageId"
+                    value={settings.scormPackageId || ''}
+                    onChange={(e) => setSettings(prev => ({
+                      ...prev,
+                      scormPackageId: e.target.value || undefined
+                    }))}
+                    placeholder="ID del paquete SCORM subido"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* LTI-specific settings */}
+            {lessonType === 'lti' && (
+              <div className="space-y-4">
+                <h3 className="font-medium">Configuración LTI</h3>
+                <p className="text-sm text-gray-500">
+                  Configura las herramientas LTI desde la página de gestión LTI
+                  y luego asócialas usando el ID de la herramienta.
+                </p>
+                <div>
+                  <Label htmlFor="ltiToolId">ID de la Herramienta LTI</Label>
+                  <Input
+                    id="ltiToolId"
+                    value={settings.ltiToolId || ''}
+                    onChange={(e) => setSettings(prev => ({
+                      ...prev,
+                      ltiToolId: e.target.value || undefined
+                    }))}
+                    placeholder="ID de la herramienta LTI configurada"
+                  />
                 </div>
               </div>
             )}
