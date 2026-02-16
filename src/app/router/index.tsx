@@ -41,6 +41,10 @@ import SCORMManagementPage from '@modules/elearning-standards/pages/SCORMManagem
 import LTIManagementPage from '@modules/elearning-standards/pages/LTIManagementPage';
 import XAPIReportsPage from '@modules/elearning-standards/pages/XAPIReportsPage';
 
+// H5P Interactive Content
+import H5PManagementPage from '@modules/h5p/pages/H5PManagementPage';
+import { H5PLibraryPage } from '@modules/h5p/pages/H5PLibraryPage';
+
 // Componente para página no encontrada
 const NotFoundPage = () => (
   <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50">
@@ -319,6 +323,22 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute allowedRoles={['admin', 'teacher']}>
             <XAPIReportsPage />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: 'h5p-management/:courseId',
+        element: (
+          <ProtectedRoute allowedRoles={['admin', 'teacher']}>
+            <H5PManagementPage />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: 'h5p-library/:courseId',
+        element: (
+          <ProtectedRoute allowedRoles={['admin', 'teacher']}>
+            <H5PLibraryPage />
           </ProtectedRoute>
         )
       },

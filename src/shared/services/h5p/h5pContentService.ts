@@ -203,6 +203,83 @@ export class H5PContentService {
     // Extraer URL base (sin el nombre del archivo)
     return url.substring(0, url.lastIndexOf('/'));
   }
+
+  /**
+   * Obtener contenido reutilizable
+   */
+  async getReusableContents(): Promise<H5PContentMeta[]> {
+    const q = query(ref(database, 'h5pContent'), 
+      orderByChild('isPublished'), equalTo(true));
+    const snapshot = await get(q);
+    if (!snapshot.exists()) return [];
+    
+    const allContent = Object.values(snapshot.val()) as H5PContentMeta[];
+    return allContent.filter((c: any) => c.isReusable);
+  }
+
+  /**
+   * Copiar contenido H5P a otro curso
+   */
+  async copyContent(
+    sourceId: string,
+    targetCourseId: string,
+    newTitle?: string
+  ): Promise<H5PContentMeta> {
+    const source = await this.getContent(sourceId);
+    if (!source) throw new Error('Contenido H5P origen no encontrado');
+
+    const newId = `h5p_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const newContent: H5PContentMeta = {
+      ...source,
+      id: newId,
+      title: newTitle || `${source.title} (copia)`,
+      usageCount: 0,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+
+    await set(ref(database, `h5pContent/${newId}`), newContent);
+    return newContent;
+  }
+
+  /**
+   * Marcar contenido como reutilizable
+   */
+  async markAsReusable(id: string, isReusable: boolean): Promise<void> {
+    await update(ref(database, `h5pContent/${id}`), {
+      isReusable,
+      updatedAt: Date.now()
+    });
+  }
+
+  /**
+   * Buscar contenido H5P
+   */
+  async searchContent(
+    query: string,
+    filters?: {
+      contentType?: string;
+      tags?: string[];
+      reusableOnly?: boolean;
+    }
+  ): Promise<H5PContentMeta[]> {
+    const allContent = await this.getAllContent();
+    
+    return allContent.filter((content: any) => {
+      // Búsqueda por texto
+      const matchesQuery = !query ||
+        content.title.toLowerCase().includes(query.toLowerCase()) ||
+        (content.description || '').toLowerCase().includes(query.toLowerCase()) ||
+        content.tags.some((t: string) => t.toLowerCase().includes(query.toLowerCase()));
+
+      // Filtros
+      if (filters?.contentType && content.contentType !== filters.contentType) return false;
+      if (filters?.reusableOnly && !content.isPublished) return false;
+      if (filters?.tags && !filters.tags.some(t => content.tags.includes(t))) return false;
+
+      return matchesQuery;
+    });
+  }
 }
 
 export const h5pContentService = new H5PContentService();

@@ -49,6 +49,7 @@ interface LessonSettings {
   availableUntil?: string;
   scormPackageId?: string;
   ltiToolId?: string;
+  h5pContentId?: string;
 }
 
 const LESSON_TYPES = [
@@ -93,6 +94,12 @@ const LESSON_TYPES = [
     label: 'Herramienta LTI',
     icon: ExternalLink,
     description: 'Integración con herramienta externa LTI'
+  },
+  {
+    value: 'h5p' as const,
+    label: 'Contenido H5P',
+    icon: Layers,
+    description: 'Contenido interactivo H5P (videos, juegos, quizzes)'
   }
 ] as const;
 
@@ -115,7 +122,7 @@ export default function LessonBuilderPage() {
   // Form state
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [lessonType, setLessonType] = useState<'texto' | 'video' | 'quiz' | 'tarea' | 'recurso' | 'scorm' | 'lti'>('texto');
+  const [lessonType, setLessonType] = useState<'texto' | 'video' | 'quiz' | 'tarea' | 'recurso' | 'scorm' | 'lti' | 'h5p'>('texto');
   const [content, setContent] = useState<ContentBlock[]>([]);
   const [editorMode, setEditorMode] = useState<'blocks' | 'wysiwyg'>('blocks');
   const [wysiwygContent, setWysiwygContent] = useState('');
@@ -696,6 +703,39 @@ export default function LessonBuilderPage() {
                     }))}
                     placeholder="ID de la herramienta LTI configurada"
                   />
+                </div>
+              </div>
+            )}
+
+            {/* H5P-specific settings */}
+            {lessonType === 'h5p' && (
+              <div className="space-y-4">
+                <h3 className="font-medium">Configuración H5P</h3>
+                <p className="text-sm text-gray-500">
+                  Sube contenido H5P desde la página de gestión de H5P
+                  y luego asócialos usando el ID del contenido.
+                </p>
+                <div>
+                  <Label htmlFor="h5pContentId">ID del Contenido H5P</Label>
+                  <Input
+                    id="h5pContentId"
+                    value={settings.h5pContentId || ''}
+                    onChange={(e) => setSettings(prev => ({
+                      ...prev,
+                      h5pContentId: e.target.value || undefined
+                    }))}
+                    placeholder="ID del contenido H5P subido"
+                  />
+                  <p className="text-sm text-gray-600 mt-2">
+                    <a 
+                      href={`/h5p-management/${courseId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:text-blue-700 underline"
+                    >
+                      Ir a gestionar contenido H5P
+                    </a>
+                  </p>
                 </div>
               </div>
             )}

@@ -579,6 +579,59 @@ export interface DBForumReply {
   updatedAt: number;
 }
 
+// Contenido H5P
+export interface DBH5PContent {
+  id: string;
+  courseId: string;
+  title: string;
+  description?: string;
+  contentType: string;
+  mainLibrary: string;
+  packageUrl: string;
+  storageBasePath: string;
+  fileSize: number;
+  previewImageUrl?: string;
+  tags: string[];
+  isPublished: boolean;
+  isReusable: boolean;
+  usageCount: number;
+  createdBy: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+// Intento de H5P
+export interface DBH5PAttempt {
+  id: string;
+  contentId: string;
+  userId: string;
+  courseId: string;
+  attemptNumber: number;
+  score?: number;
+  maxScore?: number;
+  completed: boolean;
+  completedAt?: number;
+  duration?: number;
+  startedAt: number;
+  endedAt?: number;
+  interactionData?: any;
+  rawData?: any;
+}
+
+// Resultado de H5P
+export interface DBH5PResult {
+  id: string;
+  contentId: string;
+  userId: string;
+  courseId: string;
+  lastAttemptDate: number;
+  bestScore: number;
+  attempts: DBH5PAttempt[];
+  completed: boolean;
+  completedAt?: number;
+  averageScore: number;
+}
+
 // ============================================
 // SERVICIO DE DATOS FIREBASE
 // ============================================

@@ -46,6 +46,10 @@ export const POINT_ACTIONS = {
   // SCORM / LTI
   COMPLETE_SCORM: { points: 15, action: 'scorm_complete', description: 'Completar un paquete SCORM' },
   COMPLETE_LTI: { points: 10, action: 'lti_complete', description: 'Completar una actividad LTI' },
+
+  // H5P
+  COMPLETE_H5P: { points: 20, action: 'h5p_complete', description: 'Completar contenido H5P' },
+  PERFECT_H5P: { points: 75, action: 'h5p_perfect', description: 'Puntuación perfecta en H5P' },
 } as const;
 
 // ============================================

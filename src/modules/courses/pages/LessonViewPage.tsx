@@ -15,6 +15,7 @@ import { gamificationEngine } from '@shared/services/gamificationEngine';
 import VideoPlayer from '@shared/components/media/VideoPlayer';
 import SCORMPlayer from '@modules/elearning-standards/components/SCORMPlayer';
 import LTIToolLauncher from '@modules/elearning-standards/components/LTIToolLauncher';
+import { H5PPlayer } from '@modules/h5p';
 import { 
   ArrowLeft,
   ArrowRight,
@@ -421,6 +422,32 @@ export default function LessonViewPage() {
                   userName={user!.name}
                   userEmail={user!.email}
                   userRole={user!.role as 'admin' | 'teacher' | 'student'}
+                />
+              ) : currentLesson.type === 'h5p' && currentLesson.h5pContentId ? (
+                <H5PPlayer
+                  content={{
+                    id: currentLesson.h5pContentId,
+                    title: currentLesson.title,
+                    description: currentLesson.description,
+                    mainLibrary: '',
+                    contentType: 'H5P.MultiChoice' as any,
+                    storageBasePath: '',
+                    fileSize: 0,
+                    tags: [],
+                    isPublished: true,
+                    usageCount: 0,
+                    createdBy: '',
+                    createdAt: 0,
+                    updatedAt: 0
+                  }}
+                  onCompletion={(score, maxScore) => {
+                    // Registrar intento H5P
+                    gamificationEngine.awardPoints('h5p_completed', user!.id);
+                    if (score === maxScore) {
+                      gamificationEngine.awardPoints('h5p_perfect_score', user!.id);
+                    }
+                    handleLessonComplete();
+                  }}
                 />
               ) : (
                 <div className="p-6">
