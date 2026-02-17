@@ -4,6 +4,7 @@
     ".write": true,
     "users": {
       ".read": "auth != null || true",
+      ".indexOn": ["email", "role"],
       "$uid": {
         ".read": "auth != null || true",
         ".write": "$uid === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin' || true",

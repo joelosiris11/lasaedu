@@ -22,10 +22,10 @@ async function seedData() {
   // Create users in Firebase Auth first
   const authUsers = [
     { email: 'admin@lasaedu.com', password: 'password123' },
-    { email: 'profesor@lasaedu.com', password: 'password123' },
-    { email: 'estudiante@lasaedu.com', password: 'password123' },
-    { email: 'ana@lasaedu.com', password: 'password123' },
-    { email: 'soporte@lasaedu.com', password: 'password123' }
+    { email: 'teacher@lasaedu.com', password: 'password123' },
+    { email: 'student@lasaedu.com', password: 'password123' },
+    { email: 'laura@lasaedu.com', password: 'password123' },
+    { email: 'support@lasaedu.com', password: 'password123' }
   ];
 
   for (const u of authUsers) {
@@ -44,10 +44,10 @@ async function seedData() {
 
   const users = {
     admin_1: { id: 'admin_1', email: 'admin@lasaedu.com', name: 'Administrador', role: 'admin', emailVerified: true, createdAt: timestamp, updatedAt: timestamp },
-    teacher_1: { id: 'teacher_1', email: 'profesor@lasaedu.com', name: 'Prof. Maria Garcia', role: 'teacher', emailVerified: true, createdAt: timestamp, updatedAt: timestamp },
-    student_1: { id: 'student_1', email: 'estudiante@lasaedu.com', name: 'Carlos Rodriguez', role: 'student', emailVerified: true, createdAt: timestamp, updatedAt: timestamp },
-    student_2: { id: 'student_2', email: 'ana@lasaedu.com', name: 'Ana Lopez', role: 'student', emailVerified: true, createdAt: timestamp, updatedAt: timestamp },
-    support_1: { id: 'support_1', email: 'soporte@lasaedu.com', name: 'Ana Soporte', role: 'support', emailVerified: true, createdAt: timestamp, updatedAt: timestamp }
+    teacher_1: { id: 'teacher_1', email: 'teacher@lasaedu.com', name: 'Prof. María García', role: 'teacher', emailVerified: true, createdAt: timestamp, updatedAt: timestamp },
+    student_1: { id: 'student_1', email: 'student@lasaedu.com', name: 'Carlos Rodríguez', role: 'student', emailVerified: true, createdAt: timestamp, updatedAt: timestamp },
+    student_2: { id: 'student_2', email: 'laura@lasaedu.com', name: 'Laura Mendoza', role: 'student', emailVerified: true, createdAt: timestamp, updatedAt: timestamp },
+    support_1: { id: 'support_1', email: 'support@lasaedu.com', name: 'Ana Soporte', role: 'support', emailVerified: true, createdAt: timestamp, updatedAt: timestamp }
   };
   await set(ref(db, 'users'), users);
   console.log('Usuarios DB creados (5)');
@@ -106,7 +106,7 @@ async function seedData() {
   console.log('Calificaciones creadas (2)');
 
   const certificates = {
-    cert_1: { id: 'cert_1', courseId: 'course_1', userId: 'student_2', courseName: 'Introduccion a Python', studentName: 'Ana Lopez', instructorName: 'Prof. Maria Garcia', grade: 92, credentialId: 'LASA-PY-2026-001', status: 'generated', createdAt: timestamp, updatedAt: timestamp }
+    cert_1: { id: 'cert_1', courseId: 'course_1', userId: 'student_2', courseName: 'Introduccion a Python', studentName: 'Laura Mendoza', instructorName: 'Prof. María García', grade: 92, credentialId: 'LASA-PY-2026-001', status: 'generated', createdAt: timestamp, updatedAt: timestamp }
   };
   await set(ref(db, 'certificates'), certificates);
   console.log('Certificados creados (1)');
@@ -119,9 +119,9 @@ async function seedData() {
   console.log('Conversaciones creadas (2)');
 
   const messages = {
-    msg_1: { id: 'msg_1', conversationId: 'conv_1', senderId: 'student_1', senderName: 'Carlos Rodriguez', content: 'Hola profesora tengo una duda', type: 'text', createdAt: timestamp - 3600000, updatedAt: timestamp - 3600000 },
-    msg_2: { id: 'msg_2', conversationId: 'conv_1', senderId: 'teacher_1', senderName: 'Prof. Maria Garcia', content: 'Hola Carlos cual es tu duda', type: 'text', createdAt: timestamp - 3000000, updatedAt: timestamp - 3000000 },
-    msg_3: { id: 'msg_3', conversationId: 'conv_1', senderId: 'student_1', senderName: 'Carlos Rodriguez', content: 'Gracias profesora', type: 'text', createdAt: timestamp, updatedAt: timestamp }
+    msg_1: { id: 'msg_1', conversationId: 'conv_1', senderId: 'student_1', senderName: 'Carlos Rodríguez', content: 'Hola profesora tengo una duda', type: 'text', createdAt: timestamp - 3600000, updatedAt: timestamp - 3600000 },
+    msg_2: { id: 'msg_2', conversationId: 'conv_1', senderId: 'teacher_1', senderName: 'Prof. María García', content: 'Hola Carlos cual es tu duda', type: 'text', createdAt: timestamp - 3000000, updatedAt: timestamp - 3000000 },
+    msg_3: { id: 'msg_3', conversationId: 'conv_1', senderId: 'student_1', senderName: 'Carlos Rodríguez', content: 'Gracias profesora', type: 'text', createdAt: timestamp, updatedAt: timestamp }
   };
   await set(ref(db, 'messages'), messages);
   console.log('Mensajes creados (3)');
@@ -135,16 +135,16 @@ async function seedData() {
   console.log('Notificaciones creadas (3)');
 
   const supportTickets = {
-    ticket_1: { id: 'ticket_1', userId: 'student_1', userName: 'Carlos Rodriguez', userEmail: 'estudiante@lasaedu.com', category: 'tecnico', priority: 'media', subject: 'No puedo ver los videos', description: 'Los videos no cargan', status: 'open', assignedTo: 'support_1', assignedName: 'Ana Soporte', createdAt: timestamp - 7200000, updatedAt: timestamp - 3600000 },
-    ticket_2: { id: 'ticket_2', userId: 'student_2', userName: 'Ana Lopez', userEmail: 'ana@lasaedu.com', category: 'academico', priority: 'baja', subject: 'Consulta certificado', description: 'Validez del certificado', status: 'resolved', assignedTo: 'support_1', satisfactionRating: 5, createdAt: timestamp - 172800000, updatedAt: timestamp - 86400000 }
+    ticket_1: { id: 'ticket_1', userId: 'student_1', userName: 'Carlos Rodríguez', userEmail: 'student@lasaedu.com', category: 'tecnico', priority: 'media', subject: 'No puedo ver los videos', description: 'Los videos no cargan', status: 'open', assignedTo: 'support_1', assignedName: 'Ana Soporte', createdAt: timestamp - 7200000, updatedAt: timestamp - 3600000 },
+    ticket_2: { id: 'ticket_2', userId: 'student_2', userName: 'Laura Mendoza', userEmail: 'laura@lasaedu.com', category: 'academico', priority: 'baja', subject: 'Consulta certificado', description: 'Validez del certificado', status: 'resolved', assignedTo: 'support_1', satisfactionRating: 5, createdAt: timestamp - 172800000, updatedAt: timestamp - 86400000 }
   };
   await set(ref(db, 'supportTickets'), supportTickets);
   console.log('Tickets de soporte creados (2)');
 
   const activities = {
-    act_1: { id: 'act_1', userId: 'student_1', userName: 'Carlos Rodriguez', type: 'login', action: 'login', description: 'Inicio de sesion', timestamp: timestamp, createdAt: timestamp },
-    act_2: { id: 'act_2', userId: 'student_1', userName: 'Carlos Rodriguez', type: 'lesson_complete', action: 'complete_lesson', description: 'Completo Variables en Python', timestamp: timestamp - 3600000, createdAt: timestamp - 3600000 },
-    act_3: { id: 'act_3', userId: 'student_2', userName: 'Ana Lopez', type: 'certificate', action: 'certificate_earned', description: 'Obtuvo certificado de Python', timestamp: timestamp - 86400000, createdAt: timestamp - 86400000 }
+    act_1: { id: 'act_1', userId: 'student_1', userName: 'Carlos Rodríguez', type: 'login', action: 'login', description: 'Inicio de sesion', timestamp: timestamp, createdAt: timestamp },
+    act_2: { id: 'act_2', userId: 'student_1', userName: 'Carlos Rodríguez', type: 'lesson_complete', action: 'complete_lesson', description: 'Completo Variables en Python', timestamp: timestamp - 3600000, createdAt: timestamp - 3600000 },
+    act_3: { id: 'act_3', userId: 'student_2', userName: 'Laura Mendoza', type: 'certificate', action: 'certificate_earned', description: 'Obtuvo certificado de Python', timestamp: timestamp - 86400000, createdAt: timestamp - 86400000 }
   };
   await set(ref(db, 'activities'), activities);
   console.log('Actividades creadas (3)');
@@ -190,15 +190,15 @@ async function seedData() {
   console.log('Metricas del sistema creadas (1)');
 
   const forumPosts = {
-    post_1: { id: 'post_1', courseId: 'course_1', courseName: 'Introduccion a Python', authorId: 'student_1', authorName: 'Carlos Rodriguez', authorRole: 'student', title: 'Duda sobre variables en Python', content: 'No entiendo bien la diferencia entre tipos mutables e inmutables. Alguien puede explicar?', isPinned: false, isResolved: true, likesCount: 3, likedBy: ['student_2', 'teacher_1'], repliesCount: 2, views: 15, tags: ['python', 'variables'], createdAt: timestamp - 172800000, updatedAt: timestamp - 86400000 },
-    post_2: { id: 'post_2', courseId: 'course_2', courseName: 'Desarrollo Web con React', authorId: 'student_2', authorName: 'Ana Lopez', authorRole: 'student', title: 'Como usar useEffect correctamente?', content: 'Tengo problemas con las dependencias del useEffect. Mi componente se re-renderiza infinitamente.', isPinned: true, isResolved: false, likesCount: 5, likedBy: ['student_1', 'teacher_1'], repliesCount: 1, views: 28, tags: ['react', 'hooks', 'useEffect'], createdAt: timestamp - 86400000, updatedAt: timestamp - 3600000 }
+    post_1: { id: 'post_1', courseId: 'course_1', courseName: 'Introduccion a Python', authorId: 'student_1', authorName: 'Carlos Rodríguez', authorRole: 'student', title: 'Duda sobre variables en Python', content: 'No entiendo bien la diferencia entre tipos mutables e inmutables. Alguien puede explicar?', isPinned: false, isResolved: true, likesCount: 3, likedBy: ['student_2', 'teacher_1'], repliesCount: 2, views: 15, tags: ['python', 'variables'], createdAt: timestamp - 172800000, updatedAt: timestamp - 86400000 },
+    post_2: { id: 'post_2', courseId: 'course_2', courseName: 'Desarrollo Web con React', authorId: 'student_2', authorName: 'Laura Mendoza', authorRole: 'student', title: 'Como usar useEffect correctamente?', content: 'Tengo problemas con las dependencias del useEffect. Mi componente se re-renderiza infinitamente.', isPinned: true, isResolved: false, likesCount: 5, likedBy: ['student_1', 'teacher_1'], repliesCount: 1, views: 28, tags: ['react', 'hooks', 'useEffect'], createdAt: timestamp - 86400000, updatedAt: timestamp - 3600000 }
   };
   await set(ref(db, 'forumPosts'), forumPosts);
   console.log('Forum posts creados (2)');
 
   const forumReplies = {
-    reply_1: { id: 'reply_1', postId: 'post_1', authorId: 'teacher_1', authorName: 'Prof. Maria Garcia', authorRole: 'teacher', content: 'Los tipos inmutables como int, str y tuple no pueden cambiar despues de crearse. Los mutables como list y dict si pueden modificarse.', isAnswer: true, likesCount: 4, likedBy: ['student_1', 'student_2'], createdAt: timestamp - 86400000, updatedAt: timestamp - 86400000 },
-    reply_2: { id: 'reply_2', postId: 'post_1', authorId: 'student_2', authorName: 'Ana Lopez', authorRole: 'student', content: 'Gracias profesora, ahora me queda mas claro!', isAnswer: false, likesCount: 1, likedBy: ['student_1'], createdAt: timestamp - 43200000, updatedAt: timestamp - 43200000 }
+    reply_1: { id: 'reply_1', postId: 'post_1', authorId: 'teacher_1', authorName: 'Prof. María García', authorRole: 'teacher', content: 'Los tipos inmutables como int, str y tuple no pueden cambiar despues de crearse. Los mutables como list y dict si pueden modificarse.', isAnswer: true, likesCount: 4, likedBy: ['student_1', 'student_2'], createdAt: timestamp - 86400000, updatedAt: timestamp - 86400000 },
+    reply_2: { id: 'reply_2', postId: 'post_1', authorId: 'student_2', authorName: 'Laura Mendoza', authorRole: 'student', content: 'Gracias profesora, ahora me queda mas claro!', isAnswer: false, likesCount: 1, likedBy: ['student_1'], createdAt: timestamp - 43200000, updatedAt: timestamp - 43200000 }
   };
   await set(ref(db, 'forumReplies'), forumReplies);
   console.log('Forum replies creados (2)');
@@ -226,10 +226,10 @@ async function seedData() {
   console.log('=== BASE DE DATOS SEMBRADA EXITOSAMENTE ===');
   console.log('Usuarios de prueba:');
   console.log('  admin@lasaedu.com (admin)');
-  console.log('  profesor@lasaedu.com (teacher)');
-  console.log('  estudiante@lasaedu.com (student)');
-  console.log('  ana@lasaedu.com (student)');
-  console.log('  soporte@lasaedu.com (support)');
+  console.log('  teacher@lasaedu.com (teacher)');
+  console.log('  student@lasaedu.com (student)');
+  console.log('  laura@lasaedu.com (student)');
+  console.log('  support@lasaedu.com (support)');
   
   process.exit(0);
 }

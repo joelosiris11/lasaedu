@@ -39,8 +39,11 @@ export const authService = {
     const accessToken = await userCredential.user.getIdToken();
     const refreshToken = userCredential.user.refreshToken;
 
-    // Get user data from Realtime Database
-    let dbUser = await firebaseDB.getUserByEmail(credentials.email);
+    // Get user data from Realtime Database - try by Auth UID first, then email
+    let dbUser = await firebaseDB.getUserById(userCredential.user.uid);
+    if (!dbUser) {
+      dbUser = await firebaseDB.getUserByEmail(credentials.email);
+    }
 
     // If user doesn't exist in DB, create it (for backward compatibility)
     if (!dbUser) {

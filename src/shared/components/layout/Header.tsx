@@ -1,12 +1,24 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useAuthStore } from '@app/store/authStore';
-import { Search, User, ChevronDown } from 'lucide-react';
+import { Search, User, ChevronDown, LogOut } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { NotificationCenter } from './NotificationCenter';
 
 export const Header = () => {
-  const { user } = useAuthStore();
+  const { user, logout } = useAuthStore();
   const [showProfile, setShowProfile] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showProfile) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setShowProfile(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showProfile]);
 
   return (
     <header className="bg-white border-b border-gray-200 px-4 py-3 md:px-6">
@@ -29,7 +41,7 @@ export const Header = () => {
           <NotificationCenter />
 
           {/* Profile Dropdown */}
-          <div className="relative">
+          <div className="relative" ref={dropdownRef}>
             <Button
               variant="ghost"
               size="sm"
@@ -62,6 +74,15 @@ export const Header = () => {
                   </button>
                   <button className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100">
                     Ayuda
+                  </button>
+                </div>
+                <div className="border-t border-gray-200 py-1">
+                  <button
+                    onClick={() => { setShowProfile(false); logout(); }}
+                    className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    Cerrar Sesión
                   </button>
                 </div>
               </div>

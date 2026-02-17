@@ -41,4 +41,11 @@ export default defineConfig({
   optimizeDeps: {
     include: ['react', 'react-dom', 'react-router-dom', 'firebase/app', 'firebase/auth', 'firebase/database'],
   },
+  server: {
+    host: '0.0.0.0',
+    watch: {
+      usePolling: true,
+      interval: 1000,
+    },
+  },
 })

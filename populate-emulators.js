@@ -19,63 +19,63 @@ async function seedData() {
     users: {
       'admin_1': {
         id: 'admin_1',
-        name: 'Administrador Principal',
+        name: 'Administrador',
         email: 'admin@lasaedu.com',
         role: 'admin',
         emailVerified: true,
         createdAt: timestamp,
         updatedAt: timestamp,
         avatar: null,
-        phone: null,
+        phone: '+18091234567',
         bio: 'Administrador del sistema LasaEdu'
       },
       'teacher_1': {
         id: 'teacher_1',
         name: 'Prof. María García',
-        email: 'garcia@lasaedu.com',
+        email: 'teacher@lasaedu.com',
         role: 'teacher',
         emailVerified: true,
         createdAt: timestamp - 86400000,
         updatedAt: timestamp,
         avatar: null,
-        phone: '+34 666 123 456',
+        phone: '+18091234568',
         bio: 'Profesora de Programación con 10 años de experiencia'
-      },
-      'teacher_2': {
-        id: 'teacher_2',
-        name: 'Prof. Carlos Martínez',
-        email: 'martinez@lasaedu.com',
-        role: 'teacher',
-        emailVerified: true,
-        createdAt: timestamp - 86400000 * 2,
-        updatedAt: timestamp,
-        avatar: null,
-        phone: '+34 666 123 457',
-        bio: 'Profesor de Matemáticas Avanzadas'
       },
       'student_1': {
         id: 'student_1',
-        name: 'Ana López',
-        email: 'ana@lasaedu.com',
+        name: 'Carlos Rodríguez',
+        email: 'student@lasaedu.com',
         role: 'student',
         emailVerified: true,
         createdAt: timestamp - 86400000 * 3,
         updatedAt: timestamp,
         avatar: null,
-        phone: '+34 666 789 123',
-        bio: 'Estudiante de programación'
+        phone: '+18091234569',
+        bio: 'Estudiante de ingeniería'
       },
       'student_2': {
         id: 'student_2',
-        name: 'David Rodríguez',
-        email: 'david@lasaedu.com',
+        name: 'Laura Mendoza',
+        email: 'laura@lasaedu.com',
         role: 'student',
         emailVerified: true,
         createdAt: timestamp - 86400000 * 4,
         updatedAt: timestamp,
         avatar: null,
-        phone: '+34 666 789 124',
-        bio: 'Estudiante de matemáticas'
+        phone: '+18091234571',
+        bio: 'Diseñadora gráfica aprendiendo programación'
+      },
+      'support_1': {
+        id: 'support_1',
+        name: 'Ana Soporte',
+        email: 'support@lasaedu.com',
+        role: 'support',
+        emailVerified: true,
+        createdAt: timestamp - 86400000 * 2,
+        updatedAt: timestamp,
+        avatar: null,
+        phone: '+18091234570',
+        bio: 'Agente de soporte técnico'
       }
     },
     
@@ -100,8 +100,8 @@ async function seedData() {
         id: 'course_2',
         title: 'Matemáticas Avanzadas',
         description: 'Cálculo diferencial e integral, álgebra lineal y estadística aplicada.',
-        instructorId: 'teacher_2',
-        instructor: 'Prof. Carlos Martínez',
+        instructorId: 'teacher_1',
+        instructor: 'Prof. María García',
         category: 'matematicas',
         level: 'avanzado',
         duration: '12 semanas',
@@ -169,7 +169,7 @@ async function seedData() {
       'activity_1': {
         id: 'activity_1',
         userId: 'student_1',
-        userName: 'Ana López',
+        userName: 'Carlos Rodríguez',
         action: 'Se inscribió en Introducción a Python',
         timestamp: timestamp - 86400000 * 15,
         details: 'Nueva inscripción registrada'
@@ -185,7 +185,7 @@ async function seedData() {
       'activity_3': {
         id: 'activity_3',
         userId: 'student_2',
-        userName: 'David Rodríguez',
+        userName: 'Laura Mendoza',
         action: 'Se inscribió en Matemáticas Avanzadas',
         timestamp: timestamp - 86400000 * 10,
         details: 'Nueva inscripción registrada'
@@ -223,9 +223,11 @@ async function seedData() {
     }
 
     console.log('🎉 Base de datos poblada exitosamente!');
-    console.log('👤 Usuario admin: admin@lasaedu.com');
-    console.log('🏫 Cursos disponibles: 3');
-    console.log('👥 Usuarios totales: 5');
+    console.log('👤 admin@lasaedu.com (admin)');
+    console.log('👤 teacher@lasaedu.com (teacher)');
+    console.log('👤 student@lasaedu.com (student)');
+    console.log('👤 support@lasaedu.com (support)');
+    console.log('🔑 Password: password123');
 
   } catch (error) {
     console.error('❌ Error poblando base de datos:', error);

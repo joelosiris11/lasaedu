@@ -35,6 +35,7 @@ import EnrollmentManagementPage from '@modules/enrollments/pages/EnrollmentManag
 import NotificationSystemPage from '@modules/notifications/pages/NotificationSystemPage';
 import UserManagementPage from '@modules/users/pages/UserManagementPage';
 import ForumsPage from '@modules/forums/pages/ForumsPage';
+import DataInitPage from '@modules/auth/pages/DataInitPage';
 
 // Componente para página no encontrada
 const NotFoundPage = () => (
@@ -81,6 +82,10 @@ const DashboardRedirect = () => {
 };
 
 export const router = createBrowserRouter([
+  {
+    path: '/data-init',
+    element: <DataInitPage />
+  },
   {
     path: '/login',
     element: <LoginPage />

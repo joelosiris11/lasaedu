@@ -25,10 +25,7 @@ export default function LoginPage() {
   // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated && user) {
-      if (user.role === 'admin') navigate('/admin');
-      else if (user.role === 'teacher') navigate('/teacher');
-      else if (user.role === 'student') navigate('/student');
-      else if (user.role === 'support') navigate('/support');
+      navigate('/dashboard');
     }
   }, [isAuthenticated, user, navigate]);
 
@@ -56,14 +53,7 @@ export default function LoginPage() {
     try {
       await login(data.email, data.password);
       
-      // Get the user from the store state to check role
-      const user = useAuthStore.getState().user;
-      
-      if (user?.role === 'admin') navigate('/admin');
-      else if (user?.role === 'teacher') navigate('/teacher');
-      else if (user?.role === 'student') navigate('/student');
-      else if (user?.role === 'support') navigate('/support');
-      else navigate('/'); // Fallback
+      navigate('/dashboard');
       
     } catch (err: any) {
       setLocalError(err.message || 'Error al iniciar sesión');

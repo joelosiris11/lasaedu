@@ -41,7 +41,7 @@ export async function seedDatabase() {
     const users: Omit<DBUser, 'id'>[] = [
       {
         email: 'admin@lasaedu.com',
-        passwordHash: '$2a$10$hash', // En producción usar bcrypt
+        passwordHash: '$2a$10$hash',
         name: 'Administrador',
         role: 'admin',
         emailVerified: true,
@@ -49,12 +49,12 @@ export async function seedDatabase() {
         profile: {
           avatar: '',
           bio: 'Administrador del sistema LasaEdu',
-          phone: '+1234567890',
-          location: 'Ciudad de México',
+          phone: '+18091234567',
+          location: 'Santo Domingo',
         },
         preferences: {
           language: 'es',
-          timezone: 'America/Mexico_City',
+          timezone: 'America/Santo_Domingo',
           notifications: {
             email: true,
             push: true,
@@ -72,7 +72,7 @@ export async function seedDatabase() {
         lastActive: Date.now()
       },
       {
-        email: 'profesor@lasaedu.com',
+        email: 'teacher@lasaedu.com',
         passwordHash: '$2a$10$hash',
         name: 'Prof. María García',
         role: 'teacher',
@@ -81,12 +81,12 @@ export async function seedDatabase() {
         profile: {
           avatar: '',
           bio: 'Profesora de programación con 10 años de experiencia',
-          phone: '+1234567891',
-          location: 'Guadalajara',
+          phone: '+18091234568',
+          location: 'Santiago',
         },
         preferences: {
           language: 'es',
-          timezone: 'America/Mexico_City',
+          timezone: 'America/Santo_Domingo',
           notifications: { email: true, push: true, sms: false, marketing: true },
           privacy: { showProfile: true, showProgress: true, showBadges: true }
         },
@@ -95,7 +95,7 @@ export async function seedDatabase() {
         lastActive: Date.now()
       },
       {
-        email: 'estudiante@lasaedu.com',
+        email: 'student@lasaedu.com',
         passwordHash: '$2a$10$hash',
         name: 'Carlos Rodríguez',
         role: 'student',
@@ -104,12 +104,12 @@ export async function seedDatabase() {
         profile: {
           avatar: '',
           bio: 'Estudiante de ingeniería apasionado por la tecnología',
-          phone: '+1234567892',
-          location: 'Monterrey',
+          phone: '+18091234569',
+          location: 'Santo Domingo',
         },
         preferences: {
           language: 'es',
-          timezone: 'America/Mexico_City',
+          timezone: 'America/Santo_Domingo',
           notifications: { email: true, push: true, sms: false, marketing: false },
           privacy: { showProfile: true, showProgress: true, showBadges: true }
         },
@@ -118,7 +118,7 @@ export async function seedDatabase() {
         lastActive: Date.now()
       },
       {
-        email: 'soporte@lasaedu.com',
+        email: 'support@lasaedu.com',
         passwordHash: '$2a$10$hash',
         name: 'Ana Soporte',
         role: 'support',
@@ -127,12 +127,12 @@ export async function seedDatabase() {
         profile: {
           avatar: '',
           bio: 'Agente de soporte técnico',
-          phone: '+1234567893',
-          location: 'Ciudad de México',
+          phone: '+18091234570',
+          location: 'Santo Domingo',
         },
         preferences: {
           language: 'es',
-          timezone: 'America/Mexico_City',
+          timezone: 'America/Santo_Domingo',
           notifications: { email: true, push: true, sms: true, marketing: false },
           privacy: { showProfile: false, showProgress: false, showBadges: false }
         },
@@ -150,12 +150,12 @@ export async function seedDatabase() {
         profile: {
           avatar: '',
           bio: 'Diseñadora gráfica aprendiendo programación',
-          phone: '+1234567894',
-          location: 'Puebla',
+          phone: '+18091234571',
+          location: 'Santiago',
         },
         preferences: {
           language: 'es',
-          timezone: 'America/Mexico_City',
+          timezone: 'America/Santo_Domingo',
           notifications: { email: true, push: false, sms: false, marketing: true },
           privacy: { showProfile: true, showProgress: true, showBadges: true }
         },
@@ -173,12 +173,12 @@ export async function seedDatabase() {
         profile: {
           avatar: '',
           bio: 'Contador aprendiendo análisis de datos',
-          phone: '+1234567895',
-          location: 'Querétaro',
+          phone: '+18091234572',
+          location: 'Santo Domingo',
         },
         preferences: {
           language: 'es',
-          timezone: 'America/Mexico_City',
+          timezone: 'America/Santo_Domingo',
           notifications: { email: true, push: true, sms: false, marketing: false },
           privacy: { showProfile: true, showProgress: true, showBadges: true }
         },
@@ -855,9 +855,9 @@ export async function seedDatabase() {
     console.log('\n🎉 ¡Base de datos sembrada exitosamente!');
     console.log('\n📋 Usuarios de prueba:');
     console.log('   Admin: admin@lasaedu.com');
-    console.log('   Profesor: profesor@lasaedu.com');
-    console.log('   Estudiante: estudiante@lasaedu.com');
-    console.log('   Soporte: soporte@lasaedu.com');
+    console.log('   Teacher: teacher@lasaedu.com');
+    console.log('   Student: student@lasaedu.com');
+    console.log('   Support: support@lasaedu.com');
     console.log(`\n   🔑 Contraseña para todos: ${DEFAULT_PASSWORD}`);
 
   } catch (error) {

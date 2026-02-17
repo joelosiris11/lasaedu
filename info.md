@@ -224,10 +224,10 @@ npm run dev
 | Email | Password | Rol | Descripcion |
 |---|---|---|---|
 | admin@lasaedu.com | password123 | admin | Acceso total |
-| profesor@lasaedu.com | password123 | teacher | Gestion de cursos |
-| estudiante@lasaedu.com | password123 | student | Vista estudiante |
-| ana@lasaedu.com | password123 | student | Estudiante adicional |
-| soporte@lasaedu.com | password123 | support | Atencion a usuarios |
+| teacher@lasaedu.com | password123 | teacher | Gestion de cursos |
+| student@lasaedu.com | password123 | student | Vista estudiante |
+| laura@lasaedu.com | password123 | student | Estudiante adicional |
+| support@lasaedu.com | password123 | support | Atencion a usuarios |
 
 Los usuarios se crean tanto en **Firebase Auth** (para login) como en **Realtime Database** (para datos de perfil).
 
