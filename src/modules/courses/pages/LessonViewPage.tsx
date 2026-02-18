@@ -12,7 +12,6 @@ import {
   type DBEnrollment
 } from '@shared/services/dataService';
 import { gamificationEngine } from '@shared/services/gamificationEngine';
-import VideoPlayer from '@shared/components/media/VideoPlayer';
 import {
   ArrowLeft,
   ArrowRight,
@@ -27,12 +26,16 @@ import {
   File,
   HelpCircle,
   Trophy,
-  MessageSquare
+  MessageSquare,
+  Download
 } from 'lucide-react';
 import { Button } from '@shared/components/ui/Button';
 import { Card, CardContent } from '@shared/components/ui/Card';
 import LessonForumView from '../components/LessonForumView';
 import QuizLessonView from '../components/QuizLessonView';
+import VideoLessonView from '../components/VideoLessonView';
+import TareaLessonView from '../components/TareaLessonView';
+import type { ResourceLessonContent } from '../components/ResourceLessonEditor';
 
 interface ModuleWithLessons extends DBModule {
   lessons: DBLesson[];
@@ -378,21 +381,97 @@ export default function LessonViewPage() {
           <Card className="mb-6">
             <CardContent className="p-0">
               {currentLesson.type === 'video' ? (
-                <VideoPlayer
-                  url={currentLesson.videoUrl || currentLesson.content || 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'}
-                  title={currentLesson.title}
+                <VideoLessonView
+                  lesson={currentLesson}
                   onProgress={handleVideoProgress}
                   onComplete={handleVideoComplete}
-                  completionThreshold={90}
                 />
               ) : currentLesson.type === 'texto' ? (
                 <div className="p-6 prose prose-blue max-w-none">
-                  {currentLesson.content ? (
-                    <div dangerouslySetInnerHTML={{ __html: currentLesson.content }} />
-                  ) : (
-                    <p className="text-gray-500">No hay contenido disponible para esta lección.</p>
-                  )}
+                  {(() => {
+                    // Parse texto content (may be WYSIWYG or blocks)
+                    let html = '';
+                    try {
+                      const parsed = typeof currentLesson.content === 'string'
+                        ? JSON.parse(currentLesson.content) : currentLesson.content;
+                      if (parsed?.editorMode === 'wysiwyg') {
+                        html = parsed.html || '';
+                      } else if (typeof currentLesson.content === 'string') {
+                        html = currentLesson.content;
+                      }
+                    } catch {
+                      html = typeof currentLesson.content === 'string' ? currentLesson.content : '';
+                    }
+                    return html ? (
+                      <div dangerouslySetInnerHTML={{ __html: html }} />
+                    ) : (
+                      <p className="text-gray-500">No hay contenido disponible para esta lección.</p>
+                    );
+                  })()}
                 </div>
+              ) : currentLesson.type === 'recurso' ? (
+                <div className="p-6">
+                  {(() => {
+                    let resourceContent: ResourceLessonContent | null = null;
+                    try {
+                      const parsed = typeof currentLesson.content === 'string'
+                        ? JSON.parse(currentLesson.content) : currentLesson.content;
+                      if (parsed?.textContent !== undefined) resourceContent = parsed;
+                    } catch { /* ignore */ }
+
+                    if (!resourceContent) {
+                      return (
+                        <div className="text-center text-gray-500">
+                          <File className="h-12 w-12 mx-auto mb-2 text-gray-400" />
+                          <p>No hay contenido disponible.</p>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="space-y-6">
+                        {resourceContent.textContent && (
+                          <div className="prose prose-blue max-w-none"
+                            dangerouslySetInnerHTML={{ __html: resourceContent.textContent }}
+                          />
+                        )}
+                        {resourceContent.files.length > 0 && (
+                          <div>
+                            <h4 className="text-sm font-medium text-gray-700 mb-3">Archivos Adjuntos</h4>
+                            <div className="space-y-2">
+                              {resourceContent.files.map(file => (
+                                <a
+                                  key={file.id}
+                                  href={file.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                                >
+                                  <FileText className="w-5 h-5 text-blue-500 flex-shrink-0" />
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-medium text-gray-700 truncate">{file.name}</p>
+                                    <p className="text-xs text-gray-400">
+                                      {file.size ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : ''}
+                                    </p>
+                                  </div>
+                                  <Download className="w-4 h-4 text-gray-400" />
+                                </a>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              ) : currentLesson.type === 'tarea' ? (
+                <TareaLessonView
+                  lesson={currentLesson}
+                  courseId={courseId!}
+                  userId={user?.id || ''}
+                  userName={user?.name || ''}
+                  userRole={user?.role || 'student'}
+                  onComplete={handleLessonComplete}
+                />
               ) : currentLesson.type === 'quiz' ? (
                 <QuizLessonView
                   lesson={currentLesson}
@@ -412,16 +491,6 @@ export default function LessonViewPage() {
                   <div className="bg-gray-100 rounded-lg p-6 text-center">
                     <File className="h-16 w-16 text-gray-400 mx-auto mb-4" />
                     <p className="text-gray-600">Contenido de tipo: {currentLesson.type}</p>
-                    {currentLesson.content && (
-                      <a
-                        href={currentLesson.content}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-4 inline-block text-blue-600 hover:underline"
-                      >
-                        Abrir recurso
-                      </a>
-                    )}
                   </div>
                 </div>
               )}
@@ -429,7 +498,7 @@ export default function LessonViewPage() {
           </Card>
 
           {/* Mark as complete button */}
-          {!isLessonCompleted && currentLesson.type !== 'video' && currentLesson.type !== 'foro' && currentLesson.type !== 'quiz' && (
+          {!isLessonCompleted && currentLesson.type !== 'video' && currentLesson.type !== 'foro' && currentLesson.type !== 'quiz' && currentLesson.type !== 'tarea' && (
             <div className="mb-6 text-center">
               <Button 
                 onClick={handleLessonComplete}

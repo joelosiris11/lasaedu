@@ -30,6 +30,7 @@ import type {
   DBUserSettings,
   DBForumPost,
   DBForumReply,
+  DBTaskSubmission,
 } from './firebaseDataService';
 
 // Re-exportar tipos para consumidores
@@ -56,6 +57,7 @@ export type {
   DBUserSettings,
   DBForumPost,
   DBForumReply,
+  DBTaskSubmission,
 };
 
 // ============================================
@@ -545,6 +547,19 @@ export const forumService = {
 };
 
 // ============================================
+// TASK SUBMISSION SERVICE
+// ============================================
+
+export const taskSubmissionService = {
+  getAll: () => firebaseDB.getTaskSubmissions(),
+  getById: (id: string) => firebaseDB.getById<DBTaskSubmission>('taskSubmissions', id),
+  getByLesson: (lessonId: string) => firebaseDB.getTaskSubmissionsByLesson(lessonId),
+  getByStudent: (studentId: string) => firebaseDB.getTaskSubmissionsByStudent(studentId),
+  create: (data: Omit<DBTaskSubmission, 'id'>) => firebaseDB.createTaskSubmission(data),
+  update: (id: string, data: Partial<DBTaskSubmission>) => firebaseDB.updateTaskSubmission(id, data),
+};
+
+// ============================================
 // METRICS SERVICE
 // ============================================
 
@@ -598,6 +613,7 @@ export default {
   progressActivities: progressActivityService,
   userSettings: userSettingsService,
   forums: forumService,
+  taskSubmissions: taskSubmissionService,
   metrics: metricsService,
   utils: dataUtils,
 };

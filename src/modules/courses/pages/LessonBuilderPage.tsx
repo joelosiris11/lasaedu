@@ -28,6 +28,9 @@ import { Input } from '@shared/components/ui/Input';
 import { Label } from '@shared/components/ui/Label';
 import ForumLessonEditor, { type ForumLessonContent, defaultForumContent } from '../components/ForumLessonEditor';
 import QuizLessonEditor, { type QuizLessonContent, defaultQuizContent } from '../components/QuizLessonEditor';
+import VideoLessonEditor, { type VideoLessonContent, defaultVideoContent } from '../components/VideoLessonEditor';
+import ResourceLessonEditor, { type ResourceLessonContent, defaultResourceContent } from '../components/ResourceLessonEditor';
+import TareaLessonEditor, { type TareaLessonContent, defaultTareaContent } from '../components/TareaLessonEditor';
 
 interface ContentBlock {
   id: string;
@@ -111,6 +114,9 @@ export default function LessonBuilderPage() {
   const [lessonType, setLessonType] = useState<'texto' | 'video' | 'quiz' | 'tarea' | 'recurso' | 'foro'>('texto');
   const [forumContent, setForumContent] = useState<ForumLessonContent>(defaultForumContent);
   const [quizContent, setQuizContent] = useState<QuizLessonContent>(defaultQuizContent);
+  const [videoContent, setVideoContent] = useState<VideoLessonContent>(defaultVideoContent);
+  const [resourceContent, setResourceContent] = useState<ResourceLessonContent>(defaultResourceContent);
+  const [tareaContent, setTareaContent] = useState<TareaLessonContent>(defaultTareaContent);
   const [content, setContent] = useState<ContentBlock[]>([]);
   const [editorMode, setEditorMode] = useState<'blocks' | 'wysiwyg'>('blocks');
   const [wysiwygContent, setWysiwygContent] = useState('');
@@ -157,6 +163,15 @@ export default function LessonBuilderPage() {
             // Check if content is quiz type
             } else if (mappedType === 'quiz' && parsedContent && parsedContent.questions !== undefined) {
               setQuizContent(parsedContent as QuizLessonContent);
+            // Check if content is video type
+            } else if (mappedType === 'video' && parsedContent && parsedContent.videoUrl !== undefined) {
+              setVideoContent(parsedContent as VideoLessonContent);
+            // Check if content is resource type
+            } else if (mappedType === 'recurso' && parsedContent && parsedContent.textContent !== undefined) {
+              setResourceContent(parsedContent as ResourceLessonContent);
+            // Check if content is tarea type
+            } else if (mappedType === 'tarea' && parsedContent && parsedContent.instructions !== undefined) {
+              setTareaContent(parsedContent as TareaLessonContent);
             // Check if content is WYSIWYG (has editorMode field) or block-based
             } else if (parsedContent && typeof parsedContent === 'object' && parsedContent.editorMode === 'wysiwyg') {
               setEditorMode('wysiwyg');
@@ -216,6 +231,18 @@ export default function LessonBuilderPage() {
       if (quizContent.questions.length === 0) {
         newErrors.content = 'El quiz debe tener al menos una pregunta';
       }
+    } else if (lessonType === 'video') {
+      if (!videoContent.videoUrl.trim()) {
+        newErrors.content = 'La URL del video es obligatoria';
+      }
+    } else if (lessonType === 'recurso') {
+      if (!resourceContent.textContent.trim() && resourceContent.files.length === 0) {
+        newErrors.content = 'El recurso debe tener contenido de texto o archivos adjuntos';
+      }
+    } else if (lessonType === 'tarea') {
+      if (!tareaContent.instructions.trim()) {
+        newErrors.content = 'Las instrucciones de la tarea son obligatorias';
+      }
     } else if (editorMode === 'blocks' && content.length === 0) {
       newErrors.content = 'La lección debe tener al menos un bloque de contenido';
     } else if (editorMode === 'wysiwyg' && !wysiwygContent.trim()) {
@@ -240,13 +267,22 @@ export default function LessonBuilderPage() {
     setSaving(true);
     try {
       // Prepare content based on lesson type / editor mode
-      const contentToSave = lessonType === 'foro'
-        ? JSON.stringify(forumContent)
-        : lessonType === 'quiz'
-          ? JSON.stringify(quizContent)
-          : editorMode === 'wysiwyg'
-            ? JSON.stringify({ editorMode: 'wysiwyg', html: wysiwygContent })
-            : JSON.stringify(content);
+      let contentToSave: string;
+      if (lessonType === 'foro') {
+        contentToSave = JSON.stringify(forumContent);
+      } else if (lessonType === 'quiz') {
+        contentToSave = JSON.stringify(quizContent);
+      } else if (lessonType === 'video') {
+        contentToSave = JSON.stringify(videoContent);
+      } else if (lessonType === 'recurso') {
+        contentToSave = JSON.stringify(resourceContent);
+      } else if (lessonType === 'tarea') {
+        contentToSave = JSON.stringify(tareaContent);
+      } else if (editorMode === 'wysiwyg') {
+        contentToSave = JSON.stringify({ editorMode: 'wysiwyg', html: wysiwygContent });
+      } else {
+        contentToSave = JSON.stringify(content);
+      }
 
       const lessonData: Partial<DBLesson> = {
         title: title.trim(),
@@ -450,9 +486,14 @@ export default function LessonBuilderPage() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>
-                  {lessonType === 'foro' ? 'Configuración del Foro' : lessonType === 'quiz' ? 'Preguntas del Quiz' : 'Contenido de la Lección'}
+                  {lessonType === 'foro' ? 'Configuración del Foro'
+                    : lessonType === 'quiz' ? 'Preguntas del Quiz'
+                    : lessonType === 'video' ? 'Video y Contenido'
+                    : lessonType === 'recurso' ? 'Recurso y Archivos'
+                    : lessonType === 'tarea' ? 'Tarea/Actividad'
+                    : 'Contenido de la Lección'}
                 </CardTitle>
-                {lessonType !== 'foro' && lessonType !== 'quiz' && (
+                {lessonType === 'texto' && (
                   <div className="flex items-center gap-2 bg-gray-100 rounded-lg p-1">
                     <button
                       onClick={() => setEditorMode('blocks')}
@@ -479,7 +520,7 @@ export default function LessonBuilderPage() {
                   </div>
                 )}
               </div>
-              {lessonType !== 'foro' && lessonType !== 'quiz' && (
+              {lessonType === 'texto' && (
                 <p className="text-sm text-gray-600 mt-2">
                   {editorMode === 'blocks'
                     ? 'Editor de bloques: añade texto, imágenes, videos y más como bloques independientes'
@@ -499,12 +540,18 @@ export default function LessonBuilderPage() {
                 <ForumLessonEditor content={forumContent} onChange={setForumContent} />
               ) : lessonType === 'quiz' ? (
                 <QuizLessonEditor content={quizContent} onChange={setQuizContent} />
+              ) : lessonType === 'video' ? (
+                <VideoLessonEditor content={videoContent} onChange={setVideoContent} />
+              ) : lessonType === 'recurso' ? (
+                <ResourceLessonEditor content={resourceContent} onChange={setResourceContent} courseId={courseId} lessonId={lessonId} />
+              ) : lessonType === 'tarea' ? (
+                <TareaLessonEditor content={tareaContent} onChange={setTareaContent} courseId={courseId} lessonId={lessonId} />
               ) : editorMode === 'blocks' ? (
                 <ContentEditor
                   initialContent={JSON.stringify(content)}
                   onSave={setContent}
                   onContentChange={handleContentChange}
-                  lessonType={lessonType === 'quiz' ? 'text' : lessonType === 'texto' ? 'text' : lessonType === 'recurso' ? 'audio' : lessonType === 'tarea' ? 'text' : 'text'}
+                  lessonType="text"
                   courseId={courseId}
                   lessonId={lessonId}
                 />

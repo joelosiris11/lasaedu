@@ -1,5 +1,6 @@
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { storage } from '@app/config/firebase';
+import { validateFile, type FileValidationOptions } from '@shared/utils/fileValidation';
 
 export interface UploadProgress {
   percent: number;
@@ -46,7 +47,22 @@ class FileUploadService {
       image: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
       video: ['video/mp4', 'video/webm', 'video/quicktime'],
       audio: ['audio/mp3', 'audio/wav', 'audio/ogg', 'audio/m4a'],
-      document: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
+      document: [
+        'application/pdf',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/vnd.oasis.opendocument.text',
+        'application/vnd.oasis.opendocument.spreadsheet',
+        'application/vnd.oasis.opendocument.presentation',
+        'application/zip',
+        'application/x-zip-compressed',
+        'application/x-rar-compressed',
+        'application/vnd.rar',
+        'text/csv',
+        'text/plain',
+      ]
     };
 
     if (file.size > maxSizes[type]) {
@@ -144,6 +160,97 @@ class FileUploadService {
     onProgress?: (progress: UploadProgress) => void
   ): Promise<UploadResult> {
     return this.uploadFile(file, 'document', courseId, lessonId, onProgress);
+  }
+
+  /**
+   * Upload an attachment file (resource/reference) with magic bytes validation.
+   */
+  async uploadAttachment(
+    file: File,
+    courseId: string,
+    lessonId: string,
+    onProgress?: (progress: UploadProgress) => void,
+    validationOptions?: FileValidationOptions
+  ): Promise<UploadResult> {
+    // Validate with magic bytes
+    const result = await validateFile(file, validationOptions);
+    if (!result.valid) {
+      throw new Error(result.error);
+    }
+
+    const filename = this.generateUniqueFilename(file.name);
+    const storagePath = `uploads/courses/${courseId}/lessons/${lessonId}/attachments`;
+    const storageRef = ref(storage, `${storagePath}/${filename}`);
+
+    const metadata = {
+      contentType: file.type,
+      customMetadata: {
+        originalName: file.name,
+        uploadedAt: new Date().toISOString(),
+        courseId,
+        lessonId,
+      },
+    };
+
+    const snapshot = await uploadBytes(storageRef, file, metadata);
+    if (onProgress) {
+      onProgress({ percent: 100, bytesTransferred: file.size, totalBytes: file.size });
+    }
+
+    const downloadURL = await getDownloadURL(snapshot.ref);
+    return {
+      url: downloadURL,
+      filename,
+      size: file.size,
+      contentType: file.type,
+      metadata: snapshot.metadata,
+    };
+  }
+
+  /**
+   * Upload a student submission file with magic bytes validation.
+   */
+  async uploadSubmission(
+    file: File,
+    courseId: string,
+    lessonId: string,
+    studentId: string,
+    onProgress?: (progress: UploadProgress) => void,
+    validationOptions?: FileValidationOptions
+  ): Promise<UploadResult> {
+    const result = await validateFile(file, validationOptions);
+    if (!result.valid) {
+      throw new Error(result.error);
+    }
+
+    const filename = this.generateUniqueFilename(file.name);
+    const storagePath = `uploads/courses/${courseId}/lessons/${lessonId}/submissions/${studentId}`;
+    const storageRef = ref(storage, `${storagePath}/${filename}`);
+
+    const metadata = {
+      contentType: file.type,
+      customMetadata: {
+        originalName: file.name,
+        uploadedAt: new Date().toISOString(),
+        courseId,
+        lessonId,
+        studentId,
+      },
+    };
+
+    const snapshot = await uploadBytes(storageRef, file, metadata);
+    if (onProgress) {
+      onProgress({ percent: 100, bytesTransferred: file.size, totalBytes: file.size });
+    }
+
+    const downloadURL = await getDownloadURL(snapshot.ref);
+    return {
+      url: downloadURL,
+      filename,
+      size: file.size,
+      contentType: file.type,
+      metadata: snapshot.metadata,
+    };
   }
 
   async deleteFile(url: string): Promise<void> {

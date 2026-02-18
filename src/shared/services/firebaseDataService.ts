@@ -578,6 +578,34 @@ export interface DBForumReply {
   updatedAt: number;
 }
 
+// Envio de tarea (Task Submission)
+export interface DBTaskSubmission {
+  id: string;
+  lessonId: string;
+  courseId: string;
+  studentId: string;
+  studentName: string;
+  files: {
+    id: string;
+    name: string;
+    url: string;
+    size: number;
+    contentType: string;
+  }[];
+  comment?: string;
+  status: 'submitted' | 'graded' | 'returned';
+  submittedAt: number;
+  grade?: {
+    score: number;
+    maxScore: number;
+    feedback?: string;
+    gradedBy?: string;
+    gradedAt?: number;
+  };
+  createdAt: number;
+  updatedAt: number;
+}
+
 // ============================================
 // SERVICIO DE DATOS FIREBASE
 // ============================================
@@ -1248,6 +1276,27 @@ class FirebaseDataService {
     return this.delete('forumReplies', id);
   }
 
+  // --- TASK SUBMISSIONS ---
+  async getTaskSubmissions(): Promise<DBTaskSubmission[]> {
+    return this.getAll<DBTaskSubmission>('taskSubmissions');
+  }
+
+  async getTaskSubmissionsByLesson(lessonId: string): Promise<DBTaskSubmission[]> {
+    return this.query<DBTaskSubmission>('taskSubmissions', 'lessonId', lessonId);
+  }
+
+  async getTaskSubmissionsByStudent(studentId: string): Promise<DBTaskSubmission[]> {
+    return this.query<DBTaskSubmission>('taskSubmissions', 'studentId', studentId);
+  }
+
+  async createTaskSubmission(submission: Omit<DBTaskSubmission, 'id'>): Promise<DBTaskSubmission> {
+    return this.create<DBTaskSubmission>('taskSubmissions', submission);
+  }
+
+  async updateTaskSubmission(id: string, data: Partial<DBTaskSubmission>): Promise<DBTaskSubmission | null> {
+    return this.update<DBTaskSubmission>('taskSubmissions', id, data);
+  }
+
   // --- MÉTRICAS DEL SISTEMA ---
   async getSystemMetrics(date?: string): Promise<DBSystemMetric | null> {
     const targetDate = date || new Date().toISOString().split('T')[0];
@@ -1310,7 +1359,8 @@ class FirebaseDataService {
       'evaluations', 'evaluationAttempts', 'grades', 'certificates',
       'messages', 'conversations', 'notifications', 'supportTickets',
       'activities', 'userPoints', 'badges', 'userBadges',
-      'learningStreaks', 'progressActivities', 'userSettings', 'systemMetrics'
+      'learningStreaks', 'progressActivities', 'userSettings', 'systemMetrics',
+      'taskSubmissions'
     ];
 
     const data: Record<string, unknown[]> = {};
@@ -1363,7 +1413,8 @@ export type {
   DBUserSettings as UserSettings,
   DBSystemMetric as SystemMetric,
   DBForumPost as ForumPost,
-  DBForumReply as ForumReply
+  DBForumReply as ForumReply,
+  DBTaskSubmission as TaskSubmission
 };
 
 export default firebaseDB;
