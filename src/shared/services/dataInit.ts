@@ -14,6 +14,7 @@ import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'fire
 import { ref, set, remove } from 'firebase/database';
 import { auth, database } from '@app/config/firebase';
 import { firebaseDB } from './firebaseDataService';
+import { ENRICHED_CONTENT } from './lessonContentData';
 import type {
   DBUser,
   DBCourse,
@@ -40,6 +41,69 @@ function pick<T>(arr: T[]): T {
 }
 
 const DAY = 86400000;
+
+/** Converts markdown-style lesson content to JSON ContentBlock array for the ContentEditor */
+function mdToBlocks(title: string, md: string, lessonType: string): string {
+  const blocks: { id: string; type: string; content: string; metadata?: Record<string, unknown>; order: number }[] = [];
+  let n = 0;
+  const add = (type: string, content: string, metadata?: Record<string, unknown>) => {
+    blocks.push({ id: `blk-${++n}`, type, content, ...(metadata ? { metadata } : {}), order: n - 1 });
+  };
+
+  add('heading', title, { level: 1 });
+
+  // Remove leading H1 if present (already added as heading block)
+  let text = md.replace(/^#\s+[^\n]+\n*/m, '').trim();
+  if (!text) return JSON.stringify(blocks);
+
+  // Parse into segments, keeping code blocks intact
+  const segments: string[] = [];
+  let cur = '';
+  let inCode = false;
+
+  for (const line of text.split('\n')) {
+    if (/^```/.test(line) && !inCode) {
+      if (cur.trim()) segments.push(cur.trim());
+      cur = line + '\n';
+      inCode = true;
+    } else if (/^```/.test(line) && inCode) {
+      cur += line;
+      segments.push(cur);
+      cur = '';
+      inCode = false;
+    } else if (inCode) {
+      cur += line + '\n';
+    } else if (line === '' && cur.trim()) {
+      segments.push(cur.trim());
+      cur = '';
+    } else {
+      cur += (cur ? '\n' : '') + line;
+    }
+  }
+  if (cur.trim()) segments.push(cur.trim());
+
+  for (const seg of segments) {
+    if (seg.startsWith('```')) {
+      const lang = seg.match(/^```(\w+)/)?.[1] || 'javascript';
+      const code = seg.replace(/^```\w*\n?/, '').replace(/\n?```$/, '');
+      add('code', code, { language: lang });
+    } else if (seg.startsWith('## ')) {
+      add('heading', seg.slice(3), { level: 2 });
+    } else if (seg.startsWith('### ')) {
+      add('heading', seg.slice(4), { level: 3 });
+    } else if (seg.startsWith('> ')) {
+      add('quote', seg.replace(/^> ?/gm, ''));
+    } else {
+      add('text', seg);
+    }
+  }
+
+  if (lessonType === 'video') {
+    add('video', `Video: ${title}`, { source: 'youtube' });
+  }
+
+  return JSON.stringify(blocks);
+}
 
 async function createAuthUser(email: string, password: string): Promise<string> {
   try {
@@ -532,7 +596,6 @@ export async function dataInit(clearFirst = false): Promise<void> {
     console.log(`   ✅ ${userData.role}: ${userData.name} (${userData.email})`);
   }
 
-  const admin = createdUsers.find(u => u.role === 'admin')!;
   const teacher1 = createdUsers.find(u => u.email === 'teacher@lasaedu.com')!;
   const teacher2 = createdUsers.find(u => u.email === 'teacher2@lasaedu.com')!;
   const students = createdUsers.filter(u => u.role === 'student');
@@ -597,9 +660,9 @@ export async function dataInit(clearFirst = false): Promise<void> {
           moduleId: mod.id,
           courseId: course.id,
           title: ld.title,
-          description: ld.content.substring(0, 100) + '...',
+          description: ld.content.replace(/^#[^\n]*\n+/, '').split(/\n\n/)[0].substring(0, 120),
           type: ld.type,
-          content: ld.content,
+          content: mdToBlocks(ld.title, ENRICHED_CONTENT[ld.title] || ld.content, ld.type),
           ...(ld.type === 'video' ? { videoUrl: `https://example.com/videos/${course.id}/${mod.id}/${li + 1}` } : {}),
           duration: ld.duration,
           order: li + 1,
@@ -676,7 +739,7 @@ export async function dataInit(clearFirst = false): Promise<void> {
       const enrollDaysAgo = rand(20, 40);
       const isCompleted = progressPct === 100;
 
-      const enrollment = await firebaseDB.createEnrollment({
+      await firebaseDB.createEnrollment({
         courseId: course.id,
         userId: student.id,
         enrolledAt: new Date(now - enrollDaysAgo * DAY).toISOString(),
@@ -697,7 +760,7 @@ export async function dataInit(clearFirst = false): Promise<void> {
       const courseEvals = createdEvals.filter(e => e.courseIdx === ci);
 
       for (let ei = 0; ei < courseEvals.length; ei++) {
-        const { eval: evaluation, moduleId } = courseEvals[ei];
+        const { eval: evaluation, moduleId: _moduleId } = courseEvals[ei];
 
         // Only create attempts for modules the student has reached
         if (ei >= completedModuleCount + 1) continue;
@@ -713,7 +776,7 @@ export async function dataInit(clearFirst = false): Promise<void> {
           evaluationId: evaluation.id,
           userId: student.id,
           courseId: course.id,
-          answers: evaluation.questions.map((q, qi) => {
+          answers: evaluation.questions.map((q, _qi) => {
             const isCorrect = Math.random() < (percentage / 100);
             return {
               questionId: q.id,
@@ -923,42 +986,229 @@ export async function dataInit(clearFirst = false): Promise<void> {
   console.log('   ✅ Conversación de ejemplo creada');
 
   // =============================================
-  // 10. FORO
+  // 10. FORO (estilo Moodle - múltiples posts y respuestas)
   // =============================================
-  console.log('\n💭 Creando posts de foro...');
+  console.log('\n💭 Creando foro de discusión...');
 
-  const forumPost = await firebaseDB.create('forumPosts', {
-    courseId: createdCourses[0].id,
-    courseName: createdCourses[0].title,
-    authorId: students[1].id,
-    authorName: students[1].name,
-    authorRole: 'student',
+  let forumPostCount = 0;
+  let forumReplyCount = 0;
+
+  // Helper to create a post with replies
+  async function createForumThread(
+    courseIdx: number,
+    authorIdx: number,
+    authorType: 'student' | 'teacher',
+    data: {
+      title: string; content: string; isPinned?: boolean; isResolved?: boolean;
+      tags: string[]; daysAgo: number; views: number; likesCount: number;
+      likedBy: string[];
+    },
+    replies: {
+      authorIdx: number; authorType: 'student' | 'teacher'; content: string;
+      isAnswer?: boolean; daysAgo: number; likesCount: number; likedBy: string[];
+      parentReplyId?: string;
+    }[]
+  ) {
+    const course = createdCourses[courseIdx];
+    const author = authorType === 'teacher'
+      ? (authorIdx === 0 ? teacher1 : teacher2)
+      : students[authorIdx];
+
+    const post = await firebaseDB.create('forumPosts', {
+      courseId: course.id,
+      courseName: course.title,
+      authorId: author.id,
+      authorName: author.name,
+      authorRole: authorType,
+      title: data.title,
+      content: data.content,
+      isPinned: data.isPinned || false,
+      isResolved: data.isResolved || false,
+      likesCount: data.likesCount,
+      likedBy: data.likedBy,
+      repliesCount: replies.length,
+      views: data.views,
+      tags: data.tags,
+      createdAt: now - data.daysAgo * DAY,
+      updatedAt: now - (data.daysAgo - 1) * DAY
+    });
+    forumPostCount++;
+
+    const createdReplies: string[] = [];
+    for (const reply of replies) {
+      const rAuthor = reply.authorType === 'teacher'
+        ? (reply.authorIdx === 0 ? teacher1 : teacher2)
+        : students[reply.authorIdx];
+      const r = await firebaseDB.create('forumReplies', {
+        postId: post.id,
+        ...(reply.parentReplyId ? { parentReplyId: createdReplies[parseInt(reply.parentReplyId)] } : {}),
+        authorId: rAuthor.id,
+        authorName: rAuthor.name,
+        authorRole: reply.authorType,
+        content: reply.content,
+        isAnswer: reply.isAnswer || false,
+        likesCount: reply.likesCount,
+        likedBy: reply.likedBy,
+        createdAt: now - reply.daysAgo * DAY,
+        updatedAt: now - reply.daysAgo * DAY
+      });
+      createdReplies.push(r.id!);
+      forumReplyCount++;
+    }
+    return post;
+  }
+
+  // ---- CURSO 0: Desarrollo Web Full Stack ----
+
+  // Post 1: Estado global en React (resuelto)
+  await createForumThread(0, 1, 'student', {
     title: '¿Cómo manejar estado global en React?',
-    content: 'Estoy confundida entre Context API, Redux y Zustand. ¿Cuál recomiendan para un proyecto mediano?',
-    isPinned: false,
-    isResolved: true,
-    likesCount: 4,
-    likedBy: [students[0].id, students[2].id, teacher1.id],
-    repliesCount: 2,
-    views: 23,
-    tags: ['react', 'estado', 'zustand'],
-    createdAt: now - 3 * DAY,
-    updatedAt: now - 2 * DAY
-  });
+    content: 'Estoy confundida entre Context API, Redux y Zustand. ¿Cuál recomiendan para un proyecto mediano? He visto tutoriales de los tres pero no me queda claro cuándo usar cada uno.',
+    isResolved: true, tags: ['react', 'estado', 'zustand'], daysAgo: 8, views: 47,
+    likesCount: 6, likedBy: [students[0].id, students[2].id, teacher1.id]
+  }, [
+    { authorIdx: 0, authorType: 'teacher', content: 'Para proyectos medianos recomiendo Zustand: es simple, ligero (~1KB) y no requiere Provider. Context API está bien para estado simple (tema, idioma), y Redux es para apps muy grandes con lógica compleja.', isAnswer: true, daysAgo: 7, likesCount: 5, likedBy: [students[0].id, students[1].id, students[2].id] },
+    { authorIdx: 0, authorType: 'student', content: 'Yo empecé con Context API pero se volvió un desastre de Providers anidados. Me cambié a Zustand y la diferencia es enorme, el código quedó mucho más limpio.', daysAgo: 7, likesCount: 3, likedBy: [students[1].id, teacher1.id] },
+    { authorIdx: 2, authorType: 'student', content: '¿Y qué opinan de Jotai? He leído que es aún más simple que Zustand para estado atómico.', daysAgo: 6, likesCount: 1, likedBy: [students[1].id] },
+    { authorIdx: 0, authorType: 'teacher', content: 'Jotai es excelente para estado granular. La regla general: Zustand para stores centralizados, Jotai para estado distribuido/atómico. Ambos son muy buenos.', daysAgo: 6, likesCount: 4, likedBy: [students[0].id, students[1].id, students[2].id] },
+  ]);
 
-  await firebaseDB.create('forumReplies', {
-    postId: forumPost.id,
-    authorId: teacher1.id,
-    authorName: teacher1.name,
-    authorRole: 'teacher',
-    content: 'Para proyectos medianos recomiendo Zustand: es simple, ligero y no requiere Provider. Context API está bien para estado simple, y Redux es para apps muy grandes.',
-    isAnswer: true,
-    likesCount: 3,
-    likedBy: [students[0].id, students[1].id],
-    createdAt: now - 2 * DAY,
-    updatedAt: now - 2 * DAY
-  });
-  console.log('   ✅ Post de foro creado');
+  // Post 2: Error al desplegar con Docker (no resuelto)
+  await createForumThread(0, 0, 'student', {
+    title: 'Error al desplegar con Docker: módulos no encontrados',
+    content: 'Cuando hago docker compose up me dice "Failed to resolve import" para varios paquetes. En local funciona perfecto. ¿Alguien ha tenido este problema?',
+    tags: ['docker', 'deploy', 'error'], daysAgo: 3, views: 18,
+    likesCount: 2, likedBy: [students[1].id]
+  }, [
+    { authorIdx: 2, authorType: 'student', content: 'Me pasó lo mismo. El problema es que Docker usa un volumen anónimo para node_modules que no se actualiza cuando agregas nuevas dependencias. Tienes que hacer docker compose up --build.', daysAgo: 2, likesCount: 2, likedBy: [students[0].id, teacher1.id] },
+    { authorIdx: 0, authorType: 'student', content: '¡Eso era! Gracias Pedro. Ahora funciona. ¿Hay forma de que se actualice automáticamente?', daysAgo: 2, likesCount: 0, likedBy: [] },
+  ]);
+
+  // Post 3: Recursos CSS Grid (fijado por profesor)
+  await createForumThread(0, 0, 'teacher', {
+    title: '📌 Recursos adicionales: CSS Grid y layouts modernos',
+    content: 'Comparto una lista de recursos para profundizar en CSS Grid, que complementa lo visto en el módulo 1:\n\n- CSS Grid Garden (juego interactivo): https://cssgridgarden.com\n- Guía completa de CSS Tricks: https://css-tricks.com/snippets/css/complete-guide-grid/\n- Layouts reales con Grid: https://gridbyexample.com\n\nPractiquen con estos recursos y compartan sus proyectos en este hilo.',
+    isPinned: true, tags: ['css', 'recursos', 'grid'], daysAgo: 15, views: 62,
+    likesCount: 8, likedBy: [students[0].id, students[1].id, students[2].id]
+  }, [
+    { authorIdx: 1, authorType: 'student', content: '¡Excelentes recursos profesora! CSS Grid Garden es adictivo. Ya completé todos los niveles 🎮', daysAgo: 14, likesCount: 2, likedBy: [students[0].id, teacher1.id] },
+    { authorIdx: 2, authorType: 'student', content: 'Hice un layout de dashboard usando Grid para mi proyecto. ¿Puedo compartirlo aquí para feedback?', daysAgo: 12, likesCount: 1, likedBy: [teacher1.id] },
+    { authorIdx: 0, authorType: 'teacher', content: '¡Claro Pedro! Comparte tu código y te doy retroalimentación. Es excelente que practiques con proyectos reales.', daysAgo: 12, likesCount: 1, likedBy: [students[2].id] },
+  ]);
+
+  // Post 4: REST vs GraphQL (discusión)
+  await createForumThread(0, 2, 'student', {
+    title: '¿Cuál es la diferencia entre REST y GraphQL?',
+    content: 'En el módulo de APIs vimos REST, pero he escuchado mucho sobre GraphQL. ¿Cuándo conviene usar uno u otro? ¿GraphQL va a reemplazar a REST?',
+    isResolved: true, tags: ['api', 'rest', 'graphql'], daysAgo: 6, views: 34,
+    likesCount: 5, likedBy: [students[0].id, students[1].id]
+  }, [
+    { authorIdx: 0, authorType: 'teacher', content: 'REST y GraphQL resuelven problemas diferentes. REST es simple, cacheable y ampliamente soportado. GraphQL brilla cuando el frontend necesita datos muy específicos de múltiples recursos en una sola petición. No se reemplazarán mutuamente.', isAnswer: true, daysAgo: 5, likesCount: 4, likedBy: [students[0].id, students[1].id, students[2].id] },
+    { authorIdx: 0, authorType: 'student', content: 'En mi trabajo actual usamos REST para todo. ¿Valdría la pena migrar a GraphQL?', daysAgo: 5, likesCount: 1, likedBy: [students[2].id] },
+    { authorIdx: 0, authorType: 'teacher', content: 'Solo migra si tienes problemas reales de over-fetching o under-fetching. Migrar por moda técnica no es buena idea. Si REST te funciona bien, quédate con REST.', daysAgo: 4, likesCount: 6, likedBy: [students[0].id, students[1].id, students[2].id] },
+  ]);
+
+  // ---- CURSO 1: Ciencia de Datos con Python ----
+
+  // Post 5: Dataset con muchos nulos (resuelto)
+  await createForumThread(1, 0, 'student', {
+    title: '¿Cómo manejar un dataset con 40% de valores nulos?',
+    content: 'Estoy trabajando con un dataset de Kaggle sobre precios de viviendas y tiene muchas columnas con 30-40% de nulos. ¿Los elimino todos? ¿Los relleno? No sé cuál es el enfoque correcto.',
+    isResolved: true, tags: ['pandas', 'limpieza', 'nulos'], daysAgo: 10, views: 38,
+    likesCount: 4, likedBy: [students[1].id, students[2].id]
+  }, [
+    { authorIdx: 0, authorType: 'teacher', content: 'Depende del contexto:\n1. Si la columna tiene >50% nulos y no es crucial, elimínala\n2. Para numéricas, rellena con la mediana (robusta a outliers)\n3. Para categóricas, usa la moda o crea una categoría "Desconocido"\n4. Para datos temporales, usa interpolación\n\nNunca rellenes a ciegas con la media sin analizar la distribución primero.', isAnswer: true, daysAgo: 9, likesCount: 7, likedBy: [students[0].id, students[1].id, students[2].id] },
+    { authorIdx: 1, authorType: 'student', content: 'También puedes usar KNNImputer de sklearn para rellenar basándote en los registros más similares. Me funcionó muy bien en un proyecto similar.', daysAgo: 9, likesCount: 3, likedBy: [students[0].id, teacher1.id] },
+    { authorIdx: 0, authorType: 'student', content: 'Usé la mediana para numéricas y "Desconocido" para categóricas como sugirió la profesora. Mi modelo mejoró bastante. ¡Gracias a ambos!', daysAgo: 8, likesCount: 1, likedBy: [teacher1.id] },
+  ]);
+
+  // Post 6: Kaggle vs proyectos propios (discusión)
+  await createForumThread(1, 1, 'student', {
+    title: '¿Kaggle o proyectos propios para el portfolio?',
+    content: '¿Qué vale más en un portfolio de data science: competiciones de Kaggle o proyectos propios con datos reales? Quiero preparar mi portfolio para buscar trabajo.',
+    tags: ['portfolio', 'carrera', 'kaggle'], daysAgo: 7, views: 52,
+    likesCount: 7, likedBy: [students[0].id, students[2].id, teacher1.id]
+  }, [
+    { authorIdx: 0, authorType: 'teacher', content: 'Los dos tienen valor pero son diferentes:\n\n- Kaggle muestra habilidad técnica y competitiva\n- Proyectos propios muestran creatividad, pensamiento de negocio y capacidad end-to-end\n\nMi recomendación: 2-3 proyectos propios con datos reales y 1-2 competiciones de Kaggle. Los reclutadores valoran más los proyectos propios porque demuestran iniciativa.', daysAgo: 6, likesCount: 8, likedBy: [students[0].id, students[1].id, students[2].id] },
+    { authorIdx: 2, authorType: 'student', content: 'Yo conseguí mi pasantía mostrando un proyecto donde analicé datos de transporte público de mi ciudad. El entrevistador se interesó mucho más en eso que en mis notebooks de Kaggle.', daysAgo: 5, likesCount: 5, likedBy: [students[0].id, students[1].id, teacher1.id] },
+    { authorIdx: 0, authorType: 'student', content: '¿Alguna idea de fuentes de datos reales para proyectos interesantes?', daysAgo: 5, likesCount: 1, likedBy: [students[1].id] },
+    { authorIdx: 0, authorType: 'teacher', content: 'APIs públicas: Spotify, Twitter, GitHub. Datos abiertos: datos.gob.do, data.worldbank.org. También puedes hacer web scraping (ético) de sitios como inmobiliarias o sitios de empleo.', daysAgo: 4, likesCount: 3, likedBy: [students[0].id, students[1].id] },
+  ]);
+
+  // Post 7: Error matplotlib (resuelto, técnico)
+  await createForumThread(1, 2, 'student', {
+    title: 'Error al importar matplotlib: "No module named tkinter"',
+    content: 'Instalé matplotlib con pip pero cuando hago import matplotlib.pyplot me da error de tkinter. ¿Cómo lo resuelvo?',
+    isResolved: true, tags: ['matplotlib', 'error', 'instalación'], daysAgo: 12, views: 25,
+    likesCount: 2, likedBy: [students[0].id]
+  }, [
+    { authorIdx: 0, authorType: 'student', content: 'En Ubuntu/Debian instala: sudo apt-get install python3-tk\nEn macOS: brew install python-tk\nEn Windows debería venir incluido con Python.\n\nAlternativa: usa el backend Agg que no necesita GUI:\nimport matplotlib\nmatplotlib.use("Agg")', daysAgo: 11, likesCount: 4, likedBy: [students[2].id, teacher1.id] },
+    { authorIdx: 2, authorType: 'student', content: 'El sudo apt-get install python3-tk me funcionó perfecto. ¡Gracias Carlos!', daysAgo: 11, likesCount: 0, likedBy: [] },
+  ]);
+
+  // Post 8: Recursos SQL (fijado por profesor)
+  await createForumThread(1, 0, 'teacher', {
+    title: '📌 Recursos para practicar SQL',
+    content: 'SQL es fundamental para data science. Aquí van recursos para practicar:\n\n- SQLBolt (tutorial interactivo): https://sqlbolt.com\n- Mode Analytics SQL Tutorial: https://mode.com/sql-tutorial\n- HackerRank SQL: https://hackerrank.com/domains/sql\n- LeetCode Database Problems: https://leetcode.com/problemset/database\n\nEmpiecen por SQLBolt y luego pasen a los ejercicios de HackerRank.',
+    isPinned: true, tags: ['sql', 'recursos', 'práctica'], daysAgo: 20, views: 71,
+    likesCount: 9, likedBy: [students[0].id, students[1].id, students[2].id]
+  }, [
+    { authorIdx: 1, authorType: 'student', content: 'SQLBolt es genial para empezar. Lo completé en una tarde y ahora me siento mucho más cómoda con JOINs.', daysAgo: 18, likesCount: 3, likedBy: [students[0].id, teacher1.id] },
+    { authorIdx: 0, authorType: 'student', content: 'Agrego otro recurso: https://pgexercises.com - es específico para PostgreSQL con ejercicios progresivos muy buenos.', daysAgo: 15, likesCount: 4, likedBy: [students[1].id, students[2].id, teacher1.id] },
+  ]);
+
+  // ---- CURSO 2: Inglés para Profesionales de TI ----
+
+  // Post 9: Miedo a hablar en reuniones (discusión popular)
+  await createForumThread(2, 1, 'student', {
+    title: 'Tips para perder el miedo a hablar en reuniones en inglés',
+    content: 'Entré a un equipo internacional y me da mucho nervio participar en las reuniones. Entiendo casi todo pero a la hora de hablar me bloqueo. ¿Algún consejo?',
+    tags: ['speaking', 'reuniones', 'confianza'], daysAgo: 5, views: 65,
+    likesCount: 10, likedBy: [students[0].id, students[2].id, teacher1.id, teacher2.id]
+  }, [
+    { authorIdx: 1, authorType: 'teacher', content: 'Es completamente normal. Aquí van mis tips:\n1. Prepara lo que vas a decir ANTES de la reunión\n2. Empieza participando en el chat (más fácil que hablar)\n3. Practica tu update del standup en voz alta cada mañana\n4. No busques perfección, busca comunicación\n5. Pide que repitan si no entiendes - es profesional, no vergonzoso', daysAgo: 4, likesCount: 8, likedBy: [students[0].id, students[1].id, students[2].id] },
+    { authorIdx: 0, authorType: 'student', content: 'A mí me ayudó mucho empezar con preguntas simples. "Could you repeat that?" o "Just to clarify..." son frases que te dan tiempo para pensar mientras suenas profesional.', daysAgo: 4, likesCount: 6, likedBy: [students[1].id, students[2].id, teacher2.id] },
+    { authorIdx: 2, authorType: 'student', content: 'Yo practico con ChatGPT simulando reuniones antes de las reales. También me grabé haciendo presentaciones para escucharme y mejorar.', daysAgo: 3, likesCount: 4, likedBy: [students[0].id, students[1].id] },
+    { authorIdx: 1, authorType: 'teacher', content: 'Excelentes tips todos. Recuerden: nadie espera que hablen perfecto. Lo que importa es que se comuniquen. Con práctica, la fluidez llega sola.', daysAgo: 3, likesCount: 3, likedBy: [students[0].id, students[1].id, students[2].id] },
+  ]);
+
+  // Post 10: Pronunciación de términos técnicos (resuelto)
+  await createForumThread(2, 0, 'student', {
+    title: '¿Cómo se pronuncian correctamente estos términos?',
+    content: 'Tengo dudas con la pronunciación de: cache, query, nginx, kubernetes, sudo, GUI, API, char, null. ¿Pueden ayudarme?',
+    isResolved: true, tags: ['pronunciación', 'vocabulario'], daysAgo: 9, views: 43,
+    likesCount: 5, likedBy: [students[1].id, students[2].id, teacher2.id]
+  }, [
+    { authorIdx: 1, authorType: 'teacher', isAnswer: true, content: '¡Buena pregunta! Aquí van:\n- cache: /kæʃ/ (como "cash")\n- query: /ˈkwɪəri/ (como "kwiri")\n- nginx: /ˈɛndʒɪnˈɛks/ ("engine-x")\n- kubernetes: /kuːbərˈnɛtiːz/ ("kuber-netis")\n- sudo: /ˈsuːduː/ ("sudu")\n- GUI: /ˈɡuːi/ ("gui") o deletreado G-U-I\n- API: siempre deletreado A-P-I\n- char: /tʃɑːr/ (como "char" en charcoal)\n- null: /nʌl/ (como "nul")', daysAgo: 8, likesCount: 9, likedBy: [students[0].id, students[1].id, students[2].id] },
+    { authorIdx: 1, authorType: 'student', content: '¡No sabía que "cache" se pronuncia como "cash"! Yo decía "ca-ché" 😅', daysAgo: 8, likesCount: 3, likedBy: [students[0].id, students[2].id] },
+  ]);
+
+  // Post 11: Plantillas de emails (fijado, recurso)
+  await createForumThread(2, 1, 'teacher', {
+    title: '📌 Plantillas de emails profesionales en inglés',
+    content: 'Les comparto las plantillas que más uso en mi trabajo con equipos internacionales:\n\n1. Pedir ayuda: "Hi [name], I\'m working on [X] and could use your expertise on [Y]..."\n2. Reportar problema: "Hi team, I\'ve noticed an issue with [X]. Steps to reproduce: ..."\n3. Pedir extensión: "Hi [name], I wanted to give you a heads-up that [task] may need an extra [time]..."\n4. Agradecer: "Thanks for your help with [X]. It really made a difference."\n\nGuárdenlas y personalícenlas para sus contextos.',
+    isPinned: true, tags: ['emails', 'plantillas', 'writing'], daysAgo: 18, views: 78,
+    likesCount: 12, likedBy: [students[0].id, students[1].id, students[2].id]
+  }, [
+    { authorIdx: 0, authorType: 'student', content: 'Esto es oro. ¿Tienen plantillas también para dar feedback en code reviews?', daysAgo: 17, likesCount: 3, likedBy: [students[1].id, teacher2.id] },
+    { authorIdx: 1, authorType: 'teacher', content: 'Para code reviews:\n- Sugerencia menor: "Nit: consider renaming X to Y for clarity"\n- Sugerencia importante: "I\'d suggest [approach] because [reason]"\n- Pregunta: "What was the reasoning behind [decision]?"\n- Aprobación: "LGTM! Nice work on the refactor."', daysAgo: 16, likesCount: 7, likedBy: [students[0].id, students[1].id, students[2].id] },
+    { authorIdx: 2, authorType: 'student', content: 'Empecé a usar estas plantillas en mi trabajo y mis emails son mucho más claros ahora. Antes tardaba 20 minutos redactando, ahora 5.', daysAgo: 10, likesCount: 4, likedBy: [students[0].id, students[1].id, teacher2.id] },
+  ]);
+
+  // Post 12: Primera entrevista en inglés (experiencia)
+  await createForumThread(2, 2, 'student', {
+    title: 'Mi experiencia en mi primera entrevista técnica en inglés',
+    content: 'Acabo de hacer mi primera entrevista técnica en inglés para una empresa remota y quiero compartir la experiencia:\n\n- Me preparé 2 semanas con mock interviews\n- Usé el método STAR para las behavioral questions\n- Lo más difícil fue explicar mi código en vivo (live coding)\n- El entrevistador fue muy paciente cuando me trabé\n\n¿Alguien más ha tenido entrevistas en inglés? ¿Cómo les fue?',
+    tags: ['entrevista', 'experiencia', 'carrera'], daysAgo: 2, views: 41,
+    likesCount: 8, likedBy: [students[0].id, students[1].id, teacher1.id, teacher2.id]
+  }, [
+    { authorIdx: 1, authorType: 'teacher', content: '¡Felicidades por dar el paso Pedro! Independientemente del resultado, cada entrevista es práctica invaluable. ¿Qué preguntas técnicas te hicieron?', daysAgo: 1, likesCount: 2, likedBy: [students[2].id] },
+    { authorIdx: 2, authorType: 'student', content: 'Me pidieron diseñar una API REST para un sistema de tareas, y luego preguntas de behavioral: "Tell me about a time you disagreed with a teammate." Usé STAR como practicamos en clase y creo que salió bien.', daysAgo: 1, likesCount: 3, likedBy: [students[0].id, students[1].id, teacher2.id] },
+    { authorIdx: 1, authorType: 'student', content: '¡Qué inspiración! Yo aún no me animo pero tu experiencia me motiva. ¿Qué recursos usaste para preparar el live coding en inglés?', daysAgo: 1, likesCount: 1, likedBy: [students[2].id] },
+    { authorIdx: 0, authorType: 'student', content: 'Yo tuve una hace un mes. El tip más útil: practica en voz alta explicando tu código. Puedes grabarte resolviendo problemas de LeetCode narrado en inglés.', daysAgo: 1, likesCount: 5, likedBy: [students[1].id, students[2].id, teacher2.id] },
+  ]);
+
+  console.log(`   ✅ ${forumPostCount} posts y ${forumReplyCount} respuestas de foro creados`);
 
   // =============================================
   // 11. TICKETS DE SOPORTE

@@ -102,7 +102,7 @@ export interface Lesson {
   settings: LessonSettings;
 }
 
-export type LessonType = 'text' | 'video' | 'audio' | 'pdf' | 'quiz' | 'assignment';
+export type LessonType = 'text' | 'video' | 'audio' | 'pdf' | 'quiz' | 'assignment' | 'forum';
 
 export interface LessonSettings {
   isRequired?: boolean;

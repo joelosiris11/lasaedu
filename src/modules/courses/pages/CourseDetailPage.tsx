@@ -1,12 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@app/store/authStore';
 import { courseService, moduleService, lessonService, type DBModule, type DBLesson, type DBCourse } from '@shared/services/dataService';
-import { 
-  BookOpen, 
+import { fileUploadService } from '@shared/services/fileUploadService';
+import {
+  BookOpen,
   ArrowLeft,
-  Plus, 
-  Edit3, 
+  Plus,
+  Edit3,
   Trash2,
   GripVertical,
   ChevronDown,
@@ -17,12 +18,21 @@ import {
   File,
   HelpCircle,
   Clock,
-  Users
+  Users,
+  Image,
+  X,
+  Loader2,
+  Target,
+  MessageSquare
 } from 'lucide-react';
 import { Card, CardContent } from '@shared/components/ui/Card';
 import { Button } from '@shared/components/ui/Button';
 import { Input } from '@shared/components/ui/Input';
 import { Label } from '@shared/components/ui/Label';
+import { SortableList, arrayMove } from '@shared/components/dnd';
+import { RichTextEditor } from '@shared/components/editor';
+import { useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 // Tipos locales extendidos para la UI
 interface CourseModuleWithLessons extends DBModule {
@@ -31,31 +41,312 @@ interface CourseModuleWithLessons extends DBModule {
 
 type CourseData = DBCourse;
 
+// ─── Sortable sub-components ───────────────────────────────────────
+
+function SortableModuleCard({
+  module,
+  moduleIndex,
+  canEdit,
+  isExpanded,
+  onToggle,
+  onEdit,
+  onDelete,
+  onAddLesson,
+  onEditLesson,
+  onDeleteLesson,
+  onLessonReorder,
+  getLessonIcon,
+  courseId,
+}: {
+  module: CourseModuleWithLessons;
+  moduleIndex: number;
+  canEdit: boolean;
+  isExpanded: boolean;
+  onToggle: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  onAddLesson: () => void;
+  onEditLesson: (lesson: DBLesson) => void;
+  onDeleteLesson: (lessonId: string) => void;
+  onLessonReorder: (moduleId: string, oldIndex: number, newIndex: number) => void;
+  getLessonIcon: (type: string) => React.ReactNode;
+  courseId: string;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: module.id, disabled: !canEdit });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  const navigate = useNavigate();
+
+  return (
+    <Card ref={setNodeRef} style={style} className="overflow-hidden">
+      <div
+        className="flex items-center justify-between p-4 bg-gray-50 cursor-pointer hover:bg-gray-100"
+        onClick={onToggle}
+      >
+        <div className="flex items-center space-x-3">
+          {canEdit && (
+            <button
+              ref={setActivatorNodeRef}
+              {...listeners}
+              {...attributes}
+              className="cursor-grab active:cursor-grabbing touch-none p-1 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 rounded"
+              aria-label="Arrastrar para reordenar módulo"
+              type="button"
+              onClick={e => e.stopPropagation()}
+            >
+              <GripVertical className="h-5 w-5" />
+            </button>
+          )}
+          {isExpanded ? (
+            <ChevronDown className="h-5 w-5 text-gray-600" />
+          ) : (
+            <ChevronRight className="h-5 w-5 text-gray-600" />
+          )}
+          <div className="flex items-center gap-3">
+            {module.image && (
+              <img src={module.image} alt="" className="h-10 w-10 rounded object-cover" />
+            )}
+            <div>
+              <h3 className="font-medium">
+                Módulo {moduleIndex + 1}: {module.title}
+              </h3>
+              <p className="text-sm text-gray-600">
+                {module.lessons.length} lecciones •
+                {module.lessons.reduce((sum, l) => sum + parseInt(l.duration || '0'), 0)} min
+              </p>
+              {module.objectives && module.objectives.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {module.objectives.slice(0, 3).map((obj, i) => (
+                    <span key={i} className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-indigo-100 text-indigo-700">
+                      {obj}
+                    </span>
+                  ))}
+                  {module.objectives.length > 3 && (
+                    <span className="text-xs text-gray-500">+{module.objectives.length - 3} más</span>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {canEdit && (
+          <div className="flex items-center space-x-2" onClick={e => e.stopPropagation()}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onAddLesson}
+              title="Agregar lección"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onEdit}
+            >
+              <Edit3 className="h-4 w-4" />
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-red-600 hover:bg-red-50"
+              onClick={onDelete}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {isExpanded && (
+        <div className="border-t">
+          {module.lessons.length === 0 ? (
+            <div className="p-4 text-center text-gray-500">
+              No hay lecciones en este módulo
+              {canEdit && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="ml-2"
+                  onClick={onAddLesson}
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Agregar
+                </Button>
+              )}
+            </div>
+          ) : (
+            <SortableList
+              items={module.lessons.map(l => l.id)}
+              onReorder={(oldIdx, newIdx) => onLessonReorder(module.id, oldIdx, newIdx)}
+              renderOverlay={(activeId) => {
+                const lesson = module.lessons.find(l => l.id === activeId);
+                if (!lesson) return null;
+                return (
+                  <div className="flex items-center space-x-3 p-4 bg-white border rounded-lg shadow-lg">
+                    <GripVertical className="h-4 w-4 text-gray-400" />
+                    {getLessonIcon(lesson.type)}
+                    <p className="font-medium">{lesson.title}</p>
+                  </div>
+                );
+              }}
+            >
+              {module.lessons.map((lesson, lessonIndex) => (
+                <SortableLessonRow
+                  key={lesson.id}
+                  lesson={lesson}
+                  lessonIndex={lessonIndex}
+                  canEdit={canEdit}
+                  getLessonIcon={getLessonIcon}
+                  onView={() => navigate(`/courses/${courseId}/lesson/${lesson.id}`)}
+                  onEdit={() => onEditLesson(lesson)}
+                  onDelete={() => onDeleteLesson(lesson.id)}
+                />
+              ))}
+            </SortableList>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function SortableLessonRow({
+  lesson,
+  lessonIndex,
+  canEdit,
+  getLessonIcon,
+  onView,
+  onEdit,
+  onDelete,
+}: {
+  lesson: DBLesson;
+  lessonIndex: number;
+  canEdit: boolean;
+  getLessonIcon: (type: string) => React.ReactNode;
+  onView: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: lesson.id, disabled: !canEdit });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="flex items-center justify-between p-4 border-b last:border-b-0 hover:bg-gray-50"
+    >
+      <div className="flex items-center space-x-3">
+        {canEdit && (
+          <button
+            ref={setActivatorNodeRef}
+            {...listeners}
+            {...attributes}
+            className="cursor-grab active:cursor-grabbing touch-none p-1 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 rounded"
+            aria-label="Arrastrar para reordenar lección"
+            type="button"
+          >
+            <GripVertical className="h-4 w-4" />
+          </button>
+        )}
+        <span className="text-gray-400 text-sm w-6">{lessonIndex + 1}.</span>
+        {getLessonIcon(lesson.type)}
+        <div>
+          <p className="font-medium">{lesson.title}</p>
+          <div className="flex items-center space-x-2 text-sm text-gray-500">
+            <span className="capitalize">{lesson.type}</span>
+            <span>•</span>
+            <span>{lesson.duration} min</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center space-x-2">
+        {!canEdit && (
+          <Button size="sm" variant="outline" onClick={onView}>
+            <Play className="h-4 w-4 mr-1" />
+            Ver
+          </Button>
+        )}
+        {canEdit && (
+          <>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onEdit}
+            >
+              <Edit3 className="h-4 w-4" />
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-red-600 hover:bg-red-50"
+              onClick={onDelete}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Main component ────────────────────────────────────────────────
+
 export default function CourseDetailPage() {
   const { courseId } = useParams<{ courseId: string }>();
   const navigate = useNavigate();
   const { user } = useAuthStore();
-  
+
   const [course, setCourse] = useState<CourseData | null>(null);
   const [modules, setModules] = useState<CourseModuleWithLessons[]>([]);
   const [expandedModules, setExpandedModules] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
-  
+
   // Modal states
   const [showModuleModal, setShowModuleModal] = useState(false);
-  const [showLessonModal, setShowLessonModal] = useState(false);
   const [selectedModule, setSelectedModule] = useState<CourseModuleWithLessons | null>(null);
-  const [selectedLesson, setSelectedLesson] = useState<DBLesson | null>(null);
-  const [currentModuleId, setCurrentModuleId] = useState<string | null>(null);
-  
-  // Form states
-  const [moduleForm, setModuleForm] = useState({ title: '', description: '' });
-  const [lessonForm, setLessonForm] = useState({
+
+  // Module form states (enhanced)
+  const [moduleForm, setModuleForm] = useState({
     title: '',
-    type: 'texto' as DBLesson['type'],
-    content: '',
-    duration: '10'
+    description: '',
+    image: '',
+    objectives: [] as string[],
+    duration: '',
   });
+  const [newObjective, setNewObjective] = useState('');
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   const isInstructor = user?.role === 'teacher' || user?.role === 'admin';
   const canEdit = isInstructor && (course?.instructorId === user?.id || user?.role === 'admin');
@@ -66,21 +357,18 @@ export default function CourseDetailPage() {
 
   const loadCourseData = async () => {
     if (!courseId) return;
-    
+
     try {
       setLoading(true);
-      
-      // Load course
+
       const courseData = await courseService.getById(courseId);
       if (courseData) {
         setCourse(courseData as CourseData);
       }
-      
-      // Load modules for this course
+
       const courseModules = await moduleService.getByCourse(courseId);
       const sortedModules = courseModules.sort((a, b) => a.order - b.order);
-      
-      // Load lessons for each module
+
       const modulesWithLessons: CourseModuleWithLessons[] = await Promise.all(
         sortedModules.map(async (module) => {
           const lessons = await lessonService.getByModule(module.id);
@@ -90,10 +378,9 @@ export default function CourseDetailPage() {
           };
         })
       );
-      
+
       setModules(modulesWithLessons);
-      
-      // Expand first module by default
+
       if (modulesWithLessons.length > 0) {
         setExpandedModules(new Set([modulesWithLessons[0].id]));
       }
@@ -116,43 +403,57 @@ export default function CourseDetailPage() {
     });
   };
 
+  // ─── Module CRUD ──────────────────────────────────────────────
+
   const handleCreateModule = () => {
     setSelectedModule(null);
-    setModuleForm({ title: '', description: '' });
+    setModuleForm({ title: '', description: '', image: '', objectives: [], duration: '' });
+    setNewObjective('');
     setShowModuleModal(true);
   };
 
   const handleEditModule = (module: CourseModuleWithLessons) => {
     setSelectedModule(module);
-    setModuleForm({ title: module.title, description: module.description });
+    setModuleForm({
+      title: module.title,
+      description: module.description,
+      image: module.image || '',
+      objectives: module.objectives || [],
+      duration: module.duration || '',
+    });
+    setNewObjective('');
     setShowModuleModal(true);
   };
 
   const handleSaveModule = async () => {
     if (!courseId || !moduleForm.title.trim()) return;
-    
+
     try {
+      const updateData: Partial<DBModule> = {
+        title: moduleForm.title,
+        description: moduleForm.description,
+        image: moduleForm.image || undefined,
+        objectives: moduleForm.objectives.length > 0 ? moduleForm.objectives : undefined,
+        duration: moduleForm.duration || '0',
+      };
+
       if (selectedModule) {
-        // Update existing module
-        await moduleService.update(selectedModule.id, {
-          title: moduleForm.title,
-          description: moduleForm.description,
-        });
+        await moduleService.update(selectedModule.id, updateData);
       } else {
-        // Create new module
         const now = Date.now();
         await moduleService.create({
           courseId,
+          ...updateData,
           title: moduleForm.title,
           description: moduleForm.description,
           order: modules.length + 1,
           status: 'borrador',
-          duration: '0',
+          duration: moduleForm.duration || '0',
           createdAt: now,
           updatedAt: now,
         });
       }
-      
+
       setShowModuleModal(false);
       loadCourseData();
     } catch (error) {
@@ -163,11 +464,8 @@ export default function CourseDetailPage() {
   const handleDeleteModule = async (moduleId: string) => {
     if (confirm('¿Estás seguro de eliminar este módulo? Se eliminarán todas las lecciones.')) {
       try {
-        // Delete all lessons in the module
         const moduleLessons = await lessonService.getByModule(moduleId);
         await Promise.all(moduleLessons.map(lesson => lessonService.delete(lesson.id)));
-        
-        // Delete the module
         await moduleService.delete(moduleId);
         loadCourseData();
       } catch (error) {
@@ -176,68 +474,43 @@ export default function CourseDetailPage() {
     }
   };
 
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingImage(true);
+    try {
+      const result = await fileUploadService.uploadImage(file, courseId);
+      setModuleForm(prev => ({ ...prev, image: result.url }));
+    } catch (error) {
+      console.error('Error uploading image:', error);
+    } finally {
+      setUploadingImage(false);
+      if (imageInputRef.current) imageInputRef.current.value = '';
+    }
+  };
+
+  const handleAddObjective = () => {
+    const trimmed = newObjective.trim();
+    if (!trimmed) return;
+    setModuleForm(prev => ({ ...prev, objectives: [...prev.objectives, trimmed] }));
+    setNewObjective('');
+  };
+
+  const handleRemoveObjective = (index: number) => {
+    setModuleForm(prev => ({
+      ...prev,
+      objectives: prev.objectives.filter((_, i) => i !== index),
+    }));
+  };
+
+  // ─── Lesson actions (redirect to LessonBuilderPage) ──────────
+
   const handleCreateLesson = (moduleId: string) => {
-    setCurrentModuleId(moduleId);
-    setSelectedLesson(null);
-    setLessonForm({
-      title: '',
-      type: 'texto',
-      content: '',
-      duration: '10'
-    });
-    setShowLessonModal(true);
+    navigate(`/courses/${courseId}/modules/${moduleId}/lessons/new`);
   };
 
   const handleEditLesson = (lesson: DBLesson) => {
-    setCurrentModuleId(lesson.moduleId);
-    setSelectedLesson(lesson);
-    setLessonForm({
-      title: lesson.title,
-      type: lesson.type,
-      content: lesson.content || '',
-      duration: lesson.duration
-    });
-    setShowLessonModal(true);
-  };
-
-  const handleSaveLesson = async () => {
-    if (!currentModuleId || !lessonForm.title.trim() || !courseId) return;
-    
-    try {
-      const module = modules.find(m => m.id === currentModuleId);
-      
-      if (selectedLesson) {
-        // Update existing lesson
-        await lessonService.update(selectedLesson.id, {
-          title: lessonForm.title,
-          type: lessonForm.type,
-          content: lessonForm.content,
-          duration: lessonForm.duration,
-        });
-      } else {
-        // Create new lesson
-        const lessonCount = module?.lessons.length || 0;
-        const now = Date.now();
-        await lessonService.create({
-          moduleId: currentModuleId,
-          courseId,
-          title: lessonForm.title,
-          description: '',
-          type: lessonForm.type,
-          content: lessonForm.content,
-          duration: lessonForm.duration,
-          order: lessonCount + 1,
-          status: 'borrador',
-          createdAt: now,
-          updatedAt: now,
-        });
-      }
-      
-      setShowLessonModal(false);
-      loadCourseData();
-    } catch (error) {
-      console.error('Error saving lesson:', error);
-    }
+    navigate(`/courses/${courseId}/modules/${lesson.moduleId}/lessons/${lesson.id}/edit`);
   };
 
   const handleDeleteLesson = async (lessonId: string) => {
@@ -251,6 +524,53 @@ export default function CourseDetailPage() {
     }
   };
 
+  // ─── Drag & Drop handlers ────────────────────────────────────
+
+  const handleModuleReorder = async (oldIndex: number, newIndex: number) => {
+    const reordered = arrayMove(modules, oldIndex, newIndex);
+    // Optimistic update
+    setModules(reordered);
+
+    // Persist new order
+    try {
+      await Promise.all(
+        reordered.map((mod, idx) =>
+          moduleService.update(mod.id, { order: idx + 1 })
+        )
+      );
+    } catch (error) {
+      console.error('Error persisting module order:', error);
+      loadCourseData(); // revert on failure
+    }
+  };
+
+  const handleLessonReorder = async (moduleId: string, oldIndex: number, newIndex: number) => {
+    setModules(prev =>
+      prev.map(mod => {
+        if (mod.id !== moduleId) return mod;
+        const reordered = arrayMove(mod.lessons, oldIndex, newIndex);
+        return { ...mod, lessons: reordered };
+      })
+    );
+
+    const mod = modules.find(m => m.id === moduleId);
+    if (!mod) return;
+    const reorderedLessons = arrayMove(mod.lessons, oldIndex, newIndex);
+
+    try {
+      await Promise.all(
+        reorderedLessons.map((lesson, idx) =>
+          lessonService.update(lesson.id, { order: idx + 1 })
+        )
+      );
+    } catch (error) {
+      console.error('Error persisting lesson order:', error);
+      loadCourseData();
+    }
+  };
+
+  // ─── Helpers ──────────────────────────────────────────────────
+
   const getLessonIcon = (type: string) => {
     switch (type) {
       case 'video':
@@ -263,6 +583,8 @@ export default function CourseDetailPage() {
         return <HelpCircle className="h-4 w-4 text-green-500" />;
       case 'tarea':
         return <Edit3 className="h-4 w-4 text-orange-500" />;
+      case 'foro':
+        return <MessageSquare className="h-4 w-4 text-teal-500" />;
       default:
         return <FileText className="h-4 w-4 text-gray-500" />;
     }
@@ -277,6 +599,8 @@ export default function CourseDetailPage() {
   const getTotalLessons = () => {
     return modules.reduce((total, module) => total + module.lessons.length, 0);
   };
+
+  // ─── Render ───────────────────────────────────────────────────
 
   if (loading) {
     return (
@@ -360,10 +684,10 @@ export default function CourseDetailPage() {
         </Card>
       </div>
 
-      {/* Modules List */}
+      {/* Modules List with Drag & Drop */}
       <div className="space-y-4">
         <h2 className="text-lg font-semibold">Contenido del Curso</h2>
-        
+
         {modules.length === 0 ? (
           <Card>
             <CardContent className="p-8 text-center">
@@ -379,140 +703,57 @@ export default function CourseDetailPage() {
             </CardContent>
           </Card>
         ) : (
-          modules.map((module, moduleIndex) => (
-            <Card key={module.id} className="overflow-hidden">
-              <div 
-                className="flex items-center justify-between p-4 bg-gray-50 cursor-pointer hover:bg-gray-100"
-                onClick={() => toggleModuleExpand(module.id)}
-              >
-                <div className="flex items-center space-x-3">
-                  {canEdit && <GripVertical className="h-5 w-5 text-gray-400" />}
-                  {expandedModules.has(module.id) ? (
-                    <ChevronDown className="h-5 w-5 text-gray-600" />
-                  ) : (
-                    <ChevronRight className="h-5 w-5 text-gray-600" />
-                  )}
-                  <div>
-                    <h3 className="font-medium">
-                      Módulo {moduleIndex + 1}: {module.title}
-                    </h3>
-                    <p className="text-sm text-gray-600">
-                      {module.lessons.length} lecciones • 
-                      {module.lessons.reduce((sum, l) => sum + parseInt(l.duration || '0'), 0)} min
-                    </p>
+          <SortableList
+            items={modules.map(m => m.id)}
+            onReorder={handleModuleReorder}
+            renderOverlay={(activeId) => {
+              const mod = modules.find(m => m.id === activeId);
+              if (!mod) return null;
+              return (
+                <Card className="shadow-lg border-indigo-300">
+                  <div className="flex items-center space-x-3 p-4 bg-gray-50">
+                    <GripVertical className="h-5 w-5 text-gray-400" />
+                    <h3 className="font-medium">{mod.title}</h3>
+                    <span className="text-sm text-gray-500">
+                      ({mod.lessons.length} lecciones)
+                    </span>
                   </div>
-                </div>
-                
-                {canEdit && (
-                  <div className="flex items-center space-x-2" onClick={e => e.stopPropagation()}>
-                    <Button 
-                      size="sm" 
-                      variant="outline"
-                      onClick={() => handleCreateLesson(module.id)}
-                    >
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                    <Button 
-                      size="sm" 
-                      variant="outline"
-                      onClick={() => handleEditModule(module)}
-                    >
-                      <Edit3 className="h-4 w-4" />
-                    </Button>
-                    <Button 
-                      size="sm" 
-                      variant="outline"
-                      className="text-red-600 hover:bg-red-50"
-                      onClick={() => handleDeleteModule(module.id)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                )}
-              </div>
-              
-              {expandedModules.has(module.id) && (
-                <div className="border-t">
-                  {module.lessons.length === 0 ? (
-                    <div className="p-4 text-center text-gray-500">
-                      No hay lecciones en este módulo
-                      {canEdit && (
-                        <Button 
-                          size="sm" 
-                          variant="outline" 
-                          className="ml-2"
-                          onClick={() => handleCreateLesson(module.id)}
-                        >
-                          <Plus className="h-4 w-4 mr-1" />
-                          Agregar
-                        </Button>
-                      )}
-                    </div>
-                  ) : (
-                    module.lessons.map((lesson, lessonIndex) => (
-                      <div 
-                        key={lesson.id}
-                        className="flex items-center justify-between p-4 border-b last:border-b-0 hover:bg-gray-50"
-                      >
-                        <div className="flex items-center space-x-3">
-                          <span className="text-gray-400 text-sm w-6">{lessonIndex + 1}.</span>
-                          {getLessonIcon(lesson.type)}
-                          <div>
-                            <p className="font-medium">{lesson.title}</p>
-                            <div className="flex items-center space-x-2 text-sm text-gray-500">
-                              <span className="capitalize">{lesson.type}</span>
-                              <span>•</span>
-                              <span>{lesson.duration} min</span>
-                            </div>
-                          </div>
-                        </div>
-                        
-                        <div className="flex items-center space-x-2">
-                          {!canEdit && (
-                            <Button size="sm" variant="outline">
-                              <Play className="h-4 w-4 mr-1" />
-                              Ver
-                            </Button>
-                          )}
-                          {canEdit && (
-                            <>
-                              <Button 
-                                size="sm" 
-                                variant="outline"
-                                onClick={() => handleEditLesson(lesson)}
-                              >
-                                <Edit3 className="h-4 w-4" />
-                              </Button>
-                              <Button 
-                                size="sm" 
-                                variant="outline"
-                                className="text-red-600 hover:bg-red-50"
-                                onClick={() => handleDeleteLesson(lesson.id)}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              )}
-            </Card>
-          ))
+                </Card>
+              );
+            }}
+          >
+            {modules.map((module, moduleIndex) => (
+              <SortableModuleCard
+                key={module.id}
+                module={module}
+                moduleIndex={moduleIndex}
+                canEdit={canEdit}
+                isExpanded={expandedModules.has(module.id)}
+                onToggle={() => toggleModuleExpand(module.id)}
+                onEdit={() => handleEditModule(module)}
+                onDelete={() => handleDeleteModule(module.id)}
+                onAddLesson={() => handleCreateLesson(module.id)}
+                onEditLesson={handleEditLesson}
+                onDeleteLesson={(id) => handleDeleteLesson(id)}
+                onLessonReorder={handleLessonReorder}
+                getLessonIcon={getLessonIcon}
+                courseId={courseId!}
+              />
+            ))}
+          </SortableList>
         )}
       </div>
 
-      {/* Module Modal */}
+      {/* Enhanced Module Modal */}
       {showModuleModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+          <div className="bg-white rounded-lg p-6 w-full max-w-xl max-h-[90vh] overflow-y-auto">
             <h2 className="text-xl font-semibold mb-4">
               {selectedModule ? 'Editar Módulo' : 'Nuevo Módulo'}
             </h2>
-            
+
             <div className="space-y-4">
+              {/* Title */}
               <div>
                 <Label>Título del Módulo</Label>
                 <Input
@@ -521,116 +762,114 @@ export default function CourseDetailPage() {
                   placeholder="Ej: Introducción al curso"
                 />
               </div>
-              
+
+              {/* Cover image */}
+              <div>
+                <Label>Imagen de portada</Label>
+                <div className="flex items-center gap-3 mt-1">
+                  {moduleForm.image ? (
+                    <div className="relative">
+                      <img src={moduleForm.image} alt="" className="h-20 w-32 object-cover rounded" />
+                      <button
+                        type="button"
+                        onClick={() => setModuleForm(prev => ({ ...prev, image: '' }))}
+                        className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-0.5"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => imageInputRef.current?.click()}
+                      className="h-20 w-32 border-2 border-dashed border-gray-300 rounded flex flex-col items-center justify-center text-gray-400 hover:border-indigo-400 hover:text-indigo-500 transition-colors"
+                      disabled={uploadingImage}
+                    >
+                      {uploadingImage ? (
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                      ) : (
+                        <>
+                          <Image className="h-5 w-5" />
+                          <span className="text-xs mt-1">Subir</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+                  <input
+                    ref={imageInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleImageUpload}
+                  />
+                </div>
+              </div>
+
+              {/* Rich description */}
               <div>
                 <Label>Descripción</Label>
-                <textarea
-                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  rows={3}
-                  value={moduleForm.description}
-                  onChange={e => setModuleForm(prev => ({ ...prev, description: e.target.value }))}
-                  placeholder="Breve descripción del módulo..."
+                <RichTextEditor
+                  content={moduleForm.description}
+                  onChange={html => setModuleForm(prev => ({ ...prev, description: html }))}
+                  placeholder="Describe el contenido de este módulo..."
+                  className="min-h-[120px]"
+                />
+              </div>
+
+              {/* Objectives */}
+              <div>
+                <Label className="flex items-center gap-1">
+                  <Target className="h-4 w-4" />
+                  Objetivos del módulo
+                </Label>
+                <div className="flex gap-2 mt-1">
+                  <Input
+                    value={newObjective}
+                    onChange={e => setNewObjective(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddObjective(); } }}
+                    placeholder="Ej: Comprender los fundamentos..."
+                  />
+                  <Button type="button" variant="outline" onClick={handleAddObjective} disabled={!newObjective.trim()}>
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+                {moduleForm.objectives.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {moduleForm.objectives.map((obj, i) => (
+                      <span key={i} className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-sm bg-indigo-100 text-indigo-700">
+                        {obj}
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveObjective(i)}
+                          className="hover:text-red-600"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Estimated duration */}
+              <div className="w-48">
+                <Label>Duración estimada (min)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={moduleForm.duration}
+                  onChange={e => setModuleForm(prev => ({ ...prev, duration: e.target.value }))}
+                  placeholder="60"
                 />
               </div>
             </div>
-            
+
             <div className="flex justify-end space-x-2 mt-6">
               <Button variant="outline" onClick={() => setShowModuleModal(false)}>
                 Cancelar
               </Button>
               <Button onClick={handleSaveModule}>
                 {selectedModule ? 'Guardar Cambios' : 'Crear Módulo'}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Lesson Modal */}
-      {showLessonModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <h2 className="text-xl font-semibold mb-4">
-              {selectedLesson ? 'Editar Lección' : 'Nueva Lección'}
-            </h2>
-            
-            <div className="space-y-4">
-              <div>
-                <Label>Título de la Lección</Label>
-                <Input
-                  value={lessonForm.title}
-                  onChange={e => setLessonForm(prev => ({ ...prev, title: e.target.value }))}
-                  placeholder="Ej: ¿Qué es programación?"
-                />
-              </div>
-              
-              <div>
-                <Label>Tipo de Contenido</Label>
-                <select
-                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  value={lessonForm.type}
-                  onChange={e => setLessonForm(prev => ({ 
-                    ...prev, 
-                    type: e.target.value as DBLesson['type']
-                  }))}
-                >
-                  <option value="texto">Texto/HTML</option>
-                  <option value="video">Video</option>
-                  <option value="recurso">PDF/Documento</option>
-                  <option value="quiz">Quiz</option>
-                  <option value="tarea">Tarea</option>
-                </select>
-              </div>
-              
-              <div>
-                <Label>
-                  {lessonForm.type === 'video' ? 'URL del Video' : 
-                   lessonForm.type === 'recurso' ? 'URL del Documento' : 
-                   'Contenido'}
-                </Label>
-                {lessonForm.type === 'texto' ? (
-                  <textarea
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    rows={6}
-                    value={lessonForm.content}
-                    onChange={e => setLessonForm(prev => ({ ...prev, content: e.target.value }))}
-                    placeholder="Contenido de la lección..."
-                  />
-                ) : (
-                  <Input
-                    value={lessonForm.content}
-                    onChange={e => setLessonForm(prev => ({ ...prev, content: e.target.value }))}
-                    placeholder={
-                      lessonForm.type === 'video' ? 'https://youtube.com/watch?v=...' :
-                      lessonForm.type === 'recurso' ? 'https://example.com/document.pdf' :
-                      'Referencia o ID'
-                    }
-                  />
-                )}
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>Duración (minutos)</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={lessonForm.duration}
-                    onChange={e => setLessonForm(prev => ({ 
-                      ...prev, 
-                      duration: e.target.value
-                    }))}
-                  />
-                </div>
-              </div>
-            </div>
-            
-            <div className="flex justify-end space-x-2 mt-6">
-              <Button variant="outline" onClick={() => setShowLessonModal(false)}>
-                Cancelar
-              </Button>
-              <Button onClick={handleSaveLesson}>
-                {selectedLesson ? 'Guardar Cambios' : 'Crear Lección'}
               </Button>
             </div>
           </div>

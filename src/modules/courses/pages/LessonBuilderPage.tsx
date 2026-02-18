@@ -19,12 +19,15 @@ import {
   FileText,
   HelpCircle,
   Layers,
-  Type
+  Type,
+  MessageSquare
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@shared/components/ui/Card';
 import { Button } from '@shared/components/ui/Button';
 import { Input } from '@shared/components/ui/Input';
 import { Label } from '@shared/components/ui/Label';
+import ForumLessonEditor, { type ForumLessonContent, defaultForumContent } from '../components/ForumLessonEditor';
+import QuizLessonEditor, { type QuizLessonContent, defaultQuizContent } from '../components/QuizLessonEditor';
 
 interface ContentBlock {
   id: string;
@@ -72,11 +75,17 @@ const LESSON_TYPES = [
     icon: BookOpen, 
     description: 'Tareas y actividades prácticas' 
   },
-  { 
-    value: 'quiz' as const, 
-    label: 'Quiz/Evaluación', 
-    icon: HelpCircle, 
-    description: 'Preguntas y evaluaciones interactivas' 
+  {
+    value: 'quiz' as const,
+    label: 'Quiz/Evaluación',
+    icon: HelpCircle,
+    description: 'Preguntas y evaluaciones interactivas'
+  },
+  {
+    value: 'foro' as const,
+    label: 'Foro de Discusión',
+    icon: MessageSquare,
+    description: 'Debate y discusión entre estudiantes'
   }
 ] as const;
 
@@ -99,7 +108,9 @@ export default function LessonBuilderPage() {
   // Form state
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [lessonType, setLessonType] = useState<'texto' | 'video' | 'quiz' | 'tarea' | 'recurso'>('texto');
+  const [lessonType, setLessonType] = useState<'texto' | 'video' | 'quiz' | 'tarea' | 'recurso' | 'foro'>('texto');
+  const [forumContent, setForumContent] = useState<ForumLessonContent>(defaultForumContent);
+  const [quizContent, setQuizContent] = useState<QuizLessonContent>(defaultQuizContent);
   const [content, setContent] = useState<ContentBlock[]>([]);
   const [editorMode, setEditorMode] = useState<'blocks' | 'wysiwyg'>('blocks');
   const [wysiwygContent, setWysiwygContent] = useState('');
@@ -131,7 +142,7 @@ export default function LessonBuilderPage() {
           setTitle(lessonData.title);
           setDescription(lessonData.description || '');
           // Map DB type to component type
-          const mappedType: 'texto' | 'video' | 'quiz' | 'tarea' | 'recurso' = lessonData.type || 'texto';
+          const mappedType: 'texto' | 'video' | 'quiz' | 'tarea' | 'recurso' | 'foro' = lessonData.type || 'texto';
           setLessonType(mappedType);
           
           // Parse content
@@ -140,8 +151,14 @@ export default function LessonBuilderPage() {
               ? JSON.parse(lessonData.content)
               : lessonData.content;
 
+            // Check if content is forum type
+            if (mappedType === 'foro' && parsedContent && parsedContent.prompt !== undefined) {
+              setForumContent(parsedContent as ForumLessonContent);
+            // Check if content is quiz type
+            } else if (mappedType === 'quiz' && parsedContent && parsedContent.questions !== undefined) {
+              setQuizContent(parsedContent as QuizLessonContent);
             // Check if content is WYSIWYG (has editorMode field) or block-based
-            if (parsedContent && typeof parsedContent === 'object' && parsedContent.editorMode === 'wysiwyg') {
+            } else if (parsedContent && typeof parsedContent === 'object' && parsedContent.editorMode === 'wysiwyg') {
               setEditorMode('wysiwyg');
               setWysiwygContent(parsedContent.html || '');
               setContent([]);
@@ -190,8 +207,16 @@ export default function LessonBuilderPage() {
       newErrors.description = 'La descripción no puede superar los 500 caracteres';
     }
 
-    // Validate content based on editor mode
-    if (editorMode === 'blocks' && content.length === 0) {
+    // Validate content based on lesson type / editor mode
+    if (lessonType === 'foro') {
+      if (!forumContent.prompt.trim()) {
+        newErrors.content = 'El tema de discusión es obligatorio';
+      }
+    } else if (lessonType === 'quiz') {
+      if (quizContent.questions.length === 0) {
+        newErrors.content = 'El quiz debe tener al menos una pregunta';
+      }
+    } else if (editorMode === 'blocks' && content.length === 0) {
       newErrors.content = 'La lección debe tener al menos un bloque de contenido';
     } else if (editorMode === 'wysiwyg' && !wysiwygContent.trim()) {
       newErrors.content = 'La lección debe tener contenido';
@@ -214,10 +239,14 @@ export default function LessonBuilderPage() {
 
     setSaving(true);
     try {
-      // Prepare content based on editor mode
-      const contentToSave = editorMode === 'wysiwyg'
-        ? JSON.stringify({ editorMode: 'wysiwyg', html: wysiwygContent })
-        : JSON.stringify(content);
+      // Prepare content based on lesson type / editor mode
+      const contentToSave = lessonType === 'foro'
+        ? JSON.stringify(forumContent)
+        : lessonType === 'quiz'
+          ? JSON.stringify(quizContent)
+          : editorMode === 'wysiwyg'
+            ? JSON.stringify({ editorMode: 'wysiwyg', html: wysiwygContent })
+            : JSON.stringify(content);
 
       const lessonData: Partial<DBLesson> = {
         title: title.trim(),
@@ -259,7 +288,7 @@ export default function LessonBuilderPage() {
 
   const handlePreview = () => {
     if (lessonId) {
-      navigate(`/courses/${courseId}/lessons/${lessonId}`);
+      navigate(`/courses/${courseId}/lesson/${lessonId}`);
     }
   };
 
@@ -285,10 +314,10 @@ export default function LessonBuilderPage() {
         <div className="flex items-center gap-4">
           <Button
             variant="ghost"
-            onClick={() => navigate(`/courses/${courseId}/modules/${moduleId}`)}
+            onClick={() => navigate(`/courses/${courseId}`)}
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
-            Volver al Módulo
+            Volver al Curso
           </Button>
           <div>
             <h1 className="text-2xl font-bold">
@@ -420,38 +449,44 @@ export default function LessonBuilderPage() {
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
-                <CardTitle>Contenido de la Lección</CardTitle>
-                <div className="flex items-center gap-2 bg-gray-100 rounded-lg p-1">
-                  <button
-                    onClick={() => setEditorMode('blocks')}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                      editorMode === 'blocks'
-                        ? 'bg-white text-blue-600 shadow-sm'
-                        : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    <Layers className="w-4 h-4" />
-                    Bloques
-                  </button>
-                  <button
-                    onClick={() => setEditorMode('wysiwyg')}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                      editorMode === 'wysiwyg'
-                        ? 'bg-white text-blue-600 shadow-sm'
-                        : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    <Type className="w-4 h-4" />
-                    WYSIWYG
-                  </button>
-                </div>
+                <CardTitle>
+                  {lessonType === 'foro' ? 'Configuración del Foro' : lessonType === 'quiz' ? 'Preguntas del Quiz' : 'Contenido de la Lección'}
+                </CardTitle>
+                {lessonType !== 'foro' && lessonType !== 'quiz' && (
+                  <div className="flex items-center gap-2 bg-gray-100 rounded-lg p-1">
+                    <button
+                      onClick={() => setEditorMode('blocks')}
+                      className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                        editorMode === 'blocks'
+                          ? 'bg-white text-blue-600 shadow-sm'
+                          : 'text-gray-600 hover:text-gray-900'
+                      }`}
+                    >
+                      <Layers className="w-4 h-4" />
+                      Bloques
+                    </button>
+                    <button
+                      onClick={() => setEditorMode('wysiwyg')}
+                      className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                        editorMode === 'wysiwyg'
+                          ? 'bg-white text-blue-600 shadow-sm'
+                          : 'text-gray-600 hover:text-gray-900'
+                      }`}
+                    >
+                      <Type className="w-4 h-4" />
+                      WYSIWYG
+                    </button>
+                  </div>
+                )}
               </div>
-              <p className="text-sm text-gray-600 mt-2">
-                {editorMode === 'blocks'
-                  ? 'Editor de bloques: añade texto, imágenes, videos y más como bloques independientes'
-                  : 'Editor WYSIWYG: escribe y formatea contenido como en un procesador de texto'
-                }
-              </p>
+              {lessonType !== 'foro' && lessonType !== 'quiz' && (
+                <p className="text-sm text-gray-600 mt-2">
+                  {editorMode === 'blocks'
+                    ? 'Editor de bloques: añade texto, imágenes, videos y más como bloques independientes'
+                    : 'Editor WYSIWYG: escribe y formatea contenido como en un procesador de texto'
+                  }
+                </p>
+              )}
             </CardHeader>
             <CardContent>
               {errors.content && (
@@ -460,7 +495,11 @@ export default function LessonBuilderPage() {
                 </div>
               )}
 
-              {editorMode === 'blocks' ? (
+              {lessonType === 'foro' ? (
+                <ForumLessonEditor content={forumContent} onChange={setForumContent} />
+              ) : lessonType === 'quiz' ? (
+                <QuizLessonEditor content={quizContent} onChange={setQuizContent} />
+              ) : editorMode === 'blocks' ? (
                 <ContentEditor
                   initialContent={JSON.stringify(content)}
                   onSave={setContent}

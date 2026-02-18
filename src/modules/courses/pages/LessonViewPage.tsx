@@ -13,7 +13,7 @@ import {
 } from '@shared/services/dataService';
 import { gamificationEngine } from '@shared/services/gamificationEngine';
 import VideoPlayer from '@shared/components/media/VideoPlayer';
-import { 
+import {
   ArrowLeft,
   ArrowRight,
   ChevronDown,
@@ -26,10 +26,13 @@ import {
   FileText,
   File,
   HelpCircle,
-  Trophy
+  Trophy,
+  MessageSquare
 } from 'lucide-react';
 import { Button } from '@shared/components/ui/Button';
 import { Card, CardContent } from '@shared/components/ui/Card';
+import LessonForumView from '../components/LessonForumView';
+import QuizLessonView from '../components/QuizLessonView';
 
 interface ModuleWithLessons extends DBModule {
   lessons: DBLesson[];
@@ -227,6 +230,8 @@ export default function LessonViewPage() {
         return <File className={iconClass} />;
       case 'quiz':
         return <HelpCircle className={iconClass} />;
+      case 'foro':
+        return <MessageSquare className={iconClass} />;
       default:
         return <FileText className={iconClass} />;
     }
@@ -389,23 +394,28 @@ export default function LessonViewPage() {
                   )}
                 </div>
               ) : currentLesson.type === 'quiz' ? (
-                <div className="p-6 text-center">
-                  <HelpCircle className="h-16 w-16 text-blue-500 mx-auto mb-4" />
-                  <h3 className="text-lg font-semibold mb-2">Quiz disponible</h3>
-                  <p className="text-gray-600 mb-4">Pon a prueba tus conocimientos</p>
-                  <Button onClick={() => navigate(`/evaluations/${currentLesson.id}/take`)}>
-                    Comenzar Quiz
-                  </Button>
-                </div>
+                <QuizLessonView
+                  lesson={currentLesson}
+                  onComplete={handleLessonComplete}
+                />
+              ) : currentLesson.type === 'foro' ? (
+                <LessonForumView
+                  lesson={currentLesson}
+                  courseId={courseId!}
+                  userId={user?.id || ''}
+                  userName={user?.name || ''}
+                  userRole={user?.role || 'student'}
+                  onParticipated={handleLessonComplete}
+                />
               ) : (
                 <div className="p-6">
                   <div className="bg-gray-100 rounded-lg p-6 text-center">
                     <File className="h-16 w-16 text-gray-400 mx-auto mb-4" />
                     <p className="text-gray-600">Contenido de tipo: {currentLesson.type}</p>
                     {currentLesson.content && (
-                      <a 
-                        href={currentLesson.content} 
-                        target="_blank" 
+                      <a
+                        href={currentLesson.content}
+                        target="_blank"
                         rel="noopener noreferrer"
                         className="mt-4 inline-block text-blue-600 hover:underline"
                       >
@@ -419,7 +429,7 @@ export default function LessonViewPage() {
           </Card>
 
           {/* Mark as complete button */}
-          {!isLessonCompleted && currentLesson.type !== 'video' && (
+          {!isLessonCompleted && currentLesson.type !== 'video' && currentLesson.type !== 'foro' && currentLesson.type !== 'quiz' && (
             <div className="mb-6 text-center">
               <Button 
                 onClick={handleLessonComplete}

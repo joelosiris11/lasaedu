@@ -533,6 +533,7 @@ export const userSettingsService = {
 export const forumService = {
   getPosts: () => firebaseDB.getForumPosts(),
   getPostsByCourse: (courseId: string) => firebaseDB.getForumPostsByCourse(courseId),
+  getPostsByLesson: (lessonId: string) => firebaseDB.getForumPostsByLesson(lessonId),
   getReplies: (postId: string) => firebaseDB.getForumReplies(postId),
   getAllReplies: () => firebaseDB.getAllForumReplies(),
   createPost: (data: Omit<DBForumPost, 'id'>) => firebaseDB.createForumPost(data),

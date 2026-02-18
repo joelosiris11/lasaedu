@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { 
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import {
   Bold,
   Italic,
   Underline,
@@ -16,7 +16,8 @@ import {
   AlignRight,
   Quote,
   Code,
-  Loader2
+  Loader2,
+  GripVertical
 } from 'lucide-react';
 import { Button } from '@shared/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@shared/components/ui/Card';
@@ -24,6 +25,9 @@ import { Input } from '@shared/components/ui/Input';
 import { Label } from '@shared/components/ui/Label';
 import { fileUploadService } from '@shared/services/fileUploadService';
 import VideoPlayer from '@shared/components/media/VideoPlayer';
+import { SortableList, arrayMove } from '@shared/components/dnd';
+import { useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 interface ContentEditorProps {
   initialContent?: string;
@@ -71,6 +75,105 @@ const TOOLBAR_ITEMS = [
   { icon: AlignCenter, action: 'alignCenter', tooltip: 'Centrar' },
   { icon: AlignRight, action: 'alignRight', tooltip: 'Alinear derecha' }
 ];
+
+// ─── Sortable block sub-component ──────────────────────────────────
+
+function SortableContentBlock({
+  block,
+  isSelected,
+  onSelect,
+  onDelete,
+  onUpdate,
+  canDelete,
+  renderBlock: renderBlockFn,
+}: {
+  block: ContentBlock;
+  isSelected: boolean;
+  onSelect: () => void;
+  onDelete: () => void;
+  onUpdate: (updates: Partial<ContentBlock>) => void;
+  canDelete: boolean;
+  renderBlock: (block: ContentBlock) => React.ReactNode;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: block.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  const blockLabel =
+    block.type === 'text' ? 'Párrafo' :
+    block.type === 'heading' ? `Título ${block.metadata?.level || 2}` :
+    block.type === 'image' ? 'Imagen' :
+    block.type === 'video' ? 'Video' :
+    block.type === 'audio' ? 'Audio' :
+    block.type === 'quote' ? 'Cita' : 'Código';
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`border rounded-lg p-4 cursor-pointer transition-colors ${
+        isSelected ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
+      }`}
+      onClick={onSelect}
+    >
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <button
+            ref={setActivatorNodeRef}
+            {...listeners}
+            {...attributes}
+            className="cursor-grab active:cursor-grabbing touch-none p-1 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 rounded"
+            aria-label="Arrastrar para reordenar bloque"
+            type="button"
+            onClick={e => e.stopPropagation()}
+          >
+            <GripVertical className="w-4 h-4" />
+          </button>
+          <span className="text-sm font-medium text-gray-600">{blockLabel}</span>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          className="text-red-500"
+          disabled={!canDelete}
+        >
+          ✕
+        </Button>
+      </div>
+
+      {block.type === 'text' || block.type === 'heading' || block.type === 'quote' || block.type === 'code' ? (
+        <textarea
+          value={block.content}
+          onChange={(e) => onUpdate({ content: e.target.value })}
+          className="w-full min-h-[100px] p-2 border rounded resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+          placeholder="Escribe tu contenido aquí..."
+        />
+      ) : (
+        <div className="preview-area">
+          {renderBlockFn(block)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Main editor component ─────────────────────────────────────────
 
 export default function ContentEditor({
   initialContent,
@@ -126,28 +229,31 @@ export default function ContentEditor({
     setMediaUrl('');
     setShowMediaDialog(false);
   };
+  const initialContentRef = useRef(initialContent);
   useEffect(() => {
-    if (initialContent) {
+    const raw = initialContentRef.current;
+    if (raw) {
       try {
-        const parsed = JSON.parse(initialContent);
+        const parsed = JSON.parse(raw);
         setContentBlocks(parsed);
       } catch {
         // If not JSON, treat as plain text
         setContentBlocks([{
           id: '1',
           type: 'text',
-          content: initialContent,
+          content: raw,
           order: 0
         }]);
       }
     }
-  }, [initialContent]);
+  }, []);
+
+  const onContentChangeRef = useRef(onContentChange);
+  onContentChangeRef.current = onContentChange;
 
   useEffect(() => {
-    if (onContentChange) {
-      onContentChange(contentBlocks);
-    }
-  }, [contentBlocks, onContentChange]);
+    onContentChangeRef.current?.(contentBlocks);
+  }, [contentBlocks]);
 
   const generateId = () => Date.now().toString();
 
@@ -179,26 +285,18 @@ export default function ContentEditor({
     }
   };
 
-  const moveBlock = (id: string, direction: 'up' | 'down') => {
-    const currentIndex = contentBlocks.findIndex(block => block.id === id);
-    if (
-      (direction === 'up' && currentIndex === 0) ||
-      (direction === 'down' && currentIndex === contentBlocks.length - 1)
-    ) {
-      return;
-    }
-
-    const newBlocks = [...contentBlocks];
-    const newIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
-    [newBlocks[currentIndex], newBlocks[newIndex]] = [newBlocks[newIndex], newBlocks[currentIndex]];
-    
-    // Update order
-    newBlocks.forEach((block, index) => {
-      block.order = index;
-    });
-
-    setContentBlocks(newBlocks);
+  const handleBlockReorder = (oldIndex: number, newIndex: number) => {
+    const reordered = arrayMove(contentBlocks, oldIndex, newIndex).map((block, index) => ({
+      ...block,
+      order: index,
+    }));
+    setContentBlocks(reordered);
   };
+
+  const sortedBlocks = useMemo(
+    () => [...contentBlocks].sort((a, b) => a.order - b.order),
+    [contentBlocks]
+  );
 
   const applyFormatting = (action: string) => {
     const selectedBlock = contentBlocks.find(block => block.id === selectedBlockId);
@@ -449,9 +547,7 @@ export default function ContentEditor({
           </Button>
         </CardHeader>
         <CardContent className="prose max-w-none">
-          {contentBlocks
-            .sort((a, b) => a.order - b.order)
-            .map(block => (
+          {sortedBlocks.map(block => (
               <div key={block.id}>
                 {renderBlock(block)}
               </div>
@@ -534,79 +630,43 @@ export default function ContentEditor({
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {contentBlocks
-          .sort((a, b) => a.order - b.order)
-          .map((block, index) => (
-            <div
-              key={block.id}
-              className={`border rounded-lg p-4 cursor-pointer transition-colors ${
-                selectedBlockId === block.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
-              }`}
-              onClick={() => setSelectedBlockId(block.id)}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium text-gray-600">
-                  {block.type === 'text' && 'Párrafo'}
-                  {block.type === 'heading' && `Título ${block.metadata?.level || 2}`}
-                  {block.type === 'image' && 'Imagen'}
-                  {block.type === 'video' && 'Video'}
-                  {block.type === 'audio' && 'Audio'}
-                  {block.type === 'quote' && 'Cita'}
-                  {block.type === 'code' && 'Código'}
-                </span>
-                <div className="flex gap-1">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      moveBlock(block.id, 'up');
-                    }}
-                    disabled={index === 0}
-                  >
-                    ↑
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      moveBlock(block.id, 'down');
-                    }}
-                    disabled={index === contentBlocks.length - 1}
-                  >
-                    ↓
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteBlock(block.id);
-                    }}
-                    className="text-red-500"
-                    disabled={contentBlocks.length <= 1}
-                  >
-                    ✕
-                  </Button>
+        <SortableList
+          items={sortedBlocks.map(b => b.id)}
+          onReorder={handleBlockReorder}
+          renderOverlay={(activeId) => {
+            const block = contentBlocks.find(b => b.id === activeId);
+            if (!block) return null;
+            return (
+              <div className="border rounded-lg p-4 bg-white shadow-lg border-blue-300">
+                <div className="flex items-center gap-2">
+                  <GripVertical className="w-4 h-4 text-gray-400" />
+                  <span className="text-sm font-medium text-gray-600">
+                    {block.type === 'text' ? 'Párrafo' :
+                     block.type === 'heading' ? `Título ${block.metadata?.level || 2}` :
+                     block.type === 'image' ? 'Imagen' :
+                     block.type === 'video' ? 'Video' :
+                     block.type === 'audio' ? 'Audio' :
+                     block.type === 'quote' ? 'Cita' : 'Código'}
+                  </span>
                 </div>
               </div>
+            );
+          }}
+        >
+          {sortedBlocks.map((block) => (
+              <SortableContentBlock
+                key={block.id}
+                block={block}
+                isSelected={selectedBlockId === block.id}
+                onSelect={() => setSelectedBlockId(block.id)}
+                onDelete={() => deleteBlock(block.id)}
+                onUpdate={(updates) => updateBlock(block.id, updates)}
+                canDelete={contentBlocks.length > 1}
+                renderBlock={renderBlock}
+              />
+            ))}
+        </SortableList>
 
-              {block.type === 'text' || block.type === 'heading' || block.type === 'quote' || block.type === 'code' ? (
-                <textarea
-                  value={block.content}
-                  onChange={(e) => updateBlock(block.id, { content: e.target.value })}
-                  className="w-full min-h-[100px] p-2 border rounded resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Escribe tu contenido aquí..."
-                />
-              ) : (
-                <div className="preview-area">
-                  {renderBlock(block)}
-                </div>
-              )}
-            </div>
-          ))}
-        
         <div className="flex justify-center">
           <Button
             variant="outline"

@@ -121,6 +121,8 @@ export interface DBModule {
   description: string;
   order: number;
   duration: string;
+  image?: string;
+  objectives?: string[];
   status: 'borrador' | 'publicado';
   createdAt: number;
   updatedAt: number;
@@ -133,7 +135,7 @@ export interface DBLesson {
   courseId: string;
   title: string;
   description: string;
-  type: 'video' | 'texto' | 'quiz' | 'tarea' | 'recurso';
+  type: 'video' | 'texto' | 'quiz' | 'tarea' | 'recurso' | 'foro';
   content: string;
   videoUrl?: string;
   duration: string;
@@ -1205,6 +1207,10 @@ class FirebaseDataService {
 
   async getForumPostsByCourse(courseId: string): Promise<DBForumPost[]> {
     return this.query<DBForumPost>('forumPosts', 'courseId', courseId);
+  }
+
+  async getForumPostsByLesson(lessonId: string): Promise<DBForumPost[]> {
+    return this.query<DBForumPost>('forumPosts', 'lessonId', lessonId);
   }
 
   async getForumReplies(postId: string): Promise<DBForumReply[]> {
