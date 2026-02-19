@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@app/store/authStore';
 import { 
@@ -56,6 +56,64 @@ export default function LessonViewPage() {
   const [loading, setLoading] = useState(true);
   const [showCompletionModal, setShowCompletionModal] = useState(false);
   const [pointsEarned, setPointsEarned] = useState(0);
+
+  // Time tracking refs
+  const lessonStartTime = useRef<number>(Date.now());
+  const enrollmentRef = useRef<DBEnrollment | null>(null);
+
+  // Keep enrollmentRef in sync
+  useEffect(() => {
+    enrollmentRef.current = enrollment;
+  }, [enrollment]);
+
+  const saveTimeSpent = useCallback(async () => {
+    const enr = enrollmentRef.current;
+    if (!enr) return;
+
+    const elapsed = Date.now() - lessonStartTime.current;
+    const minutes = Math.floor(elapsed / 60000);
+    if (minutes < 1) return; // threshold: at least 1 minute
+
+    const newTotal = (enr.totalTimeSpent || 0) + minutes;
+    try {
+      await enrollmentService.update(enr.id, { totalTimeSpent: newTotal } as any);
+      // Update local state so subsequent saves are cumulative
+      enrollmentRef.current = { ...enr, totalTimeSpent: newTotal };
+      setEnrollment(prev => prev ? { ...prev, totalTimeSpent: newTotal } : prev);
+    } catch (e) {
+      console.error('Error saving time spent:', e);
+    }
+    // Reset timer
+    lessonStartTime.current = Date.now();
+  }, []);
+
+  // Visibility change & beforeunload listeners
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        saveTimeSpent();
+      } else {
+        // Reset timer when returning
+        lessonStartTime.current = Date.now();
+      }
+    };
+
+    const handleBeforeUnload = () => {
+      // Use sendBeacon-style sync save: best-effort with navigator.sendBeacon not available for firestore,
+      // so just fire and forget the async call
+      saveTimeSpent();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      // Save time on unmount
+      saveTimeSpent();
+    };
+  }, [saveTimeSpent]);
 
   useEffect(() => {
     if (courseId) {
@@ -143,6 +201,7 @@ export default function LessonViewPage() {
   };
 
   const selectLesson = (lesson: DBLesson) => {
+    saveTimeSpent(); // Save time before switching lessons
     setCurrentLesson(lesson);
     navigate(`/courses/${courseId}/lesson/${lesson.id}`, { replace: true });
   };

@@ -247,25 +247,45 @@ ${reportData.topCourses.map((c, i) => `${i + 1}. ${c.title} - ${c.enrollments} i
     setShowExportMenu(false);
   };
 
-  const handleExportProgress = (format: 'csv' | 'excel' | 'pdf') => {
-    const progressData: ProgressExportData[] = reportData?.topCourses.flatMap(course =>
-      Array(5).fill(null).map((_, i) => ({
-        studentName: `Estudiante ${i + 1}`,
-        studentEmail: `estudiante${i + 1}@email.com`,
-        courseName: course.title,
-        progress: Math.floor(Math.random() * 100),
-        lessonsCompleted: Math.floor(Math.random() * 20),
-        totalLessons: 20,
-        evaluationsCompleted: Math.floor(Math.random() * 5),
-        totalEvaluations: 5,
-        averageGrade: Math.floor(Math.random() * 40) + 60,
-        timeSpent: `${Math.floor(Math.random() * 20)}h ${Math.floor(Math.random() * 60)}m`,
-        lastAccess: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000).toLocaleDateString('es-ES'),
-        status: ['Activo', 'Completado', 'En progreso'][Math.floor(Math.random() * 3)]
-      }))
-    ) || [];
-    
-    exportProgress(progressData, format);
+  const handleExportProgress = async (format: 'csv' | 'excel' | 'pdf') => {
+    try {
+      // Load real enrollment data for each course
+      const allEnrollments = await Promise.all(
+        (reportData?.topCourses || []).map(course =>
+          enrollmentService.getByCourse(course.id).then(enrollments =>
+            enrollments.map((e: any) => ({ ...e, courseName: course.title }))
+          )
+        )
+      );
+
+      const users = await userService.getAll();
+      const userMap = new Map(users.map((u: any) => [u.id, u]));
+
+      const progressData: ProgressExportData[] = allEnrollments.flat().map((e: any) => {
+        const u = userMap.get(e.userId);
+        const totalMinutes = e.totalTimeSpent || 0;
+        const h = Math.floor(totalMinutes / 60);
+        const m = totalMinutes % 60;
+        return {
+          studentName: u?.name || 'Desconocido',
+          studentEmail: u?.email || '—',
+          courseName: e.courseName,
+          progress: e.progress || 0,
+          lessonsCompleted: (e.completedLessons || []).length,
+          totalLessons: 0, // not available without module/lesson count
+          evaluationsCompleted: 0,
+          totalEvaluations: 0,
+          averageGrade: e.grade || 0,
+          timeSpent: h > 0 ? `${h}h ${m}m` : `${m}m`,
+          lastAccess: e.lastAccessedAt ? new Date(e.lastAccessedAt).toLocaleDateString('es-ES') : '—',
+          status: e.status === 'completed' ? 'Completado' : e.status === 'active' ? 'Activo' : e.status
+        };
+      });
+
+      exportProgress(progressData, format);
+    } catch (err) {
+      console.error('Error exporting progress:', err);
+    }
     setShowExportMenu(false);
   };
 

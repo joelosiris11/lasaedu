@@ -1,21 +1,44 @@
+import { useState, useEffect } from 'react';
 import { useAuthStore } from '@app/store/authStore';
-import { 
-  BookOpen, 
-  Trophy, 
-  Clock, 
-  Target,
+import {
+  BookOpen,
+  Trophy,
+  Clock,
   TrendingUp,
   Calendar,
   Star,
   CheckCircle,
   PlayCircle,
-  Award
+  Award,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@shared/components/ui/Card';
 import { useStudentCourses } from '@shared/hooks/useDashboard';
+import { legacyEnrollmentService, type DBEnrollment } from '@shared/services/dataService';
+
+const formatTime = (minutes: number): string => {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+};
+
 const StudentDashboard = () => {
   const { user } = useAuthStore();
   const { courses, loading } = useStudentCourses(user?.id || '');
+  const [totalTimeMinutes, setTotalTimeMinutes] = useState(0);
+
+  useEffect(() => {
+    const loadTimeData = async () => {
+      if (!user?.id) return;
+      try {
+        const enrollments = await legacyEnrollmentService.getByUser(user.id);
+        const total = enrollments.reduce((sum: number, e: DBEnrollment) => sum + (e.totalTimeSpent || 0), 0);
+        setTotalTimeMinutes(total);
+      } catch (err) {
+        console.error('Error loading enrollment time data:', err);
+      }
+    };
+    loadTimeData();
+  }, [user?.id]);
 
   if (loading) {
     return (
@@ -30,14 +53,13 @@ const StudentDashboard = () => {
   const avgProgress = courses.length > 0 
     ? Math.round(courses.reduce((sum, course) => sum + course.progress, 0) / courses.length)
     : 0;
-  const totalHours = Math.floor(totalCourses * 8.5); // Mock calculation
   const certificates = courses.filter(c => c.progress >= 100).length;
 
   const stats = [
-    { title: 'Cursos Inscritos', value: totalCourses.toString(), icon: BookOpen, change: '+1 este mes', color: 'text-blue-600' },
-    { title: 'Progreso General', value: `${avgProgress}%`, icon: TrendingUp, change: '+12% esta semana', color: 'text-green-600' },
-    { title: 'Horas Estudiadas', value: `${totalHours}h`, icon: Clock, change: '+8h esta semana', color: 'text-purple-600' },
-    { title: 'Certificados', value: certificates.toString(), icon: Trophy, change: '+1 este mes', color: 'text-orange-600' },
+    { title: 'Cursos Inscritos', value: totalCourses.toString(), icon: BookOpen, color: 'text-blue-600' },
+    { title: 'Progreso General', value: `${avgProgress}%`, icon: TrendingUp, color: 'text-green-600' },
+    { title: 'Tiempo Estudiado', value: formatTime(totalTimeMinutes), icon: Clock, color: 'text-purple-600' },
+    { title: 'Certificados', value: certificates.toString(), icon: Trophy, color: 'text-orange-600' },
   ];
 
   // Mock data para elementos que aún no tenemos en BD
@@ -69,11 +91,8 @@ const StudentDashboard = () => {
         </p>
         <div className="mt-4 flex items-center space-x-4">
           <div className="flex items-center">
-            <Target className="h-5 w-5 mr-2" />
-            <span>Meta semanal: 10h</span>
-          </div>
-          <div className="bg-purple-700 px-3 py-1 rounded-full text-sm">
-            8.5h completadas
+            <Clock className="h-5 w-5 mr-2" />
+            <span>Tiempo total: {formatTime(totalTimeMinutes)}</span>
           </div>
         </div>
       </div>
@@ -90,7 +109,6 @@ const StudentDashboard = () => {
                 <div className="ml-4">
                   <p className="text-sm font-medium text-gray-600">{stat.title}</p>
                   <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
-                  <p className="text-sm text-green-600">{stat.change}</p>
                 </div>
               </div>
             </CardContent>

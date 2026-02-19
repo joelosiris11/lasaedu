@@ -1,8 +1,9 @@
+import { useState, useEffect } from 'react';
 import { useAuthStore } from '@app/store/authStore';
-import { 
-  BookOpen, 
-  Users, 
-  Clock, 
+import {
+  BookOpen,
+  Users,
+  Clock,
   Award,
   TrendingUp,
   Calendar,
@@ -13,37 +14,87 @@ import {
   MessageSquare
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@shared/components/ui/Card';
+import { useTeacherCourses } from '@shared/hooks/useDashboard';
+import { legacyEnrollmentService, type DBEnrollment } from '@shared/services/dataService';
+
+const formatTime = (minutes: number): string => {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+};
 
 const TeacherDashboard = () => {
   const { user } = useAuthStore();
+  const { courses: teacherCourses, loading: coursesLoading } = useTeacherCourses(user?.id || '');
+  const [allEnrollments, setAllEnrollments] = useState<DBEnrollment[]>([]);
+  const [enrollmentsLoading, setEnrollmentsLoading] = useState(true);
+
+  useEffect(() => {
+    const loadEnrollments = async () => {
+      if (!teacherCourses.length) {
+        setAllEnrollments([]);
+        setEnrollmentsLoading(false);
+        return;
+      }
+      try {
+        const courseIds = teacherCourses.map((c: any) => c.id);
+        const enrollmentPromises = courseIds.map((id: string) => legacyEnrollmentService.getByCourse(id));
+        const results = await Promise.all(enrollmentPromises);
+        setAllEnrollments(results.flat());
+      } catch (err) {
+        console.error('Error loading enrollments:', err);
+      } finally {
+        setEnrollmentsLoading(false);
+      }
+    };
+    if (!coursesLoading) {
+      loadEnrollments();
+    }
+  }, [teacherCourses, coursesLoading]);
+
+  const loading = coursesLoading || enrollmentsLoading;
+
+  const uniqueStudents = new Set(allEnrollments.map(e => e.userId)).size;
+  const totalTimeMinutes = allEnrollments.reduce((sum, e) => sum + (e.totalTimeSpent || 0), 0);
 
   const stats = [
-    { title: 'Mis Cursos', value: '8', icon: BookOpen, change: '+2 este mes', color: 'text-blue-600' },
-    { title: 'Estudiantes Activos', value: '247', icon: Users, change: '+15 esta semana', color: 'text-green-600' },
-    { title: 'Horas Impartidas', value: '156h', icon: Clock, change: '+12h esta semana', color: 'text-purple-600' },
-    { title: 'Promedio Calificaciones', value: '8.4', icon: Award, change: '+0.2 vs mes anterior', color: 'text-orange-600' },
+    { title: 'Mis Cursos', value: teacherCourses.length.toString(), icon: BookOpen, color: 'text-blue-600' },
+    { title: 'Estudiantes Activos', value: uniqueStudents.toString(), icon: Users, color: 'text-green-600' },
+    { title: 'Horas Impartidas', value: formatTime(totalTimeMinutes), icon: Clock, color: 'text-purple-600' },
+    { title: 'Promedio Calificaciones', value: '—', icon: Award, color: 'text-orange-600' },
   ];
 
-  const myCourses = [
-    { id: 1, title: 'React Fundamentals', students: 45, progress: 78, status: 'active' },
-    { id: 2, title: 'TypeScript Avanzado', students: 32, progress: 92, status: 'active' },
-    { id: 3, title: 'Node.js Backend', students: 28, progress: 45, status: 'active' },
-    { id: 4, title: 'Testing con Jest', students: 19, progress: 15, status: 'draft' },
-  ];
+  // Map real courses for the course list
+  const myCourses = teacherCourses.map((c: any) => {
+    const courseEnrollments = allEnrollments.filter(e => e.courseId === c.id);
+    const avgProgress = courseEnrollments.length > 0
+      ? Math.round(courseEnrollments.reduce((sum, e) => sum + (e.progress || 0), 0) / courseEnrollments.length)
+      : 0;
+    return {
+      id: c.id,
+      title: c.title,
+      students: courseEnrollments.length,
+      progress: avgProgress,
+      status: c.status === 'publicado' ? 'active' : 'draft'
+    };
+  });
 
   const pendingTasks = [
-    { task: 'Revisar entregas de React Fundamentals', urgent: true, count: 12 },
-    { task: 'Calificar examen TypeScript', urgent: false, count: 8 },
-    { task: 'Responder preguntas del foro', urgent: true, count: 23 },
-    { task: 'Preparar material Semana 6', urgent: false, count: 1 },
+    { task: 'Revisar entregas pendientes', urgent: true, count: 0 },
+    { task: 'Responder preguntas del foro', urgent: false, count: 0 },
   ];
 
   const recentActivity = [
-    { action: 'Nueva entrega recibida', course: 'React Fundamentals', time: '5 min' },
-    { action: 'Pregunta en el foro', course: 'TypeScript Avanzado', time: '20 min' },
-    { action: 'Estudiante completó módulo', course: 'Node.js Backend', time: '1h' },
-    { action: 'Calificación promediada', course: 'Testing con Jest', time: '2h' },
+    { action: 'Datos de actividad próximamente', course: '—', time: '—' },
   ];
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-gray-500">Cargando dashboard...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -67,7 +118,6 @@ const TeacherDashboard = () => {
                 <div className="ml-4">
                   <p className="text-sm font-medium text-gray-600">{stat.title}</p>
                   <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
-                  <p className="text-sm text-green-600">{stat.change}</p>
                 </div>
               </div>
             </CardContent>
