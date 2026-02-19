@@ -12,6 +12,7 @@ import {
   type DBEnrollment
 } from '@shared/services/dataService';
 import { gamificationEngine } from '@shared/services/gamificationEngine';
+import { isAvailable } from '@shared/utils/deadlines';
 import {
   ArrowLeft,
   ArrowRight,
@@ -75,7 +76,7 @@ export default function LessonViewPage() {
       const courseModules = await moduleService.getByCourse(courseId);
       const sortedModules = courseModules.sort((a, b) => a.order - b.order);
       
-      const modulesWithLessons: ModuleWithLessons[] = await Promise.all(
+      const allModulesWithLessons: ModuleWithLessons[] = await Promise.all(
         sortedModules.map(async (module) => {
           const lessons = await lessonService.getByModule(module.id);
           return {
@@ -84,6 +85,18 @@ export default function LessonViewPage() {
           };
         })
       );
+
+      // Para estudiantes: filtrar módulos y lecciones no disponibles aún
+      const isStudent = user?.role === 'student';
+      const modulesWithLessons = isStudent
+        ? allModulesWithLessons
+            .filter(m => isAvailable(m.availableFrom))
+            .map(m => ({
+              ...m,
+              lessons: m.lessons.filter(l => isAvailable(l.settings?.availableFrom))
+            }))
+        : allModulesWithLessons;
+
       setModules(modulesWithLessons);
 
       // Cargar inscripción del usuario

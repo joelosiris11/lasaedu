@@ -31,6 +31,7 @@ import type {
   DBForumPost,
   DBForumReply,
   DBTaskSubmission,
+  DBDeadlineExtension,
 } from './firebaseDataService';
 
 // Re-exportar tipos para consumidores
@@ -58,6 +59,7 @@ export type {
   DBForumPost,
   DBForumReply,
   DBTaskSubmission,
+  DBDeadlineExtension,
 };
 
 // ============================================
@@ -560,6 +562,18 @@ export const taskSubmissionService = {
 };
 
 // ============================================
+// DEADLINE EXTENSION SERVICE
+// ============================================
+
+export const extensionService = {
+  getAll: () => firebaseDB.getDeadlineExtensions(),
+  getByTarget: (targetId: string) => firebaseDB.getExtensionsByTarget(targetId),
+  getByStudent: (studentId: string) => firebaseDB.getExtensionsByStudent(studentId),
+  create: (data: Omit<DBDeadlineExtension, 'id'>) => firebaseDB.createExtension(data),
+  delete: (id: string) => firebaseDB.deleteExtension(id),
+};
+
+// ============================================
 // METRICS SERVICE
 // ============================================
 
@@ -614,6 +628,7 @@ export default {
   userSettings: userSettingsService,
   forums: forumService,
   taskSubmissions: taskSubmissionService,
+  extensions: extensionService,
   metrics: metricsService,
   utils: dataUtils,
 };

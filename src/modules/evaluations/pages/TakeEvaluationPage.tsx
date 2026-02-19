@@ -1,16 +1,19 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@app/store/authStore';
-import { evaluationService } from '@shared/services/dataService';
+import { evaluationService, extensionService } from '@shared/services/dataService';
 import { assessmentService } from '@shared/services/assessmentService';
 import type { Question as ModernQuestion, QuestionOption } from '@shared/types/assessment';
-import { 
+import { getExamTimeLimit, getStudentExtension, formatDeadlineDate } from '@shared/utils/deadlines';
+import type { DBDeadlineExtension } from '@shared/services/dataService';
+import {
   ArrowLeft,
   ArrowRight,
   Clock,
   AlertCircle,
   CheckCircle,
-  Send
+  Send,
+  Lock
 } from 'lucide-react';
 import { Card, CardContent } from '@shared/components/ui/Card';
 import { Button } from '@shared/components/ui/Button';
@@ -41,6 +44,8 @@ interface EvaluationData {
     showResults: boolean;
     passingScore: number;
     dueDate?: string;
+    availableFrom?: number;
+    availableUntil?: number;
   };
   submissions?: number;
 }
@@ -81,6 +86,8 @@ export default function TakeEvaluationPage() {
   const [submitted, setSubmitted] = useState(false);
   const [result, setResult] = useState<SubmissionResult | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [accessBlocked, setAccessBlocked] = useState<'not_open' | 'closed' | null>(null);
+  const [blockedInfo, setBlockedInfo] = useState<{ availableFrom?: number; availableUntil?: number }>({});
 
   useEffect(() => {
     if (evaluationId) {
@@ -150,10 +157,37 @@ export default function TakeEvaluationPage() {
 
   const loadEvaluation = async (id: string) => {
     try {
+      // Load extensions for this evaluation
+      const allExtensions = await extensionService.getByTarget(id);
+      const studentExtension = getStudentExtension(allExtensions, user?.id);
+
       // First try to load from modern assessmentService
       const modernAssessment = await assessmentService.getAssessment(id);
 
       if (modernAssessment && modernAssessment.questionData) {
+        const availableFrom = modernAssessment.settings.availableFrom;
+        let availableUntil = modernAssessment.settings.availableUntil;
+
+        // Apply student extension to availableUntil
+        if (studentExtension) {
+          availableUntil = studentExtension.newDeadline;
+        }
+
+        // Check availability
+        const now = Date.now();
+        if (availableFrom && now < availableFrom) {
+          setAccessBlocked('not_open');
+          setBlockedInfo({ availableFrom });
+          setLoading(false);
+          return;
+        }
+        if (availableUntil && now > availableUntil) {
+          setAccessBlocked('closed');
+          setBlockedInfo({ availableUntil });
+          setLoading(false);
+          return;
+        }
+
         // Load questions from questionData in order
         const modernQuestions = modernAssessment.questions
           .sort((a, b) => a.order - b.order)
@@ -182,7 +216,7 @@ export default function TakeEvaluationPage() {
           description: modernAssessment.description,
           type: modernAssessment.type === 'exam' ? 'examen' : modernAssessment.type === 'assignment' ? 'tarea' : 'quiz',
           courseId: modernAssessment.courseId,
-          courseName: '', // Will be loaded if needed
+          courseName: '',
           questions,
           settings: {
             timeLimit: modernAssessment.settings.timeLimit,
@@ -191,16 +225,24 @@ export default function TakeEvaluationPage() {
             shuffleOptions: modernAssessment.settings.shuffleAnswers || false,
             showResults: modernAssessment.settings.showResults === 'immediately',
             passingScore: modernAssessment.grading.passingScore,
-            dueDate: modernAssessment.settings.dueDate ? new Date(modernAssessment.settings.dueDate).toISOString() : undefined
+            dueDate: modernAssessment.settings.dueDate ? new Date(modernAssessment.settings.dueDate).toISOString() : undefined,
+            availableFrom,
+            availableUntil,
           }
         };
 
         setEvaluation(evaluationData);
         setAnswers(questions.map(q => ({ questionId: q.id, answer: null })));
 
-        if (evaluationData.settings.timeLimit) {
-          setTimeRemaining(evaluationData.settings.timeLimit * 60);
+        // Calculate timer: min(timeLimit, timeUntilClose) or one of them
+        const timer = getExamTimeLimit(
+          evaluationData.settings.timeLimit,
+          availableUntil
+        );
+        if (timer !== null) {
+          setTimeRemaining(timer);
         }
+
         setLoading(false);
         return;
       }
@@ -224,8 +266,13 @@ export default function TakeEvaluationPage() {
         setEvaluation({ ...data, questions });
         setAnswers(questions.map(q => ({ questionId: q.id, answer: null })));
 
-        if (data.settings.timeLimit) {
-          setTimeRemaining(data.settings.timeLimit * 60);
+        // Calculate timer using utility
+        const timer = getExamTimeLimit(
+          data.settings.timeLimit,
+          data.settings.availableUntil
+        );
+        if (timer !== null) {
+          setTimeRemaining(timer);
         }
       }
     } catch (error) {
@@ -355,6 +402,30 @@ export default function TakeEvaluationPage() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+      </div>
+    );
+  }
+
+  // Access blocked by availability dates
+  if (accessBlocked) {
+    return (
+      <div className="max-w-lg mx-auto">
+        <Card>
+          <CardContent className="p-8 text-center">
+            <Lock className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold mb-2">
+              {accessBlocked === 'not_open' ? 'Evaluacion no disponible' : 'Fecha limite pasada'}
+            </h2>
+            <p className="text-gray-600 mb-6">
+              {accessBlocked === 'not_open' && blockedInfo.availableFrom
+                ? `Esta evaluacion estara disponible desde el ${formatDeadlineDate(blockedInfo.availableFrom)}`
+                : 'Ya no puedes acceder a esta evaluacion. La fecha de cierre ha pasado.'}
+            </p>
+            <Button onClick={() => navigate('/evaluations')}>
+              Volver a Evaluaciones
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }

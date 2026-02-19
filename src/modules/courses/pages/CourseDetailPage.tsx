@@ -343,6 +343,7 @@ export default function CourseDetailPage() {
     image: '',
     objectives: [] as string[],
     duration: '',
+    availableFrom: '',
   });
   const [newObjective, setNewObjective] = useState('');
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -407,7 +408,7 @@ export default function CourseDetailPage() {
 
   const handleCreateModule = () => {
     setSelectedModule(null);
-    setModuleForm({ title: '', description: '', image: '', objectives: [], duration: '' });
+    setModuleForm({ title: '', description: '', image: '', objectives: [], duration: '', availableFrom: '' });
     setNewObjective('');
     setShowModuleModal(true);
   };
@@ -420,6 +421,7 @@ export default function CourseDetailPage() {
       image: module.image || '',
       objectives: module.objectives || [],
       duration: module.duration || '',
+      availableFrom: module.availableFrom ? new Date(module.availableFrom).toISOString().slice(0, 16) : '',
     });
     setNewObjective('');
     setShowModuleModal(true);
@@ -435,6 +437,7 @@ export default function CourseDetailPage() {
         image: moduleForm.image || undefined,
         objectives: moduleForm.objectives.length > 0 ? moduleForm.objectives : undefined,
         duration: moduleForm.duration || '0',
+        availableFrom: moduleForm.availableFrom ? new Date(moduleForm.availableFrom).getTime() : undefined,
       };
 
       if (selectedModule) {
@@ -851,16 +854,29 @@ export default function CourseDetailPage() {
                 )}
               </div>
 
-              {/* Estimated duration */}
-              <div className="w-48">
-                <Label>Duración estimada (min)</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  value={moduleForm.duration}
-                  onChange={e => setModuleForm(prev => ({ ...prev, duration: e.target.value }))}
-                  placeholder="60"
-                />
+              {/* Estimated duration & availability */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label>Duración estimada (min)</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={moduleForm.duration}
+                    onChange={e => setModuleForm(prev => ({ ...prev, duration: e.target.value }))}
+                    placeholder="60"
+                  />
+                </div>
+                <div>
+                  <Label>Disponible desde</Label>
+                  <Input
+                    type="datetime-local"
+                    value={moduleForm.availableFrom}
+                    onChange={e => setModuleForm(prev => ({ ...prev, availableFrom: e.target.value }))}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Si se establece, el módulo estará oculto para estudiantes hasta esta fecha
+                  </p>
+                </div>
               </div>
             </div>
 

@@ -123,6 +123,7 @@ export interface DBModule {
   duration: string;
   image?: string;
   objectives?: string[];
+  availableFrom?: number; // timestamp - ocultar hasta esta fecha
   status: 'borrador' | 'publicado';
   createdAt: number;
   updatedAt: number;
@@ -594,6 +595,7 @@ export interface DBTaskSubmission {
   }[];
   comment?: string;
   status: 'submitted' | 'graded' | 'returned';
+  submissionType?: 'on_time' | 'late';
   submittedAt: number;
   grade?: {
     score: number;
@@ -602,6 +604,22 @@ export interface DBTaskSubmission {
     gradedBy?: string;
     gradedAt?: number;
   };
+  createdAt: number;
+  updatedAt: number;
+}
+
+// Prórroga de fecha límite (Deadline Extension)
+export interface DBDeadlineExtension {
+  id: string;
+  courseId: string;
+  targetId: string;          // lessonId (tarea) o evaluationId (examen)
+  targetType: 'task' | 'exam';
+  studentId: string;
+  type: 'on_time' | 'late';  // la prórroga cuenta como entrega a tiempo o tardía
+  newDeadline: number;        // timestamp
+  grantedBy: string;
+  grantedAt: number;
+  reason?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -1276,6 +1294,27 @@ class FirebaseDataService {
     return this.delete('forumReplies', id);
   }
 
+  // --- DEADLINE EXTENSIONS ---
+  async getDeadlineExtensions(): Promise<DBDeadlineExtension[]> {
+    return this.getAll<DBDeadlineExtension>('deadlineExtensions');
+  }
+
+  async getExtensionsByTarget(targetId: string): Promise<DBDeadlineExtension[]> {
+    return this.query<DBDeadlineExtension>('deadlineExtensions', 'targetId', targetId);
+  }
+
+  async getExtensionsByStudent(studentId: string): Promise<DBDeadlineExtension[]> {
+    return this.query<DBDeadlineExtension>('deadlineExtensions', 'studentId', studentId);
+  }
+
+  async createExtension(extension: Omit<DBDeadlineExtension, 'id'>): Promise<DBDeadlineExtension> {
+    return this.create<DBDeadlineExtension>('deadlineExtensions', extension);
+  }
+
+  async deleteExtension(id: string): Promise<boolean> {
+    return this.delete('deadlineExtensions', id);
+  }
+
   // --- TASK SUBMISSIONS ---
   async getTaskSubmissions(): Promise<DBTaskSubmission[]> {
     return this.getAll<DBTaskSubmission>('taskSubmissions');
@@ -1360,7 +1399,7 @@ class FirebaseDataService {
       'messages', 'conversations', 'notifications', 'supportTickets',
       'activities', 'userPoints', 'badges', 'userBadges',
       'learningStreaks', 'progressActivities', 'userSettings', 'systemMetrics',
-      'taskSubmissions'
+      'taskSubmissions', 'deadlineExtensions'
     ];
 
     const data: Record<string, unknown[]> = {};
@@ -1414,7 +1453,8 @@ export type {
   DBSystemMetric as SystemMetric,
   DBForumPost as ForumPost,
   DBForumReply as ForumReply,
-  DBTaskSubmission as TaskSubmission
+  DBTaskSubmission as TaskSubmission,
+  DBDeadlineExtension as DeadlineExtension
 };
 
 export default firebaseDB;

@@ -51,6 +51,8 @@ interface LessonSettings {
   maxAttempts?: number;
   availableFrom?: string;
   availableUntil?: string;
+  dueDate?: string;
+  lateSubmissionDeadline?: string;
 }
 
 const LESSON_TYPES = [
@@ -727,7 +729,7 @@ export default function LessonBuilderPage() {
             {/* Availability Settings */}
             <div className="space-y-4">
               <h3 className="font-medium">Disponibilidad</h3>
-              
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="availableFrom">Disponible desde</Label>
@@ -735,9 +737,9 @@ export default function LessonBuilderPage() {
                     id="availableFrom"
                     type="datetime-local"
                     value={settings.availableFrom || ''}
-                    onChange={(e) => setSettings(prev => ({ 
-                      ...prev, 
-                      availableFrom: e.target.value 
+                    onChange={(e) => setSettings(prev => ({
+                      ...prev,
+                      availableFrom: e.target.value
                     }))}
                   />
                 </div>
@@ -748,14 +750,58 @@ export default function LessonBuilderPage() {
                     id="availableUntil"
                     type="datetime-local"
                     value={settings.availableUntil || ''}
-                    onChange={(e) => setSettings(prev => ({ 
-                      ...prev, 
-                      availableUntil: e.target.value 
+                    onChange={(e) => setSettings(prev => ({
+                      ...prev,
+                      availableUntil: e.target.value
                     }))}
                   />
                 </div>
               </div>
             </div>
+
+            {/* Tarea Deadline Settings */}
+            {lessonType === 'tarea' && (
+              <div className="space-y-4">
+                <h3 className="font-medium">Fechas de Entrega</h3>
+                <p className="text-sm text-gray-500">
+                  Configura las fechas límite para la entrega de la tarea
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="dueDate">Fecha de cierre (entrega a tiempo)</Label>
+                    <Input
+                      id="dueDate"
+                      type="datetime-local"
+                      value={settings.dueDate || ''}
+                      onChange={(e) => setSettings(prev => ({
+                        ...prev,
+                        dueDate: e.target.value
+                      }))}
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Después de esta fecha, la entrega se marca como tardía
+                    </p>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="lateSubmissionDeadline">Fecha límite entrega tardía</Label>
+                    <Input
+                      id="lateSubmissionDeadline"
+                      type="datetime-local"
+                      value={settings.lateSubmissionDeadline || ''}
+                      onChange={(e) => setSettings(prev => ({
+                        ...prev,
+                        lateSubmissionDeadline: e.target.value
+                      }))}
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Después de esta fecha, no se aceptan entregas
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

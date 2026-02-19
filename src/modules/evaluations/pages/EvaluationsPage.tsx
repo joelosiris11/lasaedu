@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '@app/store/authStore';
-import { evaluationService, legacyEnrollmentService } from '@shared/services/dataService';
-import type { DBEvaluation, DBEnrollment } from '@shared/services/dataService';
-import { 
-  Plus, 
-  Search, 
-  Edit3, 
-  Trash2, 
+import { evaluationService, legacyEnrollmentService, extensionService } from '@shared/services/dataService';
+import type { DBEvaluation, DBEnrollment, DBDeadlineExtension } from '@shared/services/dataService';
+import { getStudentExtension, formatDeadlineDate } from '@shared/utils/deadlines';
+import {
+  Plus,
+  Search,
+  Edit3,
+  Trash2,
   Eye,
   Clock,
   Star,
@@ -16,7 +17,9 @@ import {
   Play,
   FileText,
   BarChart3,
-  MessageSquare
+  MessageSquare,
+  CalendarClock,
+  User,
 } from 'lucide-react';
 import { Card, CardContent } from '@shared/components/ui/Card';
 import { Button } from '@shared/components/ui/Button';
@@ -34,6 +37,16 @@ const EvaluationsPage = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingEvaluation, setEditingEvaluation] = useState<DBEvaluation | null>(null);
+
+  // Extension management state
+  const [extensionEvalId, setExtensionEvalId] = useState<string | null>(null);
+  const [extensions, setExtensions] = useState<DBDeadlineExtension[]>([]);
+  const [courseStudents, setCourseStudents] = useState<{ id: string; name: string }[]>([]);
+  const [extStudentId, setExtStudentId] = useState('');
+  const [extType, setExtType] = useState<'on_time' | 'late'>('on_time');
+  const [extDeadline, setExtDeadline] = useState('');
+  const [extReason, setExtReason] = useState('');
+  const [savingExtension, setSavingExtension] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -150,6 +163,69 @@ const EvaluationsPage = () => {
       } catch (error) {
         console.error('Error deleting evaluation:', error);
       }
+    }
+  };
+
+  // Extension management
+  const handleOpenExtensions = async (evaluation: DBEvaluation) => {
+    if (extensionEvalId === evaluation.id) {
+      setExtensionEvalId(null);
+      return;
+    }
+    setExtensionEvalId(evaluation.id);
+    try {
+      const [exts, allEnrollments] = await Promise.all([
+        extensionService.getByTarget(evaluation.id),
+        legacyEnrollmentService.getAll(),
+      ]);
+      setExtensions(exts);
+      const courseEnrollments = allEnrollments.filter((e: DBEnrollment) => e.courseId === evaluation.courseId);
+      setCourseStudents(courseEnrollments.map((e: DBEnrollment) => ({ id: e.userId, name: e.userId })));
+    } catch (err) {
+      console.error('Error loading extensions:', err);
+    }
+  };
+
+  const handleCreateExamExtension = async (evaluationId: string) => {
+    if (!extStudentId || !extDeadline || !user) return;
+    setSavingExtension(true);
+    try {
+      const evaluation = evaluations.find(e => e.id === evaluationId);
+      const now = Date.now();
+      await extensionService.create({
+        courseId: evaluation?.courseId || '',
+        targetId: evaluationId,
+        targetType: 'exam',
+        studentId: extStudentId,
+        type: extType,
+        newDeadline: new Date(extDeadline).getTime(),
+        grantedBy: user.id,
+        grantedAt: now,
+        reason: extReason.trim() || undefined,
+        createdAt: now,
+        updatedAt: now,
+      });
+      // Reload extensions
+      const exts = await extensionService.getByTarget(evaluationId);
+      setExtensions(exts);
+      setExtStudentId('');
+      setExtDeadline('');
+      setExtReason('');
+    } catch (err) {
+      console.error('Error creating extension:', err);
+    } finally {
+      setSavingExtension(false);
+    }
+  };
+
+  const handleDeleteExamExtension = async (extensionId: string, evaluationId: string) => {
+    if (!confirm('Eliminar esta prorroga?')) return;
+    try {
+      await extensionService.delete(extensionId);
+      const exts = await extensionService.getByTarget(evaluationId);
+      setExtensions(exts);
+    } catch (err) {
+      console.error('Error deleting extension:', err);
     }
   };
 
@@ -418,11 +494,17 @@ const EvaluationsPage = () => {
                               >
                                 <Edit3 className="h-4 w-4" />
                               </Button>
-                              <Button size="sm" variant="outline">
-                                <MessageSquare className="h-4 w-4" />
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleOpenExtensions(evaluation)}
+                                title="Gestionar prorrogas"
+                                className={extensionEvalId === evaluation.id ? 'bg-purple-50 text-purple-600 border-purple-300' : ''}
+                              >
+                                <CalendarClock className="h-4 w-4" />
                               </Button>
-                              <Button 
-                                size="sm" 
+                              <Button
+                                size="sm"
                                 variant="outline"
                                 onClick={() => handleDeleteDBEvaluation(evaluation.id)}
                               >
@@ -434,6 +516,105 @@ const EvaluationsPage = () => {
                       )}
                     </div>
                   </div>
+
+                  {/* Extension management panel */}
+                  {extensionEvalId === evaluation.id && canManageEvaluations && (
+                    <div className="mt-4 border-t border-gray-200 pt-4">
+                      <h4 className="text-sm font-semibold text-purple-700 mb-3 flex items-center gap-2">
+                        <CalendarClock className="h-4 w-4" />
+                        Prorrogas de Examen
+                      </h4>
+
+                      {/* Existing extensions */}
+                      {extensions.length > 0 && (
+                        <div className="space-y-2 mb-4">
+                          {extensions.map(ext => (
+                            <div key={ext.id} className="flex items-center justify-between bg-purple-50 rounded p-2 text-sm">
+                              <div className="flex items-center gap-2">
+                                <User className="w-3.5 h-3.5 text-purple-500" />
+                                <span className="font-medium">{ext.studentId}</span>
+                                <span className="text-purple-600">
+                                  hasta {formatDeadlineDate(ext.newDeadline)}
+                                </span>
+                                <span className={`text-xs px-1.5 py-0.5 rounded ${
+                                  ext.type === 'on_time' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                                }`}>
+                                  {ext.type === 'on_time' ? 'A tiempo' : 'Tardia'}
+                                </span>
+                                {ext.reason && <span className="text-gray-500 text-xs">({ext.reason})</span>}
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleDeleteExamExtension(ext.id, evaluation.id)}
+                                className="text-red-500 h-7 px-2"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* New extension form */}
+                      <div className="bg-gray-50 rounded-lg p-3 space-y-3">
+                        <p className="text-xs font-medium text-gray-600">Nueva prorroga</p>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                          <div>
+                            <Label className="text-xs">Estudiante</Label>
+                            <select
+                              value={extStudentId}
+                              onChange={(e) => setExtStudentId(e.target.value)}
+                              className="w-full h-8 px-2 border border-gray-300 rounded text-xs"
+                            >
+                              <option value="">Seleccionar...</option>
+                              {courseStudents.map(s => (
+                                <option key={s.id} value={s.id}>{s.name}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <Label className="text-xs">Tipo</Label>
+                            <select
+                              value={extType}
+                              onChange={(e) => setExtType(e.target.value as 'on_time' | 'late')}
+                              className="w-full h-8 px-2 border border-gray-300 rounded text-xs"
+                            >
+                              <option value="on_time">A tiempo</option>
+                              <option value="late">Tardia</option>
+                            </select>
+                          </div>
+                          <div>
+                            <Label className="text-xs">Nueva fecha</Label>
+                            <Input
+                              type="datetime-local"
+                              value={extDeadline}
+                              onChange={(e) => setExtDeadline(e.target.value)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs">Razon</Label>
+                            <Input
+                              value={extReason}
+                              onChange={(e) => setExtReason(e.target.value)}
+                              placeholder="Opcional..."
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          onClick={() => handleCreateExamExtension(evaluation.id)}
+                          disabled={savingExtension || !extStudentId || !extDeadline}
+                          className="bg-purple-600 hover:bg-purple-700"
+                        >
+                          <Plus className="w-3 h-3 mr-1" />
+                          {savingExtension ? 'Guardando...' : 'Crear Prorroga'}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             );

@@ -610,7 +610,20 @@ export default function EvaluationBuilderPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <Label htmlFor="availableFrom">Disponible desde</Label>
+                  <Input
+                    id="availableFrom"
+                    type="datetime-local"
+                    value={assessment.settings?.availableFrom ? new Date(assessment.settings.availableFrom).toISOString().slice(0, 16) : ''}
+                    onChange={(e) => setAssessment(prev => ({
+                      ...prev,
+                      settings: { ...prev.settings!, availableFrom: e.target.value ? new Date(e.target.value).getTime() : undefined }
+                    }))}
+                  />
+                </div>
+
                 <div>
                   <Label htmlFor="dueDate">Fecha Límite</Label>
                   <Input
@@ -625,17 +638,30 @@ export default function EvaluationBuilderPage() {
                 </div>
 
                 <div>
-                  <Label htmlFor="availableFrom">Disponible desde</Label>
+                  <Label htmlFor="availableUntil">Fecha de cierre</Label>
                   <Input
-                    id="availableFrom"
+                    id="availableUntil"
                     type="datetime-local"
-                    value={assessment.settings?.availableFrom ? new Date(assessment.settings.availableFrom).toISOString().slice(0, 16) : ''}
+                    value={assessment.settings?.availableUntil ? new Date(assessment.settings.availableUntil).toISOString().slice(0, 16) : ''}
                     onChange={(e) => setAssessment(prev => ({
                       ...prev,
-                      settings: { ...prev.settings!, availableFrom: e.target.value ? new Date(e.target.value).getTime() : undefined }
+                      settings: { ...prev.settings!, availableUntil: e.target.value ? new Date(e.target.value).getTime() : undefined }
                     }))}
                   />
                 </div>
+              </div>
+
+              {/* Explanatory text about time modes */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
+                <p className="font-medium mb-2">Modos de tiempo del examen:</p>
+                <ul className="list-disc list-inside space-y-1">
+                  <li>
+                    <strong>Sin tiempo límite:</strong> El estudiante tiene hasta la fecha de cierre para completar el examen
+                  </li>
+                  <li>
+                    <strong>Con tiempo límite:</strong> El estudiante tiene X minutos desde que inicia, o hasta la fecha de cierre (lo que ocurra primero)
+                  </li>
+                </ul>
               </div>
             </CardContent>
           </Card>
