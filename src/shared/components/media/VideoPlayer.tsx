@@ -1,13 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import ReactPlayer from 'react-player';
-import { 
-  Play, 
-  Pause, 
-  Volume2, 
-  VolumeX, 
-  Maximize, 
-  SkipBack, 
-  SkipForward,
+import {
+  Play,
+  Pause,
+  Volume2,
+  VolumeX,
+  Maximize,
   Settings,
   CheckCircle
 } from 'lucide-react';
@@ -31,8 +29,7 @@ export default function VideoPlayer({
   initialProgress = 0,
   poster
 }: VideoPlayerProps) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const playerRef = useRef<any>(null);
+  const playerRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   
   const [playing, setPlaying] = useState(false);
@@ -45,13 +42,17 @@ export default function VideoPlayer({
   const [playbackRate, setPlaybackRate] = useState(1);
   const [showSettings, setShowSettings] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
-  const [buffered, setBuffered] = useState(0);
 
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Detectar tipo de video
   const isYouTube = url.includes('youtube.com') || url.includes('youtu.be');
   const isVimeo = url.includes('vimeo.com');
+
+  // Añadir params para ocultar sugerencias de YouTube
+  const playerSrc = isYouTube
+    ? `${url}${url.includes('?') ? '&' : '?'}rel=0&modestbranding=1`
+    : url;
 
   useEffect(() => {
     // Marcar como completado si supera el threshold
@@ -61,16 +62,17 @@ export default function VideoPlayer({
     }
   }, [played, completionThreshold, isCompleted, onComplete]);
 
-  const handleProgress = (state: { played: number; playedSeconds: number; loaded: number }) => {
-    if (!seeking) {
-      setPlayed(state.played);
-      setBuffered(state.loaded);
-      onProgress?.(Math.round(state.played * 100));
+  const handleTimeUpdate = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const el = e.currentTarget;
+    if (el.duration && !seeking) {
+      const p = el.currentTime / el.duration;
+      setPlayed(p);
+      onProgress?.(Math.round(p * 100));
     }
   };
 
-  const handleDuration = (dur: number) => {
-    setDuration(dur);
+  const handleLoadedMetadata = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    setDuration(e.currentTarget.duration);
   };
 
   const handleSeekChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -83,7 +85,8 @@ export default function VideoPlayer({
 
   const handleSeekMouseUp = (e: React.MouseEvent<HTMLInputElement>) => {
     setSeeking(false);
-    playerRef.current?.seekTo(parseFloat((e.target as HTMLInputElement).value));
+    const time = parseFloat((e.target as HTMLInputElement).value) * duration;
+    if (playerRef.current) playerRef.current.currentTime = time;
   };
 
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -104,12 +107,6 @@ export default function VideoPlayer({
         containerRef.current.requestFullscreen();
       }
     }
-  };
-
-  const skip = (seconds: number) => {
-    const currentTime = playerRef.current?.getCurrentTime() || 0;
-    const newTime = Math.max(0, Math.min(duration, currentTime + seconds));
-    playerRef.current?.seekTo(newTime);
   };
 
   const formatTime = (seconds: number) => {
@@ -146,30 +143,26 @@ export default function VideoPlayer({
     >
       {/* Video Player */}
       <div className="aspect-video">
-        {(ReactPlayer as any)({
-          ref: playerRef,
-          url: url,
-          width: "100%",
-          height: "100%",
-          playing: playing,
-          volume: volume,
-          muted: muted,
-          playbackRate: playbackRate,
-          onProgress: handleProgress,
-          onDuration: handleDuration,
-          onEnded: () => {
+        <ReactPlayer
+          ref={playerRef}
+          src={playerSrc}
+          width="100%"
+          height="100%"
+          playing={playing}
+          volume={volume}
+          muted={muted}
+          playbackRate={playbackRate}
+          onTimeUpdate={handleTimeUpdate}
+          onLoadedMetadata={handleLoadedMetadata}
+          onEnded={() => {
             setPlaying(false);
             if (!isCompleted) {
               setIsCompleted(true);
               onComplete?.();
             }
-          },
-          config: {
-            youtube: {},
-            vimeo: {}
-          },
-          light: poster
-        })}
+          }}
+          light={poster}
+        />
       </div>
 
       {/* Overlay de completado */}
@@ -180,7 +173,7 @@ export default function VideoPlayer({
             <p className="text-xl font-semibold">¡Video completado!</p>
             <button 
               onClick={() => {
-                playerRef.current?.seekTo(0);
+                if (playerRef.current) playerRef.current.currentTime = 0;
                 setPlaying(true);
               }}
               className="mt-4 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg transition"
@@ -193,7 +186,7 @@ export default function VideoPlayer({
 
       {/* Controles */}
       <div 
-        className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4 transition-opacity duration-300 ${
+        className={`absolute bottom-0 left-0 right-0 z-10 bg-gradient-to-t from-black/80 to-transparent p-4 transition-opacity duration-300 ${
           showControls ? 'opacity-100' : 'opacity-0'
         }`}
       >
@@ -206,12 +199,6 @@ export default function VideoPlayer({
 
         {/* Barra de progreso */}
         <div className="relative mb-3">
-          {/* Buffer */}
-          <div 
-            className="absolute h-1 bg-white/30 rounded-full top-1/2 -translate-y-1/2"
-            style={{ width: `${buffered * 100}%` }}
-          />
-          {/* Progress */}
           <input
             type="range"
             min={0}
@@ -241,22 +228,6 @@ export default function VideoPlayer({
               className="p-2 hover:bg-white/20 rounded-full transition"
             >
               {playing ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
-            </button>
-
-            {/* Skip buttons */}
-            <button 
-              onClick={() => skip(-10)}
-              className="p-1.5 hover:bg-white/20 rounded-full transition"
-              title="Retroceder 10s"
-            >
-              <SkipBack className="h-4 w-4" />
-            </button>
-            <button 
-              onClick={() => skip(10)}
-              className="p-1.5 hover:bg-white/20 rounded-full transition"
-              title="Adelantar 10s"
-            >
-              <SkipForward className="h-4 w-4" />
             </button>
 
             {/* Volume */}
@@ -337,15 +308,17 @@ export default function VideoPlayer({
         </div>
       </div>
 
-      {/* Click to play overlay */}
-      {!playing && !isCompleted && (
-        <div 
+      {/* Click to play/pause overlay */}
+      {!isCompleted && (
+        <div
           className="absolute inset-0 flex items-center justify-center cursor-pointer"
-          onClick={() => setPlaying(true)}
+          onClick={() => setPlaying(!playing)}
         >
-          <div className="bg-blue-600/90 hover:bg-blue-500/90 p-5 rounded-full transition shadow-2xl">
-            <Play className="h-10 w-10 text-white" fill="white" />
-          </div>
+          {!playing && (
+            <div className="bg-blue-600/90 hover:bg-blue-500/90 p-5 rounded-full transition shadow-2xl">
+              <Play className="h-10 w-10 text-white" fill="white" />
+            </div>
+          )}
         </div>
       )}
 
