@@ -158,7 +158,7 @@ const StudentDashboard = () => {
                         Estado: {course.status === 'activo' ? 'En progreso' : course.status}
                       </span>
                       <span className="text-orange-600">
-                        Último acceso: {new Date(course.lastActivity).toLocaleDateString('es')}
+                        Último acceso: {course.lastAccessedAt ? new Date(course.lastAccessedAt).toLocaleDateString('es') : '—'}
                       </span>
                     </div>
                   </div>
@@ -221,7 +221,7 @@ const StudentDashboard = () => {
                 <div key={index} className="flex items-center space-x-3">
                   <div className="p-2 bg-yellow-100 rounded-lg">
                     {achievement.type === 'course' && <CheckCircle className="h-5 w-5 text-yellow-600" />}
-                    {achievement.type === 'streak' && <Target className="h-5 w-5 text-yellow-600" />}
+                    {achievement.type === 'streak' && <TrendingUp className="h-5 w-5 text-yellow-600" />}
                     {achievement.type === 'grade' && <Award className="h-5 w-5 text-yellow-600" />}
                   </div>
                   <div className="flex-1">
