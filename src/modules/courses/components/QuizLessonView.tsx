@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { DBLesson } from '@shared/services/dataService';
-import type { QuizLessonContent, QuizQuestion, QuizQuestionType } from './QuizLessonEditor';
+import type { QuizLessonContent, QuizQuestion } from './QuizLessonEditor';
 import { Button } from '@shared/components/ui/Button';
 import {
   CheckCircle,

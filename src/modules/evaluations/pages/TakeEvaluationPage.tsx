@@ -5,7 +5,6 @@ import { evaluationService, extensionService } from '@shared/services/dataServic
 import { assessmentService } from '@shared/services/assessmentService';
 import type { Question as ModernQuestion, QuestionOption } from '@shared/types/assessment';
 import { getExamTimeLimit, getStudentExtension, formatDeadlineDate } from '@shared/utils/deadlines';
-import type { DBDeadlineExtension } from '@shared/services/dataService';
 import {
   ArrowLeft,
   ArrowRight,

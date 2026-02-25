@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { forumService, type DBForumPost, type DBForumReply } from '@shared/services/dataService';
+import { forumService } from '@shared/services/dataService';
 import type { DBLesson } from '@shared/services/dataService';
 import type { ForumLessonContent } from './ForumLessonEditor';
 import {

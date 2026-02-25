@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuthStore } from '@app/store/authStore';
 import { evaluationService, legacyEnrollmentService, extensionService } from '@shared/services/dataService';
 import type { DBEvaluation, DBEnrollment, DBDeadlineExtension } from '@shared/services/dataService';
-import { getStudentExtension, formatDeadlineDate } from '@shared/utils/deadlines';
+import { formatDeadlineDate } from '@shared/utils/deadlines';
 import {
   Plus,
   Search,
@@ -17,7 +17,6 @@ import {
   Play,
   FileText,
   BarChart3,
-  MessageSquare,
   CalendarClock,
   User,
 } from 'lucide-react';

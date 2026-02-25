@@ -16,9 +16,8 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:123456789:web:abc123"
 };
 
-// Check if we should use emulators
-const USE_EMULATOR = import.meta.env.VITE_USE_FIREBASE_EMULATOR === 'true' || 
-                     import.meta.env.DEV; // Auto-enable in development
+// Check if we should use emulators (only when explicitly enabled)
+const USE_EMULATOR = import.meta.env.VITE_USE_FIREBASE_EMULATOR === 'true';
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
