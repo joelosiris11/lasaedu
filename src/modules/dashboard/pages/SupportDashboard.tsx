@@ -1,8 +1,9 @@
 import { useAuthStore } from '@app/store/authStore';
-import { 
-  Headphones, 
-  Clock, 
-  CheckCircle, 
+import { useNavigate } from 'react-router-dom';
+import {
+  Headphones,
+  Clock,
+  CheckCircle,
   MessageSquare,
   Users,
   TrendingUp,
@@ -16,6 +17,7 @@ import { useSupportStats, useSupportTickets, useRecentActivity } from '@shared/h
 
 const SupportDashboard = () => {
   const { user } = useAuthStore();
+  const navigate = useNavigate();
   const { stats, loading: statsLoading } = useSupportStats();
   const { tickets, loading: ticketsLoading } = useSupportTickets();
   const { activities, loading: activitiesLoading } = useRecentActivity(4);
@@ -234,19 +236,19 @@ const SupportDashboard = () => {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-4">
-              <button className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+              <button onClick={() => navigate('/support')} className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
                 <MessageSquare className="h-6 w-6 text-blue-600 mx-auto mb-2" />
                 <span className="text-sm font-medium">Nuevo Ticket</span>
               </button>
-              <button className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+              <button onClick={() => navigate('/user-management')} className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
                 <Users className="h-6 w-6 text-green-600 mx-auto mb-2" />
                 <span className="text-sm font-medium">Buscar Usuario</span>
               </button>
-              <button className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+              <button onClick={() => navigate('/support')} className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
                 <FileText className="h-6 w-6 text-purple-600 mx-auto mb-2" />
                 <span className="text-sm font-medium">Base Conocimiento</span>
               </button>
-              <button className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+              <button onClick={() => navigate('/reports')} className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
                 <TrendingUp className="h-6 w-6 text-orange-600 mx-auto mb-2" />
                 <span className="text-sm font-medium">Reportes</span>
               </button>

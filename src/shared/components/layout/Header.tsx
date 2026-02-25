@@ -1,11 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAuthStore } from '@app/store/authStore';
+import { useNavigate } from 'react-router-dom';
 import { Search, User, ChevronDown, LogOut } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { NotificationCenter } from './NotificationCenter';
 
 export const Header = () => {
   const { user, logout } = useAuthStore();
+  const navigate = useNavigate();
   const [showProfile, setShowProfile] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -66,13 +68,13 @@ export const Header = () => {
                   <div className="text-xs text-blue-600 capitalize">{user?.role}</div>
                 </div>
                 <div className="py-1">
-                  <button className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                  <button onClick={() => { setShowProfile(false); navigate('/settings'); }} className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100">
                     Mi Perfil
                   </button>
-                  <button className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                  <button onClick={() => { setShowProfile(false); navigate('/settings'); }} className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100">
                     Configuración
                   </button>
-                  <button className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                  <button onClick={() => { setShowProfile(false); navigate('/support'); }} className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100">
                     Ayuda
                   </button>
                 </div>

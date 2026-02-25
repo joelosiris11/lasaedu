@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '@app/store/authStore';
+import { useNavigate } from 'react-router-dom';
 import {
   BookOpen,
   Users,
@@ -25,6 +26,7 @@ const formatTime = (minutes: number): string => {
 
 const TeacherDashboard = () => {
   const { user } = useAuthStore();
+  const navigate = useNavigate();
   const { courses: teacherCourses, loading: coursesLoading } = useTeacherCourses(user?.id || '');
   const [allEnrollments, setAllEnrollments] = useState<DBEnrollment[]>([]);
   const [enrollmentsLoading, setEnrollmentsLoading] = useState(true);
@@ -162,10 +164,10 @@ const TeacherDashboard = () => {
                       </div>
                     </div>
                     <div className="flex space-x-2">
-                      <button className="p-2 text-gray-400 hover:text-gray-600">
+                      <button onClick={() => navigate(`/courses/${course.id}`)} className="p-2 text-gray-400 hover:text-gray-600" title="Ver curso">
                         <Eye className="h-4 w-4" />
                       </button>
-                      <button className="p-2 text-gray-400 hover:text-gray-600">
+                      <button onClick={() => navigate(`/courses/${course.id}`)} className="p-2 text-gray-400 hover:text-gray-600" title="Gestionar curso">
                         <BookOpenCheck className="h-4 w-4" />
                       </button>
                     </div>
@@ -234,19 +236,19 @@ const TeacherDashboard = () => {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-4">
-              <button className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+              <button onClick={() => navigate('/courses/new')} className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
                 <BookOpen className="h-6 w-6 text-blue-600 mx-auto mb-2" />
                 <span className="text-sm font-medium">Crear Curso</span>
               </button>
-              <button className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+              <button onClick={() => navigate('/forums')} className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
                 <MessageSquare className="h-6 w-6 text-green-600 mx-auto mb-2" />
                 <span className="text-sm font-medium">Revisar Foros</span>
               </button>
-              <button className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+              <button onClick={() => navigate('/evaluations')} className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
                 <Calendar className="h-6 w-6 text-purple-600 mx-auto mb-2" />
-                <span className="text-sm font-medium">Programar Clase</span>
+                <span className="text-sm font-medium">Evaluaciones</span>
               </button>
-              <button className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+              <button onClick={() => navigate('/grades')} className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
                 <Award className="h-6 w-6 text-orange-600 mx-auto mb-2" />
                 <span className="text-sm font-medium">Ver Calificaciones</span>
               </button>

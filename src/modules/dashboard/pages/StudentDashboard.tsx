@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '@app/store/authStore';
+import { useNavigate } from 'react-router-dom';
 import {
   BookOpen,
   Trophy,
@@ -23,6 +24,7 @@ const formatTime = (minutes: number): string => {
 
 const StudentDashboard = () => {
   const { user } = useAuthStore();
+  const navigate = useNavigate();
   const { courses, loading } = useStudentCourses(user?.id || '');
   const [totalTimeMinutes, setTotalTimeMinutes] = useState(0);
 
@@ -135,7 +137,7 @@ const StudentDashboard = () => {
                         <h3 className="font-medium text-gray-900">{course.title}</h3>
                         <p className="text-sm text-gray-600">por {course.instructor}</p>
                       </div>
-                      <button className="p-2 bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200">
+                      <button onClick={() => navigate(`/courses/${course.id}`)} className="p-2 bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200">
                         <PlayCircle className="h-5 w-5" />
                       </button>
                     </div>
