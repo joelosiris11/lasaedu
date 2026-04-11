@@ -169,12 +169,7 @@ const UsersPage = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Gestión de Usuarios</h1>
-          <p className="text-gray-600">Administra los usuarios de la plataforma</p>
-        </div>
+      <div className="flex justify-end">
         <Button onClick={() => setShowCreateModal(true)} className="flex items-center">
           <UserPlus className="h-4 w-4 mr-2" />
           Nuevo Usuario

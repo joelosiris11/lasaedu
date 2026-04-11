@@ -1,6 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
-import type { DBLesson } from '@shared/services/dataService';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import type { DBLesson, DBSectionLessonOverride } from '@shared/services/dataService';
+import { firebaseDB } from '@shared/services/firebaseDataService';
+import type { DBEvaluationAttempt } from '@shared/services/firebaseDataService';
 import type { QuizLessonContent, QuizQuestion } from './QuizLessonEditor';
+import { resolveDeadlines, getTaskDeadlineStatus, formatDeadlineDate, getTimeRemaining, parseTimestamp } from '@shared/utils/deadlines';
 import { Button } from '@shared/components/ui/Button';
 import {
   CheckCircle,
@@ -9,16 +12,17 @@ import {
   AlertCircle,
   RotateCcw,
   HelpCircle,
+  Clock,
+  ChevronLeft,
+  ChevronRight,
+  Send,
+  Eye,
 } from 'lucide-react';
 
 // --- Helpers ---
 
 function normalizeText(text: string): string {
-  return text
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .trim();
+  return text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
 }
 
 function shuffleArray<T>(arr: T[]): T[] {
@@ -30,88 +34,231 @@ function shuffleArray<T>(arr: T[]): T[] {
   return copy;
 }
 
+function formatTime(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
 // --- Types ---
 
 interface QuizLessonViewProps {
   lesson: DBLesson;
   onComplete: () => void;
+  userId?: string;
+  courseId?: string;
+  readOnly?: boolean;
+  sectionOverride?: DBSectionLessonOverride | null;
 }
 
-interface QuizAnswers {
-  [questionId: string]: any;
-}
+interface QuizAnswers { [questionId: string]: any; }
 
 interface QuizResult {
   totalPoints: number;
   earnedPoints: number;
   percentage: number;
   passed: boolean;
-  questionResults: {
-    questionId: string;
-    correct: boolean;
-    earnedPoints: number;
-  }[];
+  questionResults: { questionId: string; correct: boolean; earnedPoints: number }[];
 }
+
+type QuizPhase = 'start' | 'active' | 'results' | 'review';
 
 // --- Component ---
 
-export default function QuizLessonView({ lesson, onComplete }: QuizLessonViewProps) {
+export default function QuizLessonView({ lesson, onComplete, userId, courseId, readOnly, sectionOverride }: QuizLessonViewProps) {
   const [quizContent, setQuizContent] = useState<QuizLessonContent | null>(null);
   const [displayQuestions, setDisplayQuestions] = useState<QuizQuestion[]>([]);
   const [answers, setAnswers] = useState<QuizAnswers>({});
   const [result, setResult] = useState<QuizResult | null>(null);
-  const [submitted, setSubmitted] = useState(false);
+  const [phase, setPhase] = useState<QuizPhase>('start');
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Attempt history
+  const [pastAttempts, setPastAttempts] = useState<DBEvaluationAttempt[]>([]);
+  const [loadingAttempts, setLoadingAttempts] = useState(true);
+  const [reviewingAttempt, setReviewingAttempt] = useState<DBEvaluationAttempt | null>(null);
+
+  // In-progress attempt persistence
+  const [activeAttemptId, setActiveAttemptId] = useState<string | null>(null);
+  const [quizStartedAt, setQuizStartedAt] = useState<number | null>(null);
+  const [inProgressAttempt, setInProgressAttempt] = useState<DBEvaluationAttempt | null>(null);
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Load quiz content
   useEffect(() => {
     try {
       const parsed: QuizLessonContent =
         typeof lesson.content === 'string' ? JSON.parse(lesson.content) : lesson.content;
       setQuizContent(parsed);
-
-      let questions = [...parsed.questions];
-      if (parsed.settings.shuffleQuestions) {
-        questions = shuffleArray(questions);
-      }
-      setDisplayQuestions(questions);
-
-      // Initialize answers
-      const initialAnswers: QuizAnswers = {};
-      for (const q of questions) {
-        switch (q.type) {
-          case 'true_false':
-            initialAnswers[q.id] = null;
-            break;
-          case 'single_choice':
-            initialAnswers[q.id] = null;
-            break;
-          case 'multiple_choice':
-            initialAnswers[q.id] = [];
-            break;
-          case 'match_drag':
-          case 'match_dropdown':
-            initialAnswers[q.id] = {};
-            break;
-          case 'open_answer':
-            initialAnswers[q.id] = '';
-            break;
-        }
-      }
-      setAnswers(initialAnswers);
     } catch {
       setQuizContent(null);
     }
   }, [lesson.id, lesson.content]);
 
+  // Load past attempts + detect in-progress
+  useEffect(() => {
+    if (!userId) { setLoadingAttempts(false); return; }
+    (async () => {
+      try {
+        const attempts = await firebaseDB.getEvaluationAttempts(userId);
+        const lessonAttempts = attempts
+          .filter((a) => a.evaluationId === lesson.id)
+          .sort((a, b) => b.createdAt - a.createdAt);
+
+        // Check for in-progress attempt
+        const inProgress = lessonAttempts.find(a => a.status === 'in_progress');
+        if (inProgress) {
+          setInProgressAttempt(inProgress);
+        }
+
+        setPastAttempts(lessonAttempts.filter(a => a.status === 'completed'));
+      } catch { /* ignore */ }
+      setLoadingAttempts(false);
+    })();
+  }, [userId, lesson.id]);
+
+  // Timer
+  useEffect(() => {
+    if (phase !== 'active' || timeLeft === null) return;
+    if (timeLeft <= 0) { handleSubmit(); return; }
+    timerRef.current = setInterval(() => {
+      setTimeLeft((t) => (t !== null && t > 0 ? t - 1 : 0));
+    }, 1000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [phase, timeLeft]);
+
+  const getEffectiveTimeLimit = (): number | null => {
+    if (!quizContent) return null;
+    const timeLimitMinutes = lesson.settings?.timeLimit || quizContent.settings.timeLimit;
+    return timeLimitMinutes && timeLimitMinutes > 0 ? timeLimitMinutes * 60 : null;
+  };
+
+  const initQuiz = async () => {
+    if (!quizContent) return;
+    let questions = [...quizContent.questions];
+    if (quizContent.settings.shuffleQuestions) questions = shuffleArray(questions);
+    setDisplayQuestions(questions);
+
+    const initialAnswers: QuizAnswers = {};
+    for (const q of questions) {
+      switch (q.type) {
+        case 'true_false': case 'single_choice': initialAnswers[q.id] = null; break;
+        case 'multiple_choice': initialAnswers[q.id] = []; break;
+        case 'match_drag': case 'match_dropdown': initialAnswers[q.id] = {}; break;
+        case 'open_answer': initialAnswers[q.id] = ''; break;
+      }
+    }
+    setAnswers(initialAnswers);
+    setCurrentIndex(0);
+    setResult(null);
+    setReviewingAttempt(null);
+
+    const startTime = Date.now();
+    setQuizStartedAt(startTime);
+    setTimeLeft(getEffectiveTimeLimit());
+
+    // Save in-progress attempt to Firebase
+    if (userId) {
+      try {
+        const attempt = await firebaseDB.createAttempt({
+          evaluationId: lesson.id,
+          userId,
+          courseId: courseId || '',
+          answers: questions.map(q => ({ questionId: q.id, answer: null, isCorrect: false, pointsEarned: 0 })),
+          score: 0,
+          maxScore: 0,
+          percentage: 0,
+          passed: false,
+          timeSpent: 0,
+          startedAt: new Date(startTime).toISOString(),
+          completedAt: '',
+          status: 'in_progress' as any,
+          createdAt: startTime,
+          updatedAt: startTime,
+        });
+        setActiveAttemptId(attempt.id);
+      } catch { /* ignore */ }
+    }
+
+    setPhase('active');
+  };
+
+  // Resume an in-progress attempt
+  const resumeQuiz = () => {
+    if (!quizContent || !inProgressAttempt) return;
+
+    // Restore questions in original order (don't re-shuffle)
+    const questions = quizContent.questions.filter(q =>
+      inProgressAttempt.answers.some(a => a.questionId === q.id)
+    );
+    // Maintain the order from the saved attempt
+    const orderedQuestions = inProgressAttempt.answers
+      .map(a => questions.find(q => q.id === a.questionId))
+      .filter(Boolean) as QuizQuestion[];
+    setDisplayQuestions(orderedQuestions.length > 0 ? orderedQuestions : quizContent.questions);
+
+    // Restore answers
+    const restoredAnswers: QuizAnswers = {};
+    for (const a of inProgressAttempt.answers) {
+      restoredAnswers[a.questionId] = a.answer;
+    }
+    setAnswers(restoredAnswers);
+    setCurrentIndex(0);
+    setResult(null);
+    setReviewingAttempt(null);
+
+    // Timer: calculate remaining time from startedAt
+    const startTime = new Date(inProgressAttempt.startedAt).getTime();
+    setQuizStartedAt(startTime);
+    const totalSeconds = getEffectiveTimeLimit();
+    if (totalSeconds !== null) {
+      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      const remaining = Math.max(0, totalSeconds - elapsed);
+      setTimeLeft(remaining);
+    } else {
+      setTimeLeft(null);
+    }
+
+    setActiveAttemptId(inProgressAttempt.id);
+    setInProgressAttempt(null);
+    setPhase('active');
+  };
+
   const setAnswer = useCallback((questionId: string, value: any) => {
-    setAnswers((prev) => ({ ...prev, [questionId]: value }));
-  }, []);
+    setAnswers((prev) => {
+      const next = { ...prev, [questionId]: value };
+      // Debounced save to Firebase
+      if (activeAttemptId) {
+        if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = setTimeout(() => {
+          const answersList = Object.entries(next).map(([qId, ans]) => ({
+            questionId: qId,
+            answer: ans,
+            isCorrect: false,
+            pointsEarned: 0,
+          }));
+          firebaseDB.updateAttempt(activeAttemptId, { answers: answersList, updatedAt: Date.now() }).catch(() => {});
+        }, 1000);
+      }
+      return next;
+    });
+  }, [activeAttemptId]);
+
+  const isAnswered = (qId: string): boolean => {
+    const a = answers[qId];
+    if (a === null || a === undefined) return false;
+    if (typeof a === 'string' && a.trim() === '') return false;
+    if (Array.isArray(a) && a.length === 0) return false;
+    if (typeof a === 'object' && !Array.isArray(a) && Object.keys(a).length === 0) return false;
+    return true;
+  };
 
   const scoreQuiz = (): QuizResult => {
     if (!quizContent) return { totalPoints: 0, earnedPoints: 0, percentage: 0, passed: false, questionResults: [] };
-
     const questionResults: QuizResult['questionResults'] = [];
-    let totalPoints = 0;
-    let earnedPoints = 0;
+    let totalPoints = 0, earnedPoints = 0;
 
     for (const q of quizContent.questions) {
       totalPoints += q.points;
@@ -119,117 +266,103 @@ export default function QuizLessonView({ lesson, onComplete }: QuizLessonViewPro
       let correct = false;
 
       switch (q.type) {
-        case 'true_false':
-          correct = answer === q.correctBool;
-          break;
-
-        case 'single_choice': {
-          const correctOpt = q.options?.find((o) => o.isCorrect);
-          correct = answer === correctOpt?.id;
-          break;
-        }
-
+        case 'true_false': correct = answer === q.correctBool; break;
+        case 'single_choice': { const c = q.options?.find((o) => o.isCorrect); correct = answer === c?.id; break; }
         case 'multiple_choice': {
-          const correctIds = new Set(q.options?.filter((o) => o.isCorrect).map((o) => o.id) || []);
-          const selectedIds = new Set(answer as string[]);
-          correct =
-            correctIds.size === selectedIds.size &&
-            [...correctIds].every((id) => selectedIds.has(id));
+          const cIds = new Set(q.options?.filter((o) => o.isCorrect).map((o) => o.id) || []);
+          const sIds = new Set(answer as string[]);
+          correct = cIds.size === sIds.size && [...cIds].every((id) => sIds.has(id));
           break;
         }
-
-        case 'match_drag':
-        case 'match_dropdown': {
+        case 'match_drag': case 'match_dropdown': {
           const pairs = q.pairs || [];
-          const userMatches = answer as Record<string, string>;
-          let correctCount = 0;
-          for (const pair of pairs) {
-            if (userMatches[pair.id] === pair.right) {
-              correctCount++;
-            }
-          }
-          // Partial credit: proportional to correct matches
+          const um = answer as Record<string, string>;
+          let cc = 0;
+          for (const p of pairs) { if (um[p.id] === p.right) cc++; }
           if (pairs.length > 0) {
-            const earned = (correctCount / pairs.length) * q.points;
+            const earned = (cc / pairs.length) * q.points;
             earnedPoints += earned;
-            questionResults.push({
-              questionId: q.id,
-              correct: correctCount === pairs.length,
-              earnedPoints: earned,
-            });
-            continue; // Skip the default scoring below
+            questionResults.push({ questionId: q.id, correct: cc === pairs.length, earnedPoints: earned });
+            continue;
           }
           break;
         }
-
         case 'open_answer': {
-          const userNormalized = normalizeText(answer as string);
-          const accepted = (q.acceptedAnswers || []).map(normalizeText);
-          correct = accepted.includes(userNormalized);
+          const un = normalizeText(answer as string);
+          correct = (q.acceptedAnswers || []).map(normalizeText).includes(un);
           break;
         }
       }
-
       earnedPoints += correct ? q.points : 0;
-      questionResults.push({
-        questionId: q.id,
-        correct,
-        earnedPoints: correct ? q.points : 0,
-      });
+      questionResults.push({ questionId: q.id, correct, earnedPoints: correct ? q.points : 0 });
     }
 
     const percentage = totalPoints > 0 ? Math.round((earnedPoints / totalPoints) * 100) : 0;
-    const passed = percentage >= (quizContent.settings.passingScore || 70);
-
-    return { totalPoints, earnedPoints, percentage, passed, questionResults };
+    return { totalPoints, earnedPoints, percentage, passed: percentage >= (quizContent.settings.passingScore || 70), questionResults };
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     const quizResult = scoreQuiz();
     setResult(quizResult);
-    setSubmitted(true);
+    setPhase('results');
+    if (quizResult.passed) onComplete();
 
-    if (quizResult.passed) {
-      onComplete();
-    }
-  };
+    const timeSpent = quizStartedAt ? Math.floor((Date.now() - quizStartedAt) / 1000) : 0;
+    const completedAnswers = quizContent!.questions.map((q) => {
+      const qr = quizResult.questionResults.find((r) => r.questionId === q.id);
+      return { questionId: q.id, answer: answers[q.id], isCorrect: qr?.correct, pointsEarned: qr?.earnedPoints || 0 };
+    });
 
-  const handleRetry = () => {
-    setSubmitted(false);
-    setResult(null);
-    if (quizContent) {
-      let questions = [...quizContent.questions];
-      if (quizContent.settings.shuffleQuestions) {
-        questions = shuffleArray(questions);
-      }
-      setDisplayQuestions(questions);
-
-      const initialAnswers: QuizAnswers = {};
-      for (const q of questions) {
-        switch (q.type) {
-          case 'true_false':
-            initialAnswers[q.id] = null;
-            break;
-          case 'single_choice':
-            initialAnswers[q.id] = null;
-            break;
-          case 'multiple_choice':
-            initialAnswers[q.id] = [];
-            break;
-          case 'match_drag':
-          case 'match_dropdown':
-            initialAnswers[q.id] = {};
-            break;
-          case 'open_answer':
-            initialAnswers[q.id] = '';
-            break;
+    if (userId && quizContent) {
+      try {
+        if (activeAttemptId) {
+          // Update existing in-progress attempt to completed
+          await firebaseDB.updateAttempt(activeAttemptId, {
+            answers: completedAnswers,
+            score: quizResult.earnedPoints,
+            maxScore: quizResult.totalPoints,
+            percentage: quizResult.percentage,
+            passed: quizResult.passed,
+            timeSpent,
+            completedAt: new Date().toISOString(),
+            status: 'completed',
+            updatedAt: Date.now(),
+          });
+          const updated = await firebaseDB.getById<DBEvaluationAttempt>('evaluationAttempts', activeAttemptId);
+          if (updated) setPastAttempts((prev) => [updated, ...prev]);
+        } else {
+          // Fallback: create new attempt
+          const attempt = await firebaseDB.createAttempt({
+            evaluationId: lesson.id,
+            userId,
+            courseId: courseId || '',
+            answers: completedAnswers,
+            score: quizResult.earnedPoints,
+            maxScore: quizResult.totalPoints,
+            percentage: quizResult.percentage,
+            passed: quizResult.passed,
+            timeSpent,
+            startedAt: new Date(quizStartedAt || Date.now()).toISOString(),
+            completedAt: new Date().toISOString(),
+            status: 'completed',
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          });
+          setPastAttempts((prev) => [attempt, ...prev]);
         }
-      }
-      setAnswers(initialAnswers);
+      } catch { /* ignore */ }
     }
+    setActiveAttemptId(null);
+    setQuizStartedAt(null);
   };
 
-  if (!quizContent || displayQuestions.length === 0) {
+  const bestScore = pastAttempts.length > 0 ? Math.max(...pastAttempts.map((a) => a.percentage)) : null;
+  const hasPerfectScore = bestScore === 100;
+
+  // --- No content ---
+  if (!quizContent || quizContent.questions.length === 0) {
     return (
       <div className="p-6 text-center text-gray-500">
         <HelpCircle className="h-12 w-12 mx-auto mb-3 text-gray-300" />
@@ -238,264 +371,434 @@ export default function QuizLessonView({ lesson, onComplete }: QuizLessonViewPro
     );
   }
 
-  // Results screen
-  if (submitted && result && quizContent.settings.showResults) {
+  // =====================
+  // PHASE: REVIEW (past attempt)
+  // =====================
+  if (phase === 'review' && reviewingAttempt && quizContent) {
     return (
-      <div className="p-6">
-        {/* Score summary */}
-        <div className={`text-center p-8 rounded-lg mb-6 ${result.passed ? 'bg-green-50' : 'bg-red-50'}`}>
-          <div
-            className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 ${
-              result.passed ? 'bg-green-100' : 'bg-red-100'
-            }`}
-          >
-            {result.passed ? (
-              <Trophy className="h-10 w-10 text-green-600" />
-            ) : (
-              <AlertCircle className="h-10 w-10 text-red-600" />
-            )}
-          </div>
-          <h2 className="text-2xl font-bold mb-2">
-            {result.passed ? 'Quiz Aprobado!' : 'Quiz No Aprobado'}
-          </h2>
-          <p className="text-4xl font-bold mb-2">{result.percentage}%</p>
-          <p className="text-gray-600">
-            {result.earnedPoints} de {result.totalPoints} puntos
-          </p>
-          <p className="text-sm text-gray-500 mt-1">
-            Minimo para aprobar: {quizContent.settings.passingScore}%
-          </p>
+      <div className="p-4 md:p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-gray-900">
+            Review — {reviewingAttempt.percentage}%
+            {reviewingAttempt.passed
+              ? <span className="ml-2 text-sm text-green-600 font-normal">Aprobado</span>
+              : <span className="ml-2 text-sm text-red-600 font-normal">No aprobado</span>}
+          </h3>
+          <Button variant="outline" size="sm" onClick={() => { setPhase('start'); setReviewingAttempt(null); }}>
+            Volver
+          </Button>
         </div>
-
-        {/* Detailed results */}
-        {quizContent.settings.showCorrectAnswers && (
-          <div className="space-y-4 mb-6">
-            <h3 className="font-semibold text-gray-900">Detalle por pregunta</h3>
-            {displayQuestions.map((q, idx) => {
-              const qResult = result.questionResults.find((r) => r.questionId === q.id);
-              return (
-                <div
-                  key={q.id}
-                  className={`p-4 rounded-lg border ${
-                    qResult?.correct ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'
-                  }`}
-                >
-                  <div className="flex items-start gap-3">
-                    {qResult?.correct ? (
-                      <CheckCircle className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
-                    ) : (
-                      <XCircle className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" />
-                    )}
-                    <div className="flex-1">
-                      <p className="font-medium text-gray-900">
-                        {idx + 1}. {q.question}
-                      </p>
-                      <p className="text-sm text-gray-600 mt-1">
-                        {qResult?.earnedPoints} / {q.points} pts
-                      </p>
-                      <CorrectAnswerDisplay question={q} userAnswer={answers[q.id]} />
-                      {q.explanation && (
-                        <p className="text-sm text-blue-700 mt-2 bg-blue-50 p-2 rounded">
-                          {q.explanation}
-                        </p>
-                      )}
-                    </div>
+        <div className="space-y-3">
+          {quizContent.questions.map((q, idx) => {
+            const attemptAnswer = reviewingAttempt.answers.find((a) => a.questionId === q.id);
+            const isCorrect = attemptAnswer?.isCorrect ?? false;
+            return (
+              <div key={q.id} className={`p-3 rounded-lg border ${isCorrect ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+                <div className="flex items-start gap-2">
+                  {isCorrect
+                    ? <CheckCircle className="h-4 w-4 text-green-600 mt-0.5 flex-shrink-0" />
+                    : <XCircle className="h-4 w-4 text-red-600 mt-0.5 flex-shrink-0" />}
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">{idx + 1}. {q.question}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {isCorrect ? 'Correcto' : 'Incorrecto'} — {attemptAnswer?.pointsEarned || 0}/{q.points} pts
+                    </p>
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Retry */}
-        {!result.passed && (
-          <div className="text-center">
-            <Button onClick={handleRetry}>
-              <RotateCcw className="h-4 w-4 mr-2" />
-              Intentar de nuevo
-            </Button>
-          </div>
-        )}
+              </div>
+            );
+          })}
+        </div>
       </div>
     );
   }
 
-  // If submitted but showResults=false
-  if (submitted && result) {
+  // =====================
+  // PHASE: START
+  // =====================
+  // Read-only mode for teachers: show quiz questions as preview
+  if (readOnly) {
     return (
-      <div className="p-6 text-center">
-        <div className={`p-8 rounded-lg ${result.passed ? 'bg-green-50' : 'bg-amber-50'}`}>
-          {result.passed ? (
-            <>
-              <Trophy className="h-16 w-16 text-green-600 mx-auto mb-4" />
-              <h2 className="text-2xl font-bold text-green-800 mb-2">Quiz Completado!</h2>
-              <p className="text-green-700">Has aprobado el quiz.</p>
-            </>
+      <div className="p-4 md:p-6">
+        <div className="flex items-center gap-2 mb-4 p-3 bg-gray-50 rounded-lg">
+          <Eye className="h-4 w-4 text-gray-500" />
+          <span className="text-sm text-gray-600">Vista de profesor — {quizContent.questions.length} preguntas, {quizContent.questions.reduce((s, q) => s + q.points, 0)} pts, aprobación: {quizContent.settings.passingScore || 70}%</span>
+        </div>
+        <div className="space-y-3">
+          {quizContent.questions.map((q, idx) => (
+            <div key={q.id} className="p-3 border border-gray-200 rounded-lg">
+              <p className="text-sm font-medium text-gray-900 mb-2">
+                <span className="text-red-600 mr-1">{idx + 1}.</span>
+                {q.question}
+                <span className="text-xs text-gray-400 ml-2">({q.points} pts)</span>
+              </p>
+              {q.type === 'true_false' && (
+                <p className="text-xs text-green-700">Respuesta: {q.correctBool ? 'Verdadero' : 'Falso'}</p>
+              )}
+              {(q.type === 'single_choice' || q.type === 'multiple_choice') && q.options && (
+                <div className="space-y-1 mt-1">
+                  {q.options.map((opt) => (
+                    <p key={opt.id} className={`text-xs px-2 py-1 rounded ${opt.isCorrect ? 'bg-green-50 text-green-700 font-medium' : 'text-gray-500'}`}>
+                      {opt.isCorrect ? '✓' : '○'} {opt.text}
+                    </p>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === 'start') {
+    const effectiveTimeLimit = lesson.settings?.timeLimit || quizContent.settings.timeLimit;
+    const hasTimer = effectiveTimeLimit && effectiveTimeLimit > 0;
+    const totalPoints = quizContent.questions.reduce((s, q) => s + q.points, 0);
+
+    // Resolve deadlines from template + section override
+    const resolved = resolveDeadlines(lesson.settings, sectionOverride);
+    const deadlineStatus = getTaskDeadlineStatus({
+      availableFrom: resolved.availableFrom,
+      dueDate: resolved.dueDate,
+      lateSubmissionDeadline: resolved.lateSubmissionDeadline,
+    });
+    const dueDateTs = parseTimestamp(resolved.dueDate);
+    const availableFromTs = parseTimestamp(resolved.availableFrom);
+    const isBlocked = !readOnly && (deadlineStatus === 'not_open' || deadlineStatus === 'closed');
+
+    return (
+      <div className="p-6 md:p-10">
+        <div className="max-w-md mx-auto text-center">
+          <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-5">
+            <HelpCircle className="h-8 w-8 text-red-600" />
+          </div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Quiz</h2>
+          <p className="text-gray-500 mb-6">Revisa la información antes de comenzar</p>
+
+          <div className="mb-6 text-left border border-gray-200 rounded-lg overflow-hidden">
+            <table className="w-full text-sm">
+              <tbody>
+                <tr className="border-b border-gray-100">
+                  <td className="px-4 py-2.5 text-gray-500 font-medium bg-gray-50 w-1/3">Preguntas</td>
+                  <td className="px-4 py-2.5 text-gray-900 font-semibold">{quizContent.questions.length}</td>
+                </tr>
+                <tr className="border-b border-gray-100">
+                  <td className="px-4 py-2.5 text-gray-500 font-medium bg-gray-50">Puntos totales</td>
+                  <td className="px-4 py-2.5 text-gray-900 font-semibold">{totalPoints}</td>
+                </tr>
+                <tr className="border-b border-gray-100">
+                  <td className="px-4 py-2.5 text-gray-500 font-medium bg-gray-50">Para aprobar</td>
+                  <td className="px-4 py-2.5 text-gray-900 font-semibold">{quizContent.settings.passingScore || 70}%</td>
+                </tr>
+                <tr className="border-b border-gray-100">
+                  <td className="px-4 py-2.5 text-gray-500 font-medium bg-gray-50">Tiempo límite</td>
+                  <td className="px-4 py-2.5 text-gray-900 font-semibold">{hasTimer ? `${effectiveTimeLimit} minutos` : 'Sin límite'}</td>
+                </tr>
+                {availableFromTs && (
+                  <tr className="border-b border-gray-100">
+                    <td className="px-4 py-2.5 text-gray-500 font-medium bg-gray-50">Abre</td>
+                    <td className="px-4 py-2.5 text-gray-900">{formatDeadlineDate(availableFromTs)}</td>
+                  </tr>
+                )}
+                {dueDateTs && (
+                  <tr className="border-b border-gray-100">
+                    <td className="px-4 py-2.5 text-gray-500 font-medium bg-gray-50">Cierra</td>
+                    <td className={`px-4 py-2.5 font-semibold ${deadlineStatus === 'closed' ? 'text-red-600' : 'text-gray-900'}`}>
+                      {formatDeadlineDate(dueDateTs)}
+                      {deadlineStatus === 'open' && (
+                        <span className="ml-2 text-xs font-normal text-green-600">({getTimeRemaining(dueDateTs)} restantes)</span>
+                      )}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Deadline status messages */}
+          {!readOnly && deadlineStatus === 'not_open' && (
+            <div className="flex items-center justify-center gap-2 text-sm text-blue-700 bg-blue-50 p-3 rounded-lg mb-4">
+              <Clock className="h-4 w-4" />
+              <span>
+                Este quiz estará disponible el {availableFromTs ? formatDeadlineDate(availableFromTs) : 'pronto'}
+              </span>
+            </div>
+          )}
+
+          {!readOnly && deadlineStatus === 'closed' && (
+            <div className="flex items-center justify-center gap-2 text-sm text-red-700 bg-red-50 p-3 rounded-lg mb-4">
+              <AlertCircle className="h-4 w-4" />
+              <span>
+                Este quiz cerró el {dueDateTs ? formatDeadlineDate(dueDateTs) : ''}
+              </span>
+            </div>
+          )}
+
+          {!readOnly && deadlineStatus === 'open' && dueDateTs && (
+            <div className="flex items-center justify-center gap-2 text-sm text-gray-700 bg-gray-50 p-3 rounded-lg mb-4">
+              <Clock className="h-4 w-4" />
+              <span>Entrega: {getTimeRemaining(dueDateTs)} restantes</span>
+            </div>
+          )}
+
+          {!readOnly && deadlineStatus === 'late_period' && (
+            <div className="flex items-center justify-center gap-2 text-sm text-yellow-700 bg-yellow-50 p-3 rounded-lg mb-4">
+              <AlertCircle className="h-4 w-4" />
+              <span>Período de entrega tardía</span>
+            </div>
+          )}
+
+          {hasTimer && (
+            <div className="flex items-center justify-center gap-2 text-sm text-amber-700 bg-amber-50 p-3 rounded-lg mb-6">
+              <Clock className="h-4 w-4" />
+              <span>Se enviará automáticamente al acabar el tiempo</span>
+            </div>
+          )}
+
+          {/* Past attempts */}
+          {!loadingAttempts && pastAttempts.length > 0 && (
+            <div className="mb-6 text-left">
+              <h4 className="text-sm font-semibold text-gray-700 mb-2">Intentos anteriores</h4>
+              <div className="space-y-2 max-h-40 overflow-y-auto">
+                {pastAttempts.map((attempt, i) => (
+                  <div key={attempt.id} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      {attempt.passed
+                        ? <CheckCircle className="h-4 w-4 text-green-500" />
+                        : <XCircle className="h-4 w-4 text-red-400" />}
+                      <div>
+                        <span className="text-sm font-medium text-gray-900">{attempt.percentage}%</span>
+                        <span className="text-xs text-gray-500 ml-2">
+                          {new Date(attempt.createdAt).toLocaleDateString('es', { day: 'numeric', month: 'short' })}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => { setReviewingAttempt(attempt); setPhase('review'); }}
+                      className="flex items-center gap-1 text-xs text-red-600 hover:text-red-800"
+                    >
+                      <Eye className="h-3.5 w-3.5" />
+                      Review
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Continue in-progress attempt */}
+          {!readOnly && inProgressAttempt && !isBlocked && (() => {
+            const startedMs = new Date(inProgressAttempt.startedAt).getTime();
+            const totalSec = getEffectiveTimeLimit();
+            const elapsedSec = Math.floor((Date.now() - startedMs) / 1000);
+            const expired = totalSec !== null && elapsedSec >= totalSec;
+            const answeredSaved = inProgressAttempt.answers.filter(a => a.answer !== null).length;
+            return expired ? (
+              <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-center mb-4">
+                <Clock className="h-6 w-6 text-yellow-600 mx-auto mb-2" />
+                <p className="text-sm font-medium text-yellow-800">Tu intento anterior expiró</p>
+                <p className="text-xs text-yellow-600">El tiempo se agotó mientras estabas fuera.</p>
+              </div>
+            ) : (
+              <div className="mb-4">
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg text-center">
+                  <Clock className="h-6 w-6 text-blue-600 mx-auto mb-2" />
+                  <p className="text-sm font-medium text-blue-800">Tienes un intento en progreso</p>
+                  <p className="text-xs text-blue-600 mb-3">
+                    {answeredSaved} de {inProgressAttempt.answers.length} respondidas
+                    {totalSec !== null && ` · ${formatTime(Math.max(0, totalSec - elapsedSec))} restantes`}
+                  </p>
+                  <Button onClick={resumeQuiz} className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-sm">
+                    <RotateCcw className="h-4 w-4 mr-2" />Continuar intento
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
+
+          {hasPerfectScore ? (
+            <div className="p-4 bg-green-50 rounded-lg text-center">
+              <Trophy className="h-8 w-8 text-green-600 mx-auto mb-2" />
+              <p className="text-sm font-semibold text-green-800">¡Puntaje perfecto!</p>
+              <p className="text-xs text-green-600 mt-1">Ya obtuviste 100% en este quiz</p>
+            </div>
+          ) : isBlocked ? (
+            <Button disabled className="w-full py-3 bg-gray-400 cursor-not-allowed text-base">
+              {deadlineStatus === 'not_open' ? 'Quiz no disponible aún' : 'Quiz cerrado'}
+            </Button>
           ) : (
-            <>
-              <AlertCircle className="h-16 w-16 text-amber-600 mx-auto mb-4" />
-              <h2 className="text-2xl font-bold text-amber-800 mb-2">Quiz Enviado</h2>
-              <p className="text-amber-700">No alcanzaste la puntuacion minima.</p>
-              <Button onClick={handleRetry} className="mt-4">
-                <RotateCcw className="h-4 w-4 mr-2" />
-                Intentar de nuevo
-              </Button>
-            </>
+            <Button onClick={initQuiz} className="w-full py-3 bg-red-600 hover:bg-red-700 text-base">
+              {pastAttempts.length > 0 ? (
+                <><RotateCcw className="h-4 w-4 mr-2" />Reintentar Quiz</>
+              ) : inProgressAttempt ? (
+                <><RotateCcw className="h-4 w-4 mr-2" />Nuevo intento</>
+              ) : (
+                'Comenzar Quiz'
+              )}
+            </Button>
           )}
         </div>
       </div>
     );
   }
 
-  // Quiz-taking view
-  return (
-    <div className="p-6">
-      <div className="space-y-6">
-        {displayQuestions.map((q, idx) => (
-          <div key={q.id} className="border border-gray-200 rounded-lg p-5">
-            <div className="flex items-start justify-between mb-3">
-              <h3 className="font-medium text-gray-900">
-                <span className="text-blue-600 mr-2">{idx + 1}.</span>
-                {q.question}
-              </h3>
-              <span className="text-xs text-gray-500 flex-shrink-0 ml-3">{q.points} pts</span>
+  // =====================
+  // PHASE: ACTIVE
+  // =====================
+  if (phase === 'active' && displayQuestions.length > 0) {
+    const currentQ = displayQuestions[currentIndex];
+    const answeredCount = displayQuestions.filter((q) => isAnswered(q.id)).length;
+    const isTimerCritical = timeLeft !== null && timeLeft <= 60;
+    const isLast = currentIndex === displayQuestions.length - 1;
+
+    return (
+      <div className="flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-gray-200">
+          <span className="text-sm text-gray-600">{answeredCount}/{displayQuestions.length} respondidas</span>
+          {timeLeft !== null && (
+            <div className={`flex items-center gap-1.5 text-sm font-mono font-bold px-3 py-1 rounded-full ${isTimerCritical ? 'bg-red-100 text-red-700 animate-pulse' : 'bg-gray-200 text-gray-700'}`}>
+              <Clock className="h-3.5 w-3.5" />{formatTime(timeLeft)}
             </div>
+          )}
+        </div>
 
-            <QuestionInput
-              question={q}
-              answer={answers[q.id]}
-              onChange={(val) => setAnswer(q.id, val)}
-              shuffleOptions={quizContent.settings.shuffleOptions}
-            />
+        <div className="px-4 py-3 border-b border-gray-100 overflow-x-auto">
+          <div className="flex gap-1.5 min-w-0 flex-wrap">
+            {displayQuestions.map((q, idx) => {
+              const answered = isAnswered(q.id);
+              const isCurrent = idx === currentIndex;
+              return (
+                <button key={q.id} onClick={() => setCurrentIndex(idx)}
+                  className={`w-8 h-8 rounded text-xs font-medium flex-shrink-0 transition-all ${
+                    isCurrent
+                      ? 'bg-red-600 text-white ring-2 ring-red-300'
+                      : answered
+                        ? 'bg-green-100 text-green-700 border border-green-300'
+                        : 'bg-white text-red-400 border-2 border-dashed border-red-300 hover:bg-red-50'
+                  }`}>
+                  {idx + 1}
+                </button>
+              );
+            })}
           </div>
-        ))}
-      </div>
+          <div className="flex items-center gap-4 mt-2 text-[10px] text-gray-400">
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-100 border border-green-300 inline-block" /> Respondida</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-white border-2 border-dashed border-red-300 inline-block" /> Sin responder</span>
+          </div>
+        </div>
 
-      <div className="mt-8 text-center">
-        <Button onClick={handleSubmit} className="px-8 py-3 text-lg">
-          <CheckCircle className="h-5 w-5 mr-2" />
-          Enviar Quiz
-        </Button>
+        <div className="flex-1 p-4 md:p-6">
+          <div className="max-w-2xl mx-auto">
+            <div className="flex items-start justify-between mb-4">
+              <h3 className="font-medium text-gray-900 text-base md:text-lg">
+                <span className="text-red-600 mr-2">{currentIndex + 1}.</span>{currentQ.question}
+              </h3>
+              <span className="text-xs text-gray-500 flex-shrink-0 ml-3 mt-1">{currentQ.points} pts</span>
+            </div>
+            <QuestionInput key={currentQ.id} question={currentQ} answer={answers[currentQ.id]} onChange={(val) => setAnswer(currentQ.id, val)} shuffleOptions={quizContent.settings.shuffleOptions} />
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 bg-white">
+          <Button variant="outline" size="sm" onClick={() => setCurrentIndex((i) => Math.max(0, i - 1))} disabled={currentIndex === 0}>
+            <ChevronLeft className="h-4 w-4 mr-1" /><span className="hidden sm:inline">Anterior</span>
+          </Button>
+          {isLast ? (
+            <Button size="sm" onClick={handleSubmit} className="bg-red-600 hover:bg-red-700">
+              <Send className="h-4 w-4 mr-1" />Entregar
+            </Button>
+          ) : (
+            <Button variant="outline" size="sm" onClick={() => setCurrentIndex((i) => i + 1)}>
+              <span className="hidden sm:inline">Siguiente</span><ChevronRight className="h-4 w-4 ml-1" />
+            </Button>
+          )}
+        </div>
       </div>
-    </div>
-  );
+    );
+  }
+
+  // =====================
+  // PHASE: RESULTS
+  // =====================
+  if (phase === 'results' && result) {
+    return (
+      <div className="p-4 md:p-6">
+        <div className={`text-center p-6 md:p-8 rounded-lg mb-6 ${result.passed ? 'bg-green-50' : 'bg-red-50'}`}>
+          <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${result.passed ? 'bg-green-100' : 'bg-red-100'}`}>
+            {result.passed ? <Trophy className="h-8 w-8 text-green-600" /> : <AlertCircle className="h-8 w-8 text-red-600" />}
+          </div>
+          <h2 className="text-xl font-bold mb-1">{result.passed ? '¡Quiz Aprobado!' : 'Quiz No Aprobado'}</h2>
+          <p className="text-3xl md:text-4xl font-bold mb-1">{result.percentage}%</p>
+          <p className="text-gray-600 text-sm">{result.earnedPoints} de {result.totalPoints} puntos</p>
+          <p className="text-xs text-gray-500 mt-1">Mínimo para aprobar: {quizContent.settings.passingScore}%</p>
+        </div>
+
+        {/* Simple correct/incorrect list */}
+        <div className="space-y-2 mb-6">
+          {displayQuestions.map((q, idx) => {
+            const qr = result.questionResults.find((r) => r.questionId === q.id);
+            return (
+              <div key={q.id} className={`flex items-center gap-2 p-3 rounded-lg border ${qr?.correct ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+                {qr?.correct ? <CheckCircle className="h-4 w-4 text-green-600 flex-shrink-0" /> : <XCircle className="h-4 w-4 text-red-600 flex-shrink-0" />}
+                <span className="text-sm text-gray-900 flex-1">{idx + 1}. {q.question}</span>
+                <span className="text-xs text-gray-500">{qr?.earnedPoints || 0}/{q.points}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-2 justify-center">
+          <Button variant="outline" onClick={() => { setPhase('start'); setResult(null); }}>
+            Volver al inicio
+          </Button>
+          {!result.passed && !hasPerfectScore && (
+            <Button onClick={initQuiz} className="bg-red-600 hover:bg-red-700">
+              <RotateCcw className="h-4 w-4 mr-2" />Reintentar
+            </Button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return null;
 }
 
 // --- Question Input Components ---
 
-function QuestionInput({
-  question,
-  answer,
-  onChange,
-  shuffleOptions,
-}: {
-  question: QuizQuestion;
-  answer: any;
-  onChange: (value: any) => void;
-  shuffleOptions: boolean;
-}) {
+function QuestionInput({ question, answer, onChange, shuffleOptions }: { question: QuizQuestion; answer: any; onChange: (value: any) => void; shuffleOptions: boolean }) {
   switch (question.type) {
-    case 'true_false':
-      return <TrueFalseInput answer={answer} onChange={onChange} />;
-    case 'single_choice':
-      return (
-        <SingleChoiceInput
-          question={question}
-          answer={answer}
-          onChange={onChange}
-          shuffle={shuffleOptions}
-        />
-      );
-    case 'multiple_choice':
-      return (
-        <MultipleChoiceInput
-          question={question}
-          answer={answer}
-          onChange={onChange}
-          shuffle={shuffleOptions}
-        />
-      );
-    case 'match_drag':
-      return <MatchDragInput question={question} answer={answer} onChange={onChange} />;
-    case 'match_dropdown':
-      return <MatchDropdownInput question={question} answer={answer} onChange={onChange} />;
-    case 'open_answer':
-      return <OpenAnswerInput answer={answer} onChange={onChange} />;
-    default:
-      return null;
+    case 'true_false': return <TrueFalseInput answer={answer} onChange={onChange} />;
+    case 'single_choice': return <SingleChoiceInput question={question} answer={answer} onChange={onChange} shuffle={shuffleOptions} />;
+    case 'multiple_choice': return <MultipleChoiceInput question={question} answer={answer} onChange={onChange} shuffle={shuffleOptions} />;
+    case 'match_drag': return <MatchDragInput question={question} answer={answer} onChange={onChange} />;
+    case 'match_dropdown': return <MatchDropdownInput question={question} answer={answer} onChange={onChange} />;
+    case 'open_answer': return <OpenAnswerInput answer={answer} onChange={onChange} />;
+    default: return null;
   }
 }
 
-// --- True/False Input ---
-
-function TrueFalseInput({
-  answer,
-  onChange,
-}: {
-  answer: boolean | null;
-  onChange: (v: boolean) => void;
-}) {
+function TrueFalseInput({ answer, onChange }: { answer: boolean | null; onChange: (v: boolean) => void }) {
   return (
     <div className="flex gap-3">
-      <button
-        onClick={() => onChange(true)}
-        className={`flex-1 py-3 px-4 rounded-lg border-2 font-medium transition-colors ${
-          answer === true
-            ? 'border-blue-500 bg-blue-50 text-blue-700'
-            : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
-        }`}
-      >
-        Verdadero
-      </button>
-      <button
-        onClick={() => onChange(false)}
-        className={`flex-1 py-3 px-4 rounded-lg border-2 font-medium transition-colors ${
-          answer === false
-            ? 'border-blue-500 bg-blue-50 text-blue-700'
-            : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
-        }`}
-      >
-        Falso
-      </button>
+      {[true, false].map((val) => (
+        <button key={String(val)} onClick={() => onChange(val)}
+          className={`flex-1 py-3 px-4 rounded-lg border-2 font-medium transition-colors ${answer === val ? 'border-red-500 bg-red-50 text-red-700' : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'}`}>
+          {val ? 'Verdadero' : 'Falso'}
+        </button>
+      ))}
     </div>
   );
 }
 
-// --- Single Choice Input ---
-
-function SingleChoiceInput({
-  question,
-  answer,
-  onChange,
-  shuffle,
-}: {
-  question: QuizQuestion;
-  answer: string | null;
-  onChange: (v: string) => void;
-  shuffle: boolean;
-}) {
-  const [options] = useState(() =>
-    shuffle ? shuffleArray(question.options || []) : question.options || []
-  );
-
+function SingleChoiceInput({ question, answer, onChange, shuffle }: { question: QuizQuestion; answer: string | null; onChange: (v: string) => void; shuffle: boolean }) {
+  const [options] = useState(() => shuffle ? shuffleArray(question.options || []) : question.options || []);
   return (
     <div className="space-y-2">
       {options.map((opt) => (
-        <label
-          key={opt.id}
-          className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-            answer === opt.id
-              ? 'border-blue-500 bg-blue-50'
-              : 'border-gray-200 hover:border-gray-300'
-          }`}
-        >
-          <input
-            type="radio"
-            name={`q-${question.id}`}
-            checked={answer === opt.id}
-            onChange={() => onChange(opt.id)}
-            className="h-4 w-4 text-blue-600"
-          />
+        <label key={opt.id} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${answer === opt.id ? 'border-red-500 bg-red-50' : 'border-gray-200 hover:border-gray-300'}`}>
+          <input type="radio" name={`q-${question.id}`} checked={answer === opt.id} onChange={() => onChange(opt.id)} className="h-4 w-4 text-red-600" />
           <span className="text-gray-800">{opt.text}</span>
         </label>
       ))}
@@ -503,49 +806,19 @@ function SingleChoiceInput({
   );
 }
 
-// --- Multiple Choice Input ---
-
-function MultipleChoiceInput({
-  question,
-  answer,
-  onChange,
-  shuffle,
-}: {
-  question: QuizQuestion;
-  answer: string[];
-  onChange: (v: string[]) => void;
-  shuffle: boolean;
-}) {
-  const [options] = useState(() =>
-    shuffle ? shuffleArray(question.options || []) : question.options || []
-  );
-
+function MultipleChoiceInput({ question, answer, onChange, shuffle }: { question: QuizQuestion; answer: string[]; onChange: (v: string[]) => void; shuffle: boolean }) {
+  const [options] = useState(() => shuffle ? shuffleArray(question.options || []) : question.options || []);
   const toggle = (optId: string) => {
-    const selected = answer || [];
-    if (selected.includes(optId)) {
-      onChange(selected.filter((id) => id !== optId));
-    } else {
-      onChange([...selected, optId]);
-    }
+    const sel = answer || [];
+    onChange(sel.includes(optId) ? sel.filter((id) => id !== optId) : [...sel, optId]);
   };
-
   return (
     <div className="space-y-2">
       {options.map((opt) => {
         const checked = (answer || []).includes(opt.id);
         return (
-          <label
-            key={opt.id}
-            className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-              checked ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
-            }`}
-          >
-            <input
-              type="checkbox"
-              checked={checked}
-              onChange={() => toggle(opt.id)}
-              className="h-4 w-4 text-blue-600 rounded"
-            />
+          <label key={opt.id} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${checked ? 'border-red-500 bg-red-50' : 'border-gray-200 hover:border-gray-300'}`}>
+            <input type="checkbox" checked={checked} onChange={() => toggle(opt.id)} className="h-4 w-4 text-red-600 rounded" />
             <span className="text-gray-800">{opt.text}</span>
           </label>
         );
@@ -554,136 +827,76 @@ function MultipleChoiceInput({
   );
 }
 
-// --- Match Drag Input ---
-
-function MatchDragInput({
-  question,
-  answer,
-  onChange,
-}: {
-  question: QuizQuestion;
-  answer: Record<string, string>;
-  onChange: (v: Record<string, string>) => void;
-}) {
+function MatchDragInput({ question, answer, onChange }: { question: QuizQuestion; answer: Record<string, string>; onChange: (v: Record<string, string>) => void }) {
   const pairs = question.pairs || [];
   const [shuffledRight] = useState(() => shuffleArray(pairs.map((p) => p.right)));
   const [dragItem, setDragItem] = useState<string | null>(null);
-
-  // Items that haven't been placed yet
   const placedValues = new Set(Object.values(answer || {}));
   const availableItems = shuffledRight.filter((item) => !placedValues.has(item));
 
   const handleDrop = (pairId: string) => {
     if (dragItem) {
-      // Remove the dragItem from any existing assignment
-      const newAnswer = { ...(answer || {}) };
-      for (const [key, val] of Object.entries(newAnswer)) {
-        if (val === dragItem) {
-          delete newAnswer[key];
-        }
-      }
-      newAnswer[pairId] = dragItem;
-      onChange(newAnswer);
+      const na = { ...(answer || {}) };
+      for (const [k, v] of Object.entries(na)) { if (v === dragItem) delete na[k]; }
+      na[pairId] = dragItem;
+      onChange(na);
       setDragItem(null);
     }
   };
-
+  const handleTapItem = (item: string) => {
+    const ep = pairs.find((p) => !(answer || {})[p.id]);
+    if (ep) onChange({ ...(answer || {}), [ep.id]: item });
+  };
   const removePair = (pairId: string) => {
-    const newAnswer = { ...(answer || {}) };
-    delete newAnswer[pairId];
-    onChange(newAnswer);
+    const na = { ...(answer || {}) };
+    delete na[pairId];
+    onChange(na);
   };
 
   return (
-    <div className="flex gap-6">
-      {/* Left column - fixed items */}
+    <div className="flex flex-col md:flex-row gap-4">
       <div className="flex-1 space-y-2">
         <p className="text-xs text-gray-500 font-medium mb-2">ELEMENTOS</p>
         {pairs.map((pair) => (
-          <div
-            key={pair.id}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={() => handleDrop(pair.id)}
-            className={`flex items-center gap-2 p-3 rounded-lg border-2 transition-colors min-h-[48px] ${
-              (answer || {})[pair.id]
-                ? 'border-green-300 bg-green-50'
-                : 'border-dashed border-gray-300 bg-gray-50'
-            }`}
-          >
-            <span className="font-medium text-gray-800 flex-1">{pair.left}</span>
+          <div key={pair.id} onDragOver={(e) => e.preventDefault()} onDrop={() => handleDrop(pair.id)}
+            className={`flex items-center gap-2 p-3 rounded-lg border-2 transition-colors min-h-[48px] ${(answer || {})[pair.id] ? 'border-green-300 bg-green-50' : 'border-dashed border-gray-300 bg-gray-50'}`}>
+            <span className="font-medium text-gray-800 flex-1 text-sm">{pair.left}</span>
             <span className="text-gray-400 mx-1">&rarr;</span>
             {(answer || {})[pair.id] ? (
-              <span
-                className="bg-blue-100 text-blue-800 px-3 py-1 rounded-md text-sm font-medium cursor-pointer hover:bg-red-100 hover:text-red-800"
-                onClick={() => removePair(pair.id)}
-                title="Click para quitar"
-              >
-                {(answer || {})[pair.id]}
-              </span>
+              <span className="bg-red-100 text-red-800 px-2 py-1 rounded text-xs font-medium cursor-pointer hover:bg-red-200" onClick={() => removePair(pair.id)}>{(answer || {})[pair.id]} &times;</span>
             ) : (
-              <span className="text-gray-400 text-sm italic">Arrastra aqui</span>
+              <span className="text-gray-400 text-xs italic">Arrastra aquí</span>
             )}
           </div>
         ))}
       </div>
-
-      {/* Right column - draggable items */}
-      <div className="w-48 space-y-2">
+      <div className="md:w-40 space-y-2">
         <p className="text-xs text-gray-500 font-medium mb-2">OPCIONES</p>
-        {availableItems.map((item, idx) => (
-          <div
-            key={`${item}-${idx}`}
-            draggable
-            onDragStart={() => setDragItem(item)}
-            onDragEnd={() => setDragItem(null)}
-            className="p-3 bg-blue-100 text-blue-800 rounded-lg cursor-grab font-medium text-sm hover:bg-blue-200 transition-colors"
-          >
-            {item}
-          </div>
-        ))}
-        {availableItems.length === 0 && (
-          <p className="text-xs text-gray-400 text-center py-4">Todas asignadas</p>
-        )}
+        <div className="flex flex-wrap md:flex-col gap-2">
+          {availableItems.map((item, idx) => (
+            <div key={`${item}-${idx}`} draggable onDragStart={() => setDragItem(item)} onDragEnd={() => setDragItem(null)} onClick={() => handleTapItem(item)}
+              className="p-2 md:p-3 bg-red-100 text-red-800 rounded-lg cursor-grab font-medium text-xs md:text-sm hover:bg-red-200 transition-colors">{item}</div>
+          ))}
+          {availableItems.length === 0 && <p className="text-xs text-gray-400 text-center py-2">Todas asignadas</p>}
+        </div>
       </div>
     </div>
   );
 }
 
-// --- Match Dropdown Input ---
-
-function MatchDropdownInput({
-  question,
-  answer,
-  onChange,
-}: {
-  question: QuizQuestion;
-  answer: Record<string, string>;
-  onChange: (v: Record<string, string>) => void;
-}) {
+function MatchDropdownInput({ question, answer, onChange }: { question: QuizQuestion; answer: Record<string, string>; onChange: (v: Record<string, string>) => void }) {
   const pairs = question.pairs || [];
   const [shuffledRight] = useState(() => shuffleArray(pairs.map((p) => p.right)));
-
-  const handleSelect = (pairId: string, value: string) => {
-    onChange({ ...(answer || {}), [pairId]: value });
-  };
-
   return (
     <div className="space-y-3">
       {pairs.map((pair) => (
-        <div key={pair.id} className="flex items-center gap-3">
-          <span className="font-medium text-gray-800 flex-1">{pair.left}</span>
-          <span className="text-gray-400">&rarr;</span>
-          <select
-            value={(answer || {})[pair.id] || ''}
-            onChange={(e) => handleSelect(pair.id, e.target.value)}
-            className="flex-1 p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          >
+        <div key={pair.id} className="flex flex-col sm:flex-row sm:items-center gap-2">
+          <span className="font-medium text-gray-800 sm:flex-1 text-sm">{pair.left}</span>
+          <span className="text-gray-400 hidden sm:block">&rarr;</span>
+          <select value={(answer || {})[pair.id] || ''} onChange={(e) => onChange({ ...(answer || {}), [pair.id]: e.target.value })}
+            className="sm:flex-1 p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 text-sm">
             <option value="">Seleccionar...</option>
-            {shuffledRight.map((item, idx) => (
-              <option key={`${item}-${idx}`} value={item}>
-                {item}
-              </option>
-            ))}
+            {shuffledRight.map((item, idx) => <option key={`${item}-${idx}`} value={item}>{item}</option>)}
           </select>
         </div>
       ))}
@@ -691,133 +904,7 @@ function MatchDropdownInput({
   );
 }
 
-// --- Open Answer Input ---
-
-function OpenAnswerInput({
-  answer,
-  onChange,
-}: {
-  answer: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <input
-      type="text"
-      value={answer || ''}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder="Escribe tu respuesta..."
-      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-    />
-  );
-}
-
-// --- Correct Answer Display (for results) ---
-
-function CorrectAnswerDisplay({
-  question,
-  userAnswer,
-}: {
-  question: QuizQuestion;
-  userAnswer: any;
-}) {
-  switch (question.type) {
-    case 'true_false':
-      return (
-        <div className="text-sm mt-2 space-y-1">
-          <p>
-            <span className="text-gray-500">Tu respuesta:</span>{' '}
-            <span className="font-medium">
-              {userAnswer === true ? 'Verdadero' : userAnswer === false ? 'Falso' : 'Sin respuesta'}
-            </span>
-          </p>
-          <p>
-            <span className="text-gray-500">Correcta:</span>{' '}
-            <span className="font-medium text-green-700">
-              {question.correctBool ? 'Verdadero' : 'Falso'}
-            </span>
-          </p>
-        </div>
-      );
-
-    case 'single_choice': {
-      const selectedOpt = question.options?.find((o) => o.id === userAnswer);
-      const correctOpt = question.options?.find((o) => o.isCorrect);
-      return (
-        <div className="text-sm mt-2 space-y-1">
-          <p>
-            <span className="text-gray-500">Tu respuesta:</span>{' '}
-            <span className="font-medium">{selectedOpt?.text || 'Sin respuesta'}</span>
-          </p>
-          <p>
-            <span className="text-gray-500">Correcta:</span>{' '}
-            <span className="font-medium text-green-700">{correctOpt?.text}</span>
-          </p>
-        </div>
-      );
-    }
-
-    case 'multiple_choice': {
-      const selected = (userAnswer as string[]) || [];
-      const selectedTexts = question.options
-        ?.filter((o) => selected.includes(o.id))
-        .map((o) => o.text) || [];
-      const correctTexts = question.options?.filter((o) => o.isCorrect).map((o) => o.text) || [];
-      return (
-        <div className="text-sm mt-2 space-y-1">
-          <p>
-            <span className="text-gray-500">Tu respuesta:</span>{' '}
-            <span className="font-medium">{selectedTexts.join(', ') || 'Sin respuesta'}</span>
-          </p>
-          <p>
-            <span className="text-gray-500">Correctas:</span>{' '}
-            <span className="font-medium text-green-700">{correctTexts.join(', ')}</span>
-          </p>
-        </div>
-      );
-    }
-
-    case 'match_drag':
-    case 'match_dropdown': {
-      const userMatches = (userAnswer as Record<string, string>) || {};
-      return (
-        <div className="text-sm mt-2 space-y-1">
-          {(question.pairs || []).map((pair) => {
-            const userVal = userMatches[pair.id];
-            const isCorrect = userVal === pair.right;
-            return (
-              <p key={pair.id}>
-                <span className="font-medium">{pair.left}</span>
-                <span className="text-gray-400"> &rarr; </span>
-                <span className={isCorrect ? 'text-green-700' : 'text-red-700'}>
-                  {userVal || '(vacio)'}
-                </span>
-                {!isCorrect && (
-                  <span className="text-green-700 ml-2">(Correcto: {pair.right})</span>
-                )}
-              </p>
-            );
-          })}
-        </div>
-      );
-    }
-
-    case 'open_answer': {
-      const accepted = question.acceptedAnswers || [];
-      return (
-        <div className="text-sm mt-2 space-y-1">
-          <p>
-            <span className="text-gray-500">Tu respuesta:</span>{' '}
-            <span className="font-medium">{(userAnswer as string) || 'Sin respuesta'}</span>
-          </p>
-          <p>
-            <span className="text-gray-500">Respuestas aceptadas:</span>{' '}
-            <span className="font-medium text-green-700">{accepted.join(', ')}</span>
-          </p>
-        </div>
-      );
-    }
-
-    default:
-      return null;
-  }
+function OpenAnswerInput({ answer, onChange }: { answer: string; onChange: (v: string) => void }) {
+  return <input type="text" value={answer || ''} onChange={(e) => onChange(e.target.value)} placeholder="Escribe tu respuesta..."
+    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 text-sm" />;
 }

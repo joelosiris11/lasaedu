@@ -12,37 +12,39 @@ import {
   SupportDashboard,
   UsersPage,
   CoursesPage,
-  EvaluationsPage,
   CommunicationPage
 } from '@/pages';
 import CourseDetailPage from '@modules/courses/pages/CourseDetailPage';
 import CourseWizardPage from '@modules/courses/pages/CourseWizardPage';
 import LessonViewPage from '@modules/courses/pages/LessonViewPage';
 import LessonBuilderPage from '@modules/courses/pages/LessonBuilderPage';
-import CourseCatalogPage from '@modules/courses/pages/CourseCatalogPage';
 import EvaluationBuilderPage from '@modules/evaluations/pages/EvaluationBuilderPage';
 import TakeEvaluationPage from '@modules/evaluations/pages/TakeEvaluationPage';
 import GradesPage from '@modules/grades/pages/GradesPage';
 import CertificatesPage from '@modules/certificates/pages/CertificatesPage';
-import GamificationPage from '@modules/gamification/pages/GamificationPage';
 import SupportPage from '@modules/support/pages/SupportPage';
-import ReportsPage from '@modules/analytics/pages/ReportsPage';
 import SettingsPage from '@modules/settings/pages/SettingsPage';
-import MyProgressPage from '@modules/progress/pages/MyProgressPage';
 
 // Import new critical pages
 import EnrollmentManagementPage from '@modules/enrollments/pages/EnrollmentManagementPage';
-import NotificationSystemPage from '@modules/notifications/pages/NotificationSystemPage';
 import UserManagementPage from '@modules/users/pages/UserManagementPage';
 import ForumsPage from '@modules/forums/pages/ForumsPage';
 import DataInitPage from '@modules/auth/pages/DataInitPage';
+
+// Section pages
+import MySectionsPage from '@modules/courses/pages/MySectionsPage';
+import SectionsListPage from '@modules/courses/pages/SectionsListPage';
+import SectionWizardPage from '@modules/courses/pages/SectionWizardPage';
+import SectionDatesPage from '@modules/courses/pages/SectionDatesPage';
+import SectionDetailPage from '@modules/courses/pages/SectionDetailPage';
+import SectionGradesPage from '@modules/courses/pages/SectionGradesPage';
 
 // Componente para página no encontrada
 const NotFoundPage = () => (
   <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50">
     <h1 className="text-6xl font-bold text-gray-300">404</h1>
     <p className="text-xl text-gray-600 mt-4">Página no encontrada</p>
-    <a href="/dashboard" className="mt-6 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+    <a href="/dashboard" className="mt-6 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">
       Volver al inicio
     </a>
   </div>
@@ -53,7 +55,7 @@ const UnauthorizedPage = () => (
   <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50">
     <h1 className="text-6xl font-bold text-red-300">403</h1>
     <p className="text-xl text-gray-600 mt-4">No tienes permiso para acceder a esta página</p>
-    <a href="/dashboard" className="mt-6 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+    <a href="/dashboard" className="mt-6 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">
       Volver al inicio
     </a>
   </div>
@@ -125,7 +127,7 @@ export const router = createBrowserRouter([
       {
         path: 'courses',
         element: (
-          <ProtectedRoute allowedRoles={['admin', 'teacher', 'student']}>
+          <ProtectedRoute allowedRoles={['admin', 'teacher']}>
             <CoursesPage />
           </ProtectedRoute>
         )
@@ -170,11 +172,60 @@ export const router = createBrowserRouter([
           </ProtectedRoute>
         )
       },
+      // Section routes
       {
-        path: 'evaluations',
+        path: 'my-sections',
         element: (
           <ProtectedRoute allowedRoles={['admin', 'teacher', 'student']}>
-            <EvaluationsPage />
+            <MySectionsPage />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: 'my-sections/course/:courseId/new',
+        element: (
+          <ProtectedRoute allowedRoles={['admin', 'teacher']}>
+            <SectionWizardPage />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: 'my-sections/:sectionId/edit',
+        element: (
+          <ProtectedRoute allowedRoles={['admin', 'teacher']}>
+            <SectionWizardPage />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: 'sections/:sectionId/dates',
+        element: (
+          <ProtectedRoute allowedRoles={['admin', 'teacher']}>
+            <SectionDatesPage />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: 'sections/:sectionId/grades',
+        element: (
+          <ProtectedRoute allowedRoles={['admin', 'teacher']}>
+            <SectionGradesPage />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: 'sections/:sectionId',
+        element: (
+          <ProtectedRoute allowedRoles={['admin', 'teacher', 'student']}>
+            <SectionDetailPage />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: 'sections/:sectionId/lesson/:lessonId',
+        element: (
+          <ProtectedRoute allowedRoles={['admin', 'teacher', 'student']}>
+            <LessonViewPage />
           </ProtectedRoute>
         )
       },
@@ -227,14 +278,6 @@ export const router = createBrowserRouter([
         )
       },
       {
-        path: 'gamification',
-        element: (
-          <ProtectedRoute allowedRoles={['admin', 'teacher', 'student']}>
-            <GamificationPage />
-          </ProtectedRoute>
-        )
-      },
-      {
         path: 'support',
         element: (
           <ProtectedRoute allowedRoles={['admin', 'support', 'teacher', 'student']}>
@@ -251,14 +294,6 @@ export const router = createBrowserRouter([
         )
       },
       {
-        path: 'notifications',
-        element: (
-          <ProtectedRoute allowedRoles={['admin', 'teacher']}>
-            <NotificationSystemPage />
-          </ProtectedRoute>
-        )
-      },
-      {
         path: 'user-management',
         element: (
           <ProtectedRoute allowedRoles={['admin']}>
@@ -267,34 +302,10 @@ export const router = createBrowserRouter([
         )
       },
       {
-        path: 'reports',
-        element: (
-          <ProtectedRoute allowedRoles={['admin', 'teacher']}>
-            <ReportsPage />
-          </ProtectedRoute>
-        )
-      },
-      {
         path: 'settings',
         element: (
           <ProtectedRoute allowedRoles={['admin', 'teacher', 'student', 'support']}>
             <SettingsPage />
-          </ProtectedRoute>
-        )
-      },
-      {
-        path: 'catalog',
-        element: (
-          <ProtectedRoute allowedRoles={['admin', 'teacher', 'student']}>
-            <CourseCatalogPage />
-          </ProtectedRoute>
-        )
-      },
-      {
-        path: 'progress',
-        element: (
-          <ProtectedRoute allowedRoles={['student']}>
-            <MyProgressPage />
           </ProtectedRoute>
         )
       },

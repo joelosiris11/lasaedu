@@ -308,17 +308,15 @@ export default function VideoPlayer({
         </div>
       </div>
 
-      {/* Click to play/pause overlay */}
-      {!isCompleted && (
+      {/* Click to play/pause overlay - z-20 to be above controls (z-10) */}
+      {!isCompleted && !playing && (
         <div
-          className="absolute inset-0 flex items-center justify-center cursor-pointer"
-          onClick={() => setPlaying(!playing)}
+          className="absolute inset-0 z-20 flex items-center justify-center cursor-pointer"
+          onClick={() => setPlaying(true)}
         >
-          {!playing && (
-            <div className="bg-blue-600/90 hover:bg-blue-500/90 p-5 rounded-full transition shadow-2xl">
-              <Play className="h-10 w-10 text-white" fill="white" />
-            </div>
-          )}
+          <div className="bg-red-600/90 hover:bg-red-500/90 p-5 rounded-full transition shadow-2xl">
+            <Play className="h-10 w-10 text-white" fill="white" />
+          </div>
         </div>
       )}
 

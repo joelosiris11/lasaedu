@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '@app/store/authStore';
-import { courseService, evaluationService, enrollmentService } from '@shared/services/dataService';
+import { courseService, evaluationService, enrollmentService, sectionService } from '@shared/services/dataService';
+import type { DBSection } from '@shared/services/dataService';
 import { 
   BookOpen,
   Search,
@@ -65,6 +66,8 @@ export default function GradesPage() {
   const { user } = useAuthStore();
   const [courses, setCourses] = useState<Course[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState<string>('');
+  const [selectedSectionId, setSelectedSectionId] = useState<string>('all');
+  const [sections, setSections] = useState<DBSection[]>([]);
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
   const [studentGrades, setStudentGrades] = useState<StudentGrade[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -81,6 +84,11 @@ export default function GradesPage() {
   useEffect(() => {
     if (selectedCourseId) {
       loadCourseGrades(selectedCourseId);
+      // Load sections for this course
+      sectionService.getByCourse(selectedCourseId).then(s => {
+        setSections(s);
+        setSelectedSectionId('all');
+      });
     }
   }, [selectedCourseId]);
 
@@ -280,39 +288,27 @@ export default function GradesPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">
-            {isStudent ? 'Mis Calificaciones' : 'Libro de Calificaciones'}
-          </h1>
-          <p className="text-gray-600">
-            {isStudent 
-              ? 'Revisa tu progreso académico en cada curso'
-              : 'Gestiona y visualiza las calificaciones de tus estudiantes'
-            }
-          </p>
-        </div>
-        {!isStudent && studentGrades.length > 0 && (
+      {!isStudent && studentGrades.length > 0 && (
+        <div className="flex justify-end">
           <Button variant="outline" onClick={exportGrades}>
             <Download className="h-4 w-4 mr-2" />
             Exportar CSV
           </Button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Course Selector */}
       {courses.length > 0 && (
         <Card>
           <CardContent className="p-4">
-            <div className="flex items-center gap-4">
+            <div className="flex flex-col md:flex-row items-stretch md:items-center gap-4">
               <div className="flex-1">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Seleccionar Curso
@@ -320,7 +316,7 @@ export default function GradesPage() {
                 <select
                   value={selectedCourseId}
                   onChange={e => setSelectedCourseId(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500"
                 >
                   {courses.map(course => (
                     <option key={course.id} value={course.id}>
@@ -329,6 +325,25 @@ export default function GradesPage() {
                   ))}
                 </select>
               </div>
+              {sections.length > 0 && !isStudent && (
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Sección
+                  </label>
+                  <select
+                    value={selectedSectionId}
+                    onChange={e => setSelectedSectionId(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500"
+                  >
+                    <option value="all">Todas las secciones</option>
+                    {sections.map(section => (
+                      <option key={section.id} value={section.id}>
+                        {section.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               {!isStudent && (
                 <div className="flex-1">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -352,11 +367,11 @@ export default function GradesPage() {
 
       {/* Stats Cards */}
       {!isStudent && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Card>
             <CardContent className="p-4 flex items-center">
-              <div className="p-3 bg-blue-100 rounded-lg">
-                <User className="h-6 w-6 text-blue-600" />
+              <div className="p-3 bg-red-100 rounded-lg">
+                <User className="h-6 w-6 text-red-600" />
               </div>
               <div className="ml-4">
                 <p className="text-2xl font-bold">{stats.students}</p>
@@ -366,8 +381,8 @@ export default function GradesPage() {
           </Card>
           <Card>
             <CardContent className="p-4 flex items-center">
-              <div className="p-3 bg-green-100 rounded-lg">
-                <BarChart3 className="h-6 w-6 text-green-600" />
+              <div className="p-3 bg-red-100 rounded-lg">
+                <BarChart3 className="h-6 w-6 text-red-600" />
               </div>
               <div className="ml-4">
                 <p className="text-2xl font-bold">{stats.avgScore}%</p>
@@ -377,8 +392,8 @@ export default function GradesPage() {
           </Card>
           <Card>
             <CardContent className="p-4 flex items-center">
-              <div className="p-3 bg-indigo-100 rounded-lg">
-                <Award className="h-6 w-6 text-indigo-600" />
+              <div className="p-3 bg-red-100 rounded-lg">
+                <Award className="h-6 w-6 text-red-600" />
               </div>
               <div className="ml-4">
                 <p className="text-2xl font-bold">{stats.passing}</p>
@@ -388,8 +403,8 @@ export default function GradesPage() {
           </Card>
           <Card>
             <CardContent className="p-4 flex items-center">
-              <div className="p-3 bg-purple-100 rounded-lg">
-                <FileText className="h-6 w-6 text-purple-600" />
+              <div className="p-3 bg-red-100 rounded-lg">
+                <FileText className="h-6 w-6 text-red-600" />
               </div>
               <div className="ml-4">
                 <p className="text-2xl font-bold">{stats.evaluationsCount}</p>
@@ -470,8 +485,8 @@ export default function GradesPage() {
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center">
-                        <div className="h-8 w-8 rounded-full bg-indigo-100 flex items-center justify-center mr-3">
-                          <span className="text-indigo-600 font-medium text-sm">
+                        <div className="h-8 w-8 rounded-full bg-red-100 flex items-center justify-center mr-3">
+                          <span className="text-red-600 font-medium text-sm">
                             {grade.studentName.charAt(0).toUpperCase()}
                           </span>
                         </div>

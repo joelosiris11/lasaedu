@@ -172,27 +172,20 @@ export default function CertificatesPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-6xl mx-auto p-6">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Mis Certificados</h1>
-        <p className="text-gray-600">
-          Descarga y comparte los certificados de los cursos que has completado exitosamente.
-        </p>
-      </div>
+    <div className="space-y-6">
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center">
-              <Trophy className="w-8 h-8 text-yellow-500 mr-3" />
+              <Trophy className="w-8 h-8 text-red-600 mr-3" />
               <div>
                 <p className="text-2xl font-bold">{stats.totalCompleted}</p>
                 <p className="text-sm text-gray-600">Cursos Completados</p>
@@ -204,7 +197,7 @@ export default function CertificatesPage() {
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center">
-              <Award className="w-8 h-8 text-blue-500 mr-3" />
+              <Award className="w-8 h-8 text-red-500 mr-3" />
               <div>
                 <p className="text-2xl font-bold">{stats.certificatesGenerated}</p>
                 <p className="text-sm text-gray-600">Certificados Generados</p>
@@ -216,7 +209,7 @@ export default function CertificatesPage() {
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center">
-              <Clock className="w-8 h-8 text-green-500 mr-3" />
+              <Clock className="w-8 h-8 text-red-400 mr-3" />
               <div>
                 <p className="text-2xl font-bold">{stats.totalHours}h</p>
                 <p className="text-sm text-gray-600">Horas de Estudio</p>
@@ -228,7 +221,7 @@ export default function CertificatesPage() {
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center">
-              <Star className="w-8 h-8 text-purple-500 mr-3" />
+              <Star className="w-8 h-8 text-red-300 mr-3" />
               <div>
                 <p className="text-2xl font-bold">{stats.averageScore.toFixed(1)}%</p>
                 <p className="text-sm text-gray-600">Promedio General</p>
@@ -316,9 +309,9 @@ export default function CertificatesPage() {
                   </div>
                   <div className="flex flex-col items-center">
                     <div className={`flex items-center justify-center w-12 h-12 rounded-full ${
-                      completion.certificate 
-                        ? 'bg-green-100 text-green-600' 
-                        : 'bg-blue-100 text-blue-600'
+                      completion.certificate
+                        ? 'bg-red-100 text-red-600'
+                        : 'bg-red-50 text-red-400'
                     }`}>
                       {completion.certificate ? (
                         <CheckCircle className="w-6 h-6" />
@@ -327,9 +320,9 @@ export default function CertificatesPage() {
                       )}
                     </div>
                     <span className={`text-xs font-medium mt-1 ${
-                      completion.certificate 
-                        ? 'text-green-600' 
-                        : 'text-blue-600'
+                      completion.certificate
+                        ? 'text-red-600'
+                        : 'text-red-400'
                     }`}>
                       {completion.score}%
                     </span>
@@ -340,12 +333,12 @@ export default function CertificatesPage() {
               <CardContent>
                 {completion.certificate ? (
                   <div className="space-y-3">
-                    <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                      <div className="flex items-center text-green-800 text-sm">
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                      <div className="flex items-center text-red-800 text-sm">
                         <CheckCircle className="w-4 h-4 mr-2" />
                         Certificado generado
                       </div>
-                      <p className="text-xs text-green-600 mt-1">
+                      <p className="text-xs text-red-600 mt-1">
                         N°: {completion.certificate.certificateNumber}
                       </p>
                     </div>
@@ -381,12 +374,12 @@ export default function CertificatesPage() {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                      <div className="flex items-center text-blue-800 text-sm">
+                    <div className="bg-red-50 border border-red-100 rounded-lg p-3">
+                      <div className="flex items-center text-red-700 text-sm">
                         <Award className="w-4 h-4 mr-2" />
                         Certificado disponible
                       </div>
-                      <p className="text-xs text-blue-600 mt-1">
+                      <p className="text-xs text-red-500 mt-1">
                         Has completado este curso exitosamente
                       </p>
                     </div>
@@ -416,42 +409,7 @@ export default function CertificatesPage() {
         </div>
       )}
 
-      {/* Additional Info */}
-      <Card className="mt-8">
-        <CardContent className="p-6">
-          <h3 className="text-lg font-semibold mb-4">Acerca de los Certificados</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm text-gray-600">
-            <div>
-              <h4 className="font-medium text-gray-900 mb-2">🎓 Validez</h4>
-              <p>
-                Todos los certificados incluyen un código de verificación único que permite 
-                validar su autenticidad en cualquier momento.
-              </p>
-            </div>
-            <div>
-              <h4 className="font-medium text-gray-900 mb-2">📄 Formato</h4>
-              <p>
-                Los certificados se generan en formato PDF de alta calidad, 
-                listos para imprimir o compartir digitalmente.
-              </p>
-            </div>
-            <div>
-              <h4 className="font-medium text-gray-900 mb-2">🔒 Seguridad</h4>
-              <p>
-                Cada certificado incluye medidas anti-falsificación y 
-                se registra en nuestra base de datos para verificación.
-              </p>
-            </div>
-            <div>
-              <h4 className="font-medium text-gray-900 mb-2">🌐 Compartir</h4>
-              <p>
-                Puedes compartir tus certificados en redes sociales, LinkedIn 
-                o incluirlos en tu CV profesional.
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Certificates info removed — dead content weight */}
     </div>
   );
 }

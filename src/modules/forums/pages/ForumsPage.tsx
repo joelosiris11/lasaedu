@@ -342,7 +342,7 @@ export default function ForumsPage() {
   const getRoleBadge = (role: string) => {
     const badges: Record<string, { color: string; label: string }> = {
       admin: { color: 'bg-red-100 text-red-800', label: 'Admin' },
-      teacher: { color: 'bg-blue-100 text-blue-800', label: 'Profesor' },
+      teacher: { color: 'bg-red-100 text-red-800', label: 'Profesor' },
       student: { color: 'bg-gray-100 text-gray-800', label: 'Estudiante' }
     };
     const badge = badges[role] || badges.student;
@@ -361,7 +361,7 @@ export default function ForumsPage() {
           <CardHeader className="border-b bg-gray-50 flex-shrink-0">
             <div className="flex items-center justify-between">
               <CardTitle className="flex items-center">
-                <MessageSquare className="h-5 w-5 mr-2 text-blue-600" />
+                <MessageSquare className="h-5 w-5 mr-2 text-red-600" />
                 Foros de Discusión
               </CardTitle>
               <Button onClick={() => setShowCreatePost(true)} size="sm">
@@ -420,7 +420,7 @@ export default function ForumsPage() {
           <CardContent className="flex-1 overflow-y-auto p-0">
             {loading ? (
               <div className="flex items-center justify-center h-40">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
               </div>
             ) : filteredPosts.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-40 text-gray-500">
@@ -435,12 +435,12 @@ export default function ForumsPage() {
                     key={post.id}
                     onClick={() => handleSelectPost(post)}
                     className={`p-4 cursor-pointer hover:bg-gray-50 transition-colors ${
-                      selectedPost?.id === post.id ? 'bg-blue-50 border-l-4 border-l-blue-600' : ''
+                      selectedPost?.id === post.id ? 'bg-red-50 border-l-4 border-l-red-600' : ''
                     }`}
                   >
                     <div className="flex items-start gap-3">
                       <div className="flex-shrink-0">
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-medium">
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-red-400 to-red-600 flex items-center justify-center text-white font-medium">
                           {post.authorName.charAt(0).toUpperCase()}
                         </div>
                       </div>
@@ -575,7 +575,7 @@ export default function ForumsPage() {
               {selectedPost.tags.length > 0 && (
                 <div className="flex flex-wrap gap-2 mb-6">
                   {selectedPost.tags.map(tag => (
-                    <span key={tag} className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">
+                    <span key={tag} className="px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm">
                       #{tag}
                     </span>
                   ))}
@@ -647,7 +647,7 @@ export default function ForumsPage() {
                               variant="ghost"
                               size="sm"
                               onClick={() => handleLikeReply(reply)}
-                              className={reply.likedBy.includes(user?.id || '') ? 'text-blue-600' : ''}
+                              className={reply.likedBy.includes(user?.id || '') ? 'text-red-600' : ''}
                             >
                               <ThumbsUp className="h-3 w-3 mr-1" />
                               {reply.likesCount}
@@ -676,7 +676,7 @@ export default function ForumsPage() {
             {/* Reply Input */}
             <div className="border-t p-4 bg-gray-50">
               <div className="flex gap-3">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-sm font-medium flex-shrink-0">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-red-400 to-red-600 flex items-center justify-center text-white text-sm font-medium flex-shrink-0">
                   {user?.name?.charAt(0).toUpperCase() || 'U'}
                 </div>
                 <div className="flex-1">
@@ -685,7 +685,7 @@ export default function ForumsPage() {
                     value={replyContent}
                     onChange={(e) => setReplyContent(e.target.value)}
                     placeholder="Escribe tu respuesta..."
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 resize-none"
                     rows={3}
                   />
                   <div className="flex justify-end mt-2">
@@ -720,7 +720,7 @@ export default function ForumsPage() {
                 <select
                   value={newPost.courseId}
                   onChange={(e) => setNewPost(prev => ({ ...prev, courseId: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
                 >
                   <option value="">Selecciona un curso</option>
                   {courses.map(course => (
@@ -748,7 +748,7 @@ export default function ForumsPage() {
                   value={newPost.content}
                   onChange={(e) => setNewPost(prev => ({ ...prev, content: e.target.value }))}
                   placeholder="Describe tu pregunta con detalle..."
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 h-32"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 h-32"
                 />
               </div>
 
@@ -769,15 +769,15 @@ export default function ForumsPage() {
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {newPost.tags.map(tag => (
-                    <span 
-                      key={tag} 
-                      className="inline-flex items-center px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm"
+                    <span
+                      key={tag}
+                      className="inline-flex items-center px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm"
                     >
                       {tag}
-                      <button 
+                      <button
                         type="button"
                         onClick={() => removeTag(tag)}
-                        className="ml-2 text-blue-600 hover:text-blue-800"
+                        className="ml-2 text-red-600 hover:text-red-800"
                       >
                         ×
                       </button>

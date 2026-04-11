@@ -1,8 +1,7 @@
 /**
- * Firebase Data Service - Capa de abstracción para Firebase Realtime Database
- * 
+ * Firebase Data Service - Capa de abstracción para Cloud Firestore
+ *
  * Este servicio proporciona métodos CRUD para todas las colecciones del proyecto.
- * Puede alternar entre Firebase y LocalDB mediante la variable USE_FIREBASE.
  * 
  * COLECCIONES DEL PROYECTO:
  * - users: Usuarios del sistema
@@ -20,32 +19,26 @@
  * - supportTickets: Tickets de soporte
  * - ticketMessages: Mensajes dentro de tickets
  * - activities: Log de actividades
- * - userPoints: Puntos de gamificación
- * - badges: Insignias disponibles
- * - userBadges: Insignias obtenidas por usuarios
- * - learningStreaks: Rachas de aprendizaje
- * - progressActivities: Actividades de progreso
  * - userSettings: Configuraciones de usuario
  * - systemMetrics: Métricas del sistema
  * - forumPosts: Publicaciones del foro
  * - forumReplies: Respuestas del foro
  */
 
-import { database } from '@app/config/firebase';
-import { 
-  ref, 
-  get, 
-  set, 
-  push, 
-  update, 
-  remove, 
-  query, 
-  orderByChild, 
-  equalTo,
-  onValue,
-  off,
-  DataSnapshot
-} from 'firebase/database';
+import { db } from '@app/config/firebase';
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  query,
+  where,
+  setDoc,
+  writeBatch
+} from 'firebase/firestore';
 
 // ============================================
 // INTERFACES DE DATOS - Todas las colecciones
@@ -105,6 +98,7 @@ export interface DBCourse {
   image?: string;
   rating?: number;
   studentsCount: number;
+  sectionsCount: number;
   price?: number;
   tags?: string[];
   requirements?: string[];
@@ -157,6 +151,7 @@ export interface DBLesson {
 export interface DBEnrollment {
   id: string;
   courseId: string;
+  sectionId?: string;
   userId: string;
   enrolledAt: string;
   progress: number;
@@ -217,6 +212,7 @@ export interface DBEvaluationAttempt {
   evaluationId: string;
   userId: string;
   courseId: string;
+  sectionId?: string;
   answers: {
     questionId: string;
     answer: string | string[];
@@ -242,6 +238,7 @@ export interface DBEvaluationAttempt {
 export interface DBGrade {
   id: string;
   courseId: string;
+  sectionId?: string;
   lessonId?: string;
   evaluationId?: string;
   studentId: string;
@@ -400,83 +397,6 @@ export interface DBActivity {
   createdAt: number;
 }
 
-// Puntos de gamificación
-export interface DBUserPoints {
-  id: string;
-  userId: string;
-  totalPoints: number;
-  level: number;
-  levelName: string;
-  nextLevelPoints: number;
-  rank?: number;
-  history: {
-    id: string;
-    action: string;
-    points: number;
-    description: string;
-    timestamp: string;
-  }[];
-  createdAt: number;
-  updatedAt: number;
-}
-
-// Insignia
-export interface DBBadge {
-  id: string;
-  name: string;
-  description: string;
-  icon: string;
-  category: 'achievement' | 'course' | 'social' | 'streak' | 'special';
-  criteria: {
-    type: string;
-    value: number;
-    description: string;
-  };
-  points: number;
-  rarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
-  isActive: boolean;
-  createdAt: number;
-}
-
-// Insignia de usuario
-export interface DBUserBadge {
-  id: string;
-  userId: string;
-  badgeId: string;
-  earnedAt: string;
-  progress?: number;
-  notified: boolean;
-  createdAt: number;
-}
-
-// Racha de aprendizaje
-export interface DBLearningStreak {
-  id: string;
-  userId: string;
-  currentStreak: number;
-  longestStreak: number;
-  lastActiveDate: string;
-  weeklyActivity: number[];
-  monthlyActivity: Record<string, number>;
-  createdAt: number;
-  updatedAt: number;
-}
-
-// Actividad de progreso
-export interface DBProgressActivity {
-  id: string;
-  userId: string;
-  type: 'lesson_completed' | 'course_started' | 'course_completed' | 
-        'quiz_passed' | 'badge_earned' | 'level_up';
-  courseId?: string;
-  lessonId?: string;
-  badgeId?: string;
-  details?: string;
-  points?: number;
-  timestamp: string;
-  createdAt: number;
-}
-
 // Configuraciones de usuario
 export interface DBUserSettings {
   id: string;
@@ -579,11 +499,50 @@ export interface DBForumReply {
   updatedAt: number;
 }
 
+// Sección de curso (instancia con fechas y estudiantes)
+export interface DBSection {
+  id: string;
+  courseId: string;
+  title: string;
+  description?: string;
+  instructorId: string;
+  instructorName: string;
+  startDate: number;
+  endDate: number;
+  accessType: 'publico' | 'privado' | 'restringido';
+  accessCode?: string;
+  enrollmentLimit?: number;
+  // Denormalizado del curso
+  courseTitle: string;
+  courseCategory: string;
+  courseLevel: string;
+  courseImage?: string;
+  studentsCount: number;
+  status: 'activa' | 'finalizada' | 'archivada' | 'borrador';
+  createdAt: number;
+  updatedAt: number;
+}
+
+// Override de fechas por lección dentro de una sección
+export interface DBSectionLessonOverride {
+  id: string;
+  sectionId: string;
+  lessonId: string;
+  courseId: string;
+  availableFrom?: string;
+  dueDate?: string;
+  lateSubmissionDeadline?: string;
+  availableUntil?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 // Envio de tarea (Task Submission)
 export interface DBTaskSubmission {
   id: string;
   lessonId: string;
   courseId: string;
+  sectionId?: string;
   studentId: string;
   studentName: string;
   files: {
@@ -612,6 +571,7 @@ export interface DBTaskSubmission {
 export interface DBDeadlineExtension {
   id: string;
   courseId: string;
+  sectionId?: string;
   targetId: string;          // lessonId (tarea) o evaluationId (examen)
   targetType: 'task' | 'exam';
   studentId: string;
@@ -636,18 +596,12 @@ class FirebaseDataService {
   /**
    * Obtener todos los registros de una colección
    */
-  async getAll<T>(collection: string): Promise<T[]> {
+  async getAll<T>(collectionName: string): Promise<T[]> {
     try {
-      const snapshot = await get(ref(database, collection));
-      if (!snapshot.exists()) return [];
-      
-      const data = snapshot.val();
-      return Object.keys(data).map(key => ({
-        id: key,
-        ...data[key]
-      })) as T[];
+      const snapshot = await getDocs(collection(db, collectionName));
+      return snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as T[];
     } catch (error) {
-      console.error(`Error getting ${collection}:`, error);
+      console.error(`Error getting ${collectionName}:`, error);
       return [];
     }
   }
@@ -655,14 +609,13 @@ class FirebaseDataService {
   /**
    * Obtener un registro por ID
    */
-  async getById<T>(collection: string, id: string): Promise<T | null> {
+  async getById<T>(collectionName: string, id: string): Promise<T | null> {
     try {
-      const snapshot = await get(ref(database, `${collection}/${id}`));
-      if (!snapshot.exists()) return null;
-      
-      return { id, ...snapshot.val() } as T;
+      const snap = await getDoc(doc(db, collectionName, id));
+      if (!snap.exists()) return null;
+      return { id: snap.id, ...snap.data() } as T;
     } catch (error) {
-      console.error(`Error getting ${collection}/${id}:`, error);
+      console.error(`Error getting ${collectionName}/${id}:`, error);
       return null;
     }
   }
@@ -670,21 +623,21 @@ class FirebaseDataService {
   /**
    * Crear un nuevo registro
    */
-  async create<T extends { id?: string }>(collection: string, data: Omit<T, 'id'>): Promise<T> {
+  async create<T extends { id?: string }>(collectionName: string, data: Omit<T, 'id'>): Promise<T> {
     const timestamp = Date.now();
-    const record = {
+    const raw = {
       ...data,
       createdAt: timestamp,
       updatedAt: timestamp
     };
+    // Strip undefined values — Firestore rejects them
+    const record = Object.fromEntries(Object.entries(raw).filter(([_, v]) => v !== undefined));
 
     try {
-      const newRef = push(ref(database, collection));
-      const newRecord = { ...record, id: newRef.key! };
-      await set(newRef, newRecord);
-      return newRecord as unknown as T;
+      const docRef = await addDoc(collection(db, collectionName), record);
+      return { ...record, id: docRef.id } as unknown as T;
     } catch (error) {
-      console.error(`Error creating in ${collection}:`, error);
+      console.error(`Error creating in ${collectionName}:`, error);
       throw error;
     }
   }
@@ -692,17 +645,18 @@ class FirebaseDataService {
   /**
    * Actualizar un registro existente
    */
-  async update<T>(collection: string, id: string, data: Partial<T>): Promise<T | null> {
-    const updateData = {
+  async update<T>(collectionName: string, id: string, data: Partial<T>): Promise<T | null> {
+    const raw = {
       ...data,
       updatedAt: Date.now()
     };
+    const updateData = Object.fromEntries(Object.entries(raw).filter(([_, v]) => v !== undefined));
 
     try {
-      await update(ref(database, `${collection}/${id}`), updateData);
-      return this.getById<T>(collection, id);
+      await updateDoc(doc(db, collectionName, id), updateData as any);
+      return this.getById<T>(collectionName, id);
     } catch (error) {
-      console.error(`Error updating ${collection}/${id}:`, error);
+      console.error(`Error updating ${collectionName}/${id}:`, error);
       return null;
     }
   }
@@ -710,12 +664,12 @@ class FirebaseDataService {
   /**
    * Eliminar un registro
    */
-  async delete(collection: string, id: string): Promise<boolean> {
+  async delete(collectionName: string, id: string): Promise<boolean> {
     try {
-      await remove(ref(database, `${collection}/${id}`));
+      await deleteDoc(doc(db, collectionName, id));
       return true;
     } catch (error) {
-      console.error(`Error deleting ${collection}/${id}:`, error);
+      console.error(`Error deleting ${collectionName}/${id}:`, error);
       return false;
     }
   }
@@ -724,59 +678,35 @@ class FirebaseDataService {
    * Buscar registros con filtro
    */
   async query<T>(
-    collection: string,
+    collectionName: string,
     field: string,
     value: string | number | boolean
   ): Promise<T[]> {
     try {
-      const q = query(ref(database, collection), orderByChild(field), equalTo(value as any));
-      const snapshot = await get(q);
-      if (!snapshot.exists()) return [];
-      
-      const data = snapshot.val();
-      return Object.keys(data).map(key => ({
-        id: key,
-        ...data[key]
-      })) as T[];
+      const q = query(collection(db, collectionName), where(field, '==', value));
+      const snapshot = await getDocs(q);
+      return snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as T[];
     } catch (error) {
-      console.error(`Error querying ${collection}:`, error);
+      console.error(`Error querying ${collectionName}:`, error);
       return [];
     }
   }
 
   /**
-   * Suscribirse a cambios en tiempo real
+   * Suscribirse a cambios (one-time read, no real-time listener)
    */
   subscribe<T>(
-    collection: string,
+    collectionName: string,
     callback: (data: T[]) => void,
     id?: string
   ): () => void {
-    const path = id ? `${collection}/${id}` : collection;
-    const dbRef = ref(database, path);
-    
-    const handleSnapshot = (snapshot: DataSnapshot) => {
-      if (!snapshot.exists()) {
-        callback([]);
-        return;
-      }
-      
-      const data = snapshot.val();
-      if (id) {
-        callback([{ id, ...data }] as T[]);
-      } else {
-        const items = Object.keys(data).map(key => ({
-          id: key,
-          ...data[key]
-        })) as T[];
-        callback(items);
-      }
-    };
-
-    onValue(dbRef, handleSnapshot);
-    
-    // Retornar función para cancelar suscripción
-    return () => off(dbRef);
+    // One-time read, no real-time listener
+    if (id) {
+      this.getById<T>(collectionName, id).then(item => callback(item ? [item] : []));
+    } else {
+      this.getAll<T>(collectionName).then(callback);
+    }
+    return () => {}; // no-op unsubscribe
   }
 
   // ============================================
@@ -1054,183 +984,6 @@ class FirebaseDataService {
     });
   }
 
-  // --- GAMIFICACIÓN ---
-  async getUserPoints(userId: string): Promise<DBUserPoints | null> {
-    return this.getById<DBUserPoints>('userPoints', userId);
-  }
-
-  async createUserPoints(userId: string): Promise<DBUserPoints> {
-    const now = Date.now();
-    return this.create<DBUserPoints>('userPoints', {
-      userId,
-      totalPoints: 0,
-      level: 1,
-      levelName: 'Principiante',
-      nextLevelPoints: 100,
-      history: [],
-      createdAt: now
-    } as any);
-  }
-
-  async addPoints(userId: string, points: number, action: string, description: string): Promise<DBUserPoints | null> {
-    let userPoints = await this.getUserPoints(userId);
-    
-    if (!userPoints) {
-      userPoints = await this.create<DBUserPoints>('userPoints', {
-        userId,
-        totalPoints: 0,
-        level: 1,
-        levelName: 'Principiante',
-        nextLevelPoints: 100,
-        history: []
-      } as any);
-    }
-
-    const newTotal = userPoints.totalPoints + points;
-    const { level, levelName, nextLevelPoints } = this.calculateLevel(newTotal);
-
-    return this.update<DBUserPoints>('userPoints', userPoints.id, {
-      totalPoints: newTotal,
-      level,
-      levelName,
-      nextLevelPoints,
-      history: [...userPoints.history, {
-        id: `hist_${Date.now()}`,
-        action,
-        points,
-        description,
-        timestamp: new Date().toISOString()
-      }]
-    });
-  }
-
-  private calculateLevel(points: number): { level: number; levelName: string; nextLevelPoints: number } {
-    const levels = [
-      { min: 0, level: 1, name: 'Principiante', next: 100 },
-      { min: 100, level: 2, name: 'Aprendiz', next: 300 },
-      { min: 300, level: 3, name: 'Estudiante', next: 600 },
-      { min: 600, level: 4, name: 'Aplicado', next: 1000 },
-      { min: 1000, level: 5, name: 'Avanzado', next: 1500 },
-      { min: 1500, level: 6, name: 'Experto', next: 2500 },
-      { min: 2500, level: 7, name: 'Maestro', next: 4000 },
-      { min: 4000, level: 8, name: 'Sabio', next: 6000 },
-      { min: 6000, level: 9, name: 'Gurú', next: 10000 },
-      { min: 10000, level: 10, name: 'Leyenda', next: 999999 }
-    ];
-
-    const currentLevel = levels.reverse().find(l => points >= l.min) || levels[0];
-    return {
-      level: currentLevel.level,
-      levelName: currentLevel.name,
-      nextLevelPoints: currentLevel.next
-    };
-  }
-
-  async getBadges(): Promise<DBBadge[]> {
-    return this.getAll<DBBadge>('badges');
-  }
-
-  async getUserBadges(userId: string): Promise<DBUserBadge[]> {
-    return this.query<DBUserBadge>('userBadges', 'userId', userId);
-  }
-
-  async awardBadge(userId: string, badgeId: string): Promise<DBUserBadge> {
-    return this.create<DBUserBadge>('userBadges', {
-      userId,
-      badgeId,
-      earnedAt: new Date().toISOString(),
-      notified: false
-    } as any);
-  }
-
-  async getLeaderboard(limit: number = 10): Promise<{ rank: number; userId: string; userName: string; points: number; level: number; badges: number }[]> {
-    // Get all user points
-    const allPoints = await this.getAll<DBUserPoints>('userPoints');
-
-    // Get all users for names
-    const allUsers = await this.getAll<DBUser>('users');
-    const userMap = new Map(allUsers.map(u => [u.id, u.name]));
-
-    // Get badge counts
-    const allBadges = await this.getAll<DBUserBadge>('userBadges');
-    const badgeCounts = new Map<string, number>();
-    allBadges.forEach(b => {
-      badgeCounts.set(b.userId, (badgeCounts.get(b.userId) || 0) + 1);
-    });
-
-    // Sort by points and take top N
-    return allPoints
-      .sort((a, b) => b.totalPoints - a.totalPoints)
-      .slice(0, limit)
-      .map((points, index) => ({
-        rank: index + 1,
-        userId: points.userId,
-        userName: userMap.get(points.userId) || 'Usuario',
-        points: points.totalPoints,
-        level: points.level,
-        badges: badgeCounts.get(points.userId) || 0
-      }));
-  }
-
-  // --- RACHA DE APRENDIZAJE ---
-  async getLearningStreak(userId: string): Promise<DBLearningStreak | null> {
-    return this.getById<DBLearningStreak>('learningStreaks', userId);
-  }
-
-  async updateStreak(userId: string): Promise<DBLearningStreak | null> {
-    let streak = await this.getLearningStreak(userId);
-    const today = new Date().toISOString().split('T')[0];
-
-    if (!streak) {
-      return this.create<DBLearningStreak>('learningStreaks', {
-        id: userId,
-        userId,
-        currentStreak: 1,
-        longestStreak: 1,
-        lastActiveDate: today,
-        weeklyActivity: [1, 0, 0, 0, 0, 0, 0],
-        monthlyActivity: { [today]: 1 }
-      } as any);
-    }
-
-    const lastDate = new Date(streak.lastActiveDate);
-    const todayDate = new Date(today);
-    const diffDays = Math.floor((todayDate.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
-
-    let newStreak = streak.currentStreak;
-    if (diffDays === 0) {
-      // Ya registró actividad hoy
-      return streak;
-    } else if (diffDays === 1) {
-      // Día consecutivo
-      newStreak++;
-    } else {
-      // Se rompió la racha
-      newStreak = 1;
-    }
-
-    const longestStreak = Math.max(streak.longestStreak, newStreak);
-
-    return this.update<DBLearningStreak>('learningStreaks', userId, {
-      currentStreak: newStreak,
-      longestStreak,
-      lastActiveDate: today,
-      monthlyActivity: {
-        ...streak.monthlyActivity,
-        [today]: (streak.monthlyActivity[today] || 0) + 1
-      }
-    });
-  }
-
-  // --- ACTIVIDADES DE PROGRESO ---
-  async getProgressActivities(userId: string): Promise<DBProgressActivity[]> {
-    return this.query<DBProgressActivity>('progressActivities', 'userId', userId);
-  }
-
-  async logProgressActivity(activity: Omit<DBProgressActivity, 'id'>): Promise<DBProgressActivity> {
-    return this.create<DBProgressActivity>('progressActivities', activity);
-  }
-
   // --- ACTIVIDADES DEL SISTEMA ---
   async logActivity(activity: Omit<DBActivity, 'id'>): Promise<DBActivity> {
     return this.create<DBActivity>('activities', activity);
@@ -1292,6 +1045,61 @@ class FirebaseDataService {
 
   async deleteForumReply(id: string): Promise<boolean> {
     return this.delete('forumReplies', id);
+  }
+
+  // --- SECCIONES ---
+  async getSections(): Promise<DBSection[]> {
+    return this.getAll<DBSection>('sections');
+  }
+
+  async getSectionById(id: string): Promise<DBSection | null> {
+    return this.getById<DBSection>('sections', id);
+  }
+
+  async getSectionsByCourse(courseId: string): Promise<DBSection[]> {
+    return this.query<DBSection>('sections', 'courseId', courseId);
+  }
+
+  async getSectionsByInstructor(instructorId: string): Promise<DBSection[]> {
+    return this.query<DBSection>('sections', 'instructorId', instructorId);
+  }
+
+  async createSection(section: Omit<DBSection, 'id'>): Promise<DBSection> {
+    return this.create<DBSection>('sections', section);
+  }
+
+  async updateSection(id: string, data: Partial<DBSection>): Promise<DBSection | null> {
+    return this.update<DBSection>('sections', id, data);
+  }
+
+  async deleteSection(id: string): Promise<boolean> {
+    return this.delete('sections', id);
+  }
+
+  // --- SECTION LESSON OVERRIDES ---
+  async getSectionLessonOverrides(sectionId: string): Promise<DBSectionLessonOverride[]> {
+    return this.query<DBSectionLessonOverride>('sectionLessonOverrides', 'sectionId', sectionId);
+  }
+
+  async upsertSectionLessonOverride(data: Omit<DBSectionLessonOverride, 'id'> & { id?: string }): Promise<DBSectionLessonOverride> {
+    if (data.id) {
+      const updated = await this.update<DBSectionLessonOverride>('sectionLessonOverrides', data.id, data);
+      return updated!;
+    }
+    return this.create<DBSectionLessonOverride>('sectionLessonOverrides', data as Omit<DBSectionLessonOverride, 'id'>);
+  }
+
+  async bulkUpsertSectionLessonOverrides(sectionId: string, overrides: (Omit<DBSectionLessonOverride, 'id'> & { id?: string })[]): Promise<DBSectionLessonOverride[]> {
+    const results: DBSectionLessonOverride[] = [];
+    for (const override of overrides) {
+      const result = await this.upsertSectionLessonOverride({ ...override, sectionId });
+      results.push(result);
+    }
+    return results;
+  }
+
+  async getEnrollmentsBySection(sectionId: string): Promise<DBEnrollment[]> {
+    return this.query<DBEnrollment>('enrollments', 'sectionId', sectionId);
   }
 
   // --- DEADLINE EXTENSIONS ---
@@ -1397,15 +1205,15 @@ class FirebaseDataService {
       'users', 'courses', 'modules', 'lessons', 'enrollments',
       'evaluations', 'evaluationAttempts', 'grades', 'certificates',
       'messages', 'conversations', 'notifications', 'supportTickets',
-      'activities', 'userPoints', 'badges', 'userBadges',
-      'learningStreaks', 'progressActivities', 'userSettings', 'systemMetrics',
-      'taskSubmissions', 'deadlineExtensions'
+      'activities', 'userSettings', 'systemMetrics',
+      'taskSubmissions', 'deadlineExtensions',
+      'sections', 'sectionLessonOverrides'
     ];
 
     const data: Record<string, unknown[]> = {};
     
-    for (const collection of collections) {
-      data[collection] = await this.getAll(collection);
+    for (const col of collections) {
+      data[col] = await this.getAll(col);
     }
 
     return data;
@@ -1415,9 +1223,9 @@ class FirebaseDataService {
    * Importar datos
    */
   async importData(data: Record<string, unknown[]>): Promise<void> {
-    for (const [collection, records] of Object.entries(data)) {
+    for (const [col, records] of Object.entries(data)) {
       for (const record of records) {
-        await this.create(collection, record as any);
+        await this.create(col, record as any);
       }
     }
   }
@@ -1444,17 +1252,14 @@ export type {
   DBSupportTicket as SupportTicket,
   DBTicketMessage as TicketMessage,
   DBActivity as Activity,
-  DBUserPoints as UserPoints,
-  DBBadge as Badge,
-  DBUserBadge as UserBadge,
-  DBLearningStreak as LearningStreak,
-  DBProgressActivity as ProgressActivity,
   DBUserSettings as UserSettings,
   DBSystemMetric as SystemMetric,
   DBForumPost as ForumPost,
   DBForumReply as ForumReply,
   DBTaskSubmission as TaskSubmission,
-  DBDeadlineExtension as DeadlineExtension
+  DBDeadlineExtension as DeadlineExtension,
+  DBSection as Section,
+  DBSectionLessonOverride as SectionLessonOverride
 };
 
 export default firebaseDB;

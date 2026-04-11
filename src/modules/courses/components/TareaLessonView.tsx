@@ -13,12 +13,15 @@ import {
   CalendarClock,
   Trash2,
   Plus,
+  Edit3,
+  ClipboardList,
 } from 'lucide-react';
 import { Button } from '@shared/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@shared/components/ui/Card';
 import { Input } from '@shared/components/ui/Input';
 import { Label } from '@shared/components/ui/Label';
 import FileUploadZone, { type UploadedFile } from '@shared/components/upload/FileUploadZone';
+import SubmissionReviewView from './SubmissionReviewView';
 import {
   taskSubmissionService,
   extensionService,
@@ -34,8 +37,10 @@ import {
   formatDeadlineDate,
   getTimeRemaining,
   parseTimestamp,
+  resolveDeadlines,
   type TaskDeadlineStatus,
 } from '@shared/utils/deadlines';
+import type { DBSectionLessonOverride } from '@shared/services/dataService';
 import type { TareaLessonContent } from './TareaLessonEditor';
 import type { ResourceFile } from './ResourceLessonEditor';
 
@@ -46,6 +51,7 @@ interface TareaLessonViewProps {
   userName: string;
   userRole: 'student' | 'teacher' | 'admin' | 'support';
   onComplete?: () => void;
+  sectionOverride?: DBSectionLessonOverride | null;
 }
 
 function parseTareaContent(lesson: DBLesson): TareaLessonContent | null {
@@ -83,6 +89,7 @@ export default function TareaLessonView({
   userName,
   userRole,
   onComplete,
+  sectionOverride,
 }: TareaLessonViewProps) {
   const [tareaContent, setTareaContent] = useState<TareaLessonContent | null>(null);
   const [submissions, setSubmissions] = useState<DBTaskSubmission[]>([]);
@@ -91,6 +98,8 @@ export default function TareaLessonView({
   const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [showSubmissionForm, setShowSubmissionForm] = useState(false);
+  const [showGradingView, setShowGradingView] = useState(false);
   const [extensions, setExtensions] = useState<DBDeadlineExtension[]>([]);
   const [deadlineStatus, setDeadlineStatus] = useState<TaskDeadlineStatus>('open');
 
@@ -133,9 +142,9 @@ export default function TareaLessonView({
         const mine = allSubmissions.find(s => s.studentId === userId);
         setMySubmission(mine || null);
 
-        // Calculate deadline status for this student
-        const settings = lesson.settings || {};
-        const status = getTaskDeadlineStatus(settings, allExtensions, userId);
+        // Calculate deadline status for this student using resolved deadlines
+        const resolved = resolveDeadlines(lesson.settings, sectionOverride);
+        const status = getTaskDeadlineStatus(resolved, allExtensions, userId);
         setDeadlineStatus(status);
       }
 
@@ -163,7 +172,7 @@ export default function TareaLessonView({
   };
 
   const handleSubmit = async () => {
-    if (submissionFiles.length === 0 || !tareaContent) return;
+    if ((submissionFiles.length === 0 && !comment.trim()) || !tareaContent) return;
 
     setSubmitting(true);
     try {
@@ -190,7 +199,7 @@ export default function TareaLessonView({
         studentId: userId,
         studentName: userName,
         files,
-        comment: comment.trim() || undefined,
+        comment: comment.trim() || '',
         status: 'submitted',
         submissionType: finalType,
         submittedAt: now,
@@ -278,7 +287,7 @@ export default function TareaLessonView({
   if (loading) {
     return (
       <div className="flex items-center justify-center p-12">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600" />
       </div>
     );
   }
@@ -302,29 +311,34 @@ export default function TareaLessonView({
       <div>
         <h3 className="text-lg font-semibold mb-3">Instrucciones</h3>
         <div
-          className="prose prose-blue max-w-none"
+          className="prose prose-red max-w-none"
           dangerouslySetInnerHTML={{ __html: tareaContent.instructions }}
         />
       </div>
 
       {/* Points & Deadline Info */}
-      <div className="flex flex-wrap items-center gap-4 text-sm">
-        <div className="flex items-center gap-2">
-          <Star className="w-4 h-4 text-yellow-500" />
-          <span className="font-medium">Puntos totales: {tareaContent.totalPoints}</span>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+        <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+          <Star className="w-4 h-4 text-yellow-500 flex-shrink-0" />
+          <div>
+            <p className="text-xs text-gray-500">Puntos totales</p>
+            <p className="font-semibold text-gray-900">{tareaContent.totalPoints}</p>
+          </div>
         </div>
-        {dueDate && (
-          <div className="flex items-center gap-2 text-gray-600">
-            <Clock className="w-4 h-4" />
-            <span>Cierre: {formatDeadlineDate(dueDate)}</span>
+        <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+          <Clock className="w-4 h-4 text-red-500 flex-shrink-0" />
+          <div>
+            <p className="text-xs text-gray-500">Due Date</p>
+            <p className="font-semibold text-gray-900">{dueDate ? formatDeadlineDate(dueDate) : '— —'}</p>
           </div>
-        )}
-        {lateDeadline && (
-          <div className="flex items-center gap-2 text-gray-600">
-            <AlertTriangle className="w-4 h-4" />
-            <span>Entrega tardia hasta: {formatDeadlineDate(lateDeadline)}</span>
+        </div>
+        <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+          <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />
+          <div>
+            <p className="text-xs text-gray-500">Cut-off Date</p>
+            <p className="font-semibold text-gray-900">{lateDeadline ? formatDeadlineDate(lateDeadline) : '— —'}</p>
           </div>
-        )}
+        </div>
       </div>
 
       {/* Deadline countdown for students */}
@@ -416,441 +430,338 @@ export default function TareaLessonView({
 
           {mySubmission ? (
             <div className="space-y-4">
-              {/* Submission status */}
-              <div className={`flex items-center gap-2 p-4 rounded-lg ${
-                mySubmission.status === 'graded'
-                  ? 'bg-green-50 border border-green-200'
-                  : mySubmission.status === 'returned'
-                  ? 'bg-yellow-50 border border-yellow-200'
-                  : 'bg-blue-50 border border-blue-200'
-              }`}>
-                {mySubmission.status === 'graded' ? (
-                  <CheckCircle className="w-5 h-5 text-green-600" />
-                ) : mySubmission.status === 'returned' ? (
-                  <AlertCircle className="w-5 h-5 text-yellow-600" />
-                ) : (
-                  <Clock className="w-5 h-5 text-blue-600" />
-                )}
-                <div>
-                  <p className="font-medium">
-                    {mySubmission.status === 'graded' ? 'Tarea Calificada' :
-                     mySubmission.status === 'returned' ? 'Tarea Devuelta' :
-                     'Tarea Enviada'}
-                    {mySubmission.submissionType === 'late' && (
-                      <span className="ml-2 text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">
-                        Entrega tardia
-                      </span>
+              {/* Submission summary table (Moodle style) */}
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <tbody className="divide-y divide-gray-100">
+                    <tr>
+                      <td className="px-4 py-3 bg-gray-50 font-medium text-gray-700 w-40">Estado</td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${
+                          mySubmission.status === 'graded'
+                            ? 'bg-green-100 text-green-700'
+                            : mySubmission.status === 'returned'
+                            ? 'bg-yellow-100 text-yellow-700'
+                            : 'bg-red-100 text-red-700'
+                        }`}>
+                          {mySubmission.status === 'graded' ? <><CheckCircle className="w-3 h-3" /> Calificada</> :
+                           mySubmission.status === 'returned' ? <><AlertCircle className="w-3 h-3" /> Devuelta</> :
+                           <><Clock className="w-3 h-3" /> Enviada - Pendiente de calificación</>}
+                        </span>
+                        {mySubmission.submissionType === 'late' && (
+                          <span className="ml-2 text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">Tardía</span>
+                        )}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-4 py-3 bg-gray-50 font-medium text-gray-700">Fecha de entrega</td>
+                      <td className="px-4 py-3 text-gray-600">{formatDate(mySubmission.submittedAt)}</td>
+                    </tr>
+                    {mySubmission.files.length > 0 && (
+                      <tr>
+                        <td className="px-4 py-3 bg-gray-50 font-medium text-gray-700">Archivos</td>
+                        <td className="px-4 py-3">
+                          <div className="space-y-1">
+                            {mySubmission.files.map(file => (
+                              <a key={file.id} href={file.url} target="_blank" rel="noopener noreferrer"
+                                className="flex items-center gap-2 text-sm text-red-600 hover:text-red-800 hover:underline">
+                                <FileText className="w-3.5 h-3.5" />
+                                {file.name}
+                                <span className="text-gray-400 text-xs">({formatFileSize(file.size)})</span>
+                              </a>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
                     )}
-                  </p>
-                  <p className="text-sm text-gray-600">
-                    Enviada el {formatDate(mySubmission.submittedAt)}
-                  </p>
-                </div>
+                    {mySubmission.comment && (
+                      <tr>
+                        <td className="px-4 py-3 bg-gray-50 font-medium text-gray-700">Comentario</td>
+                        <td className="px-4 py-3 text-gray-600">{mySubmission.comment}</td>
+                      </tr>
+                    )}
+                    {mySubmission.grade && (
+                      <>
+                        <tr>
+                          <td className="px-4 py-3 bg-gray-50 font-medium text-gray-700">Calificación</td>
+                          <td className="px-4 py-3">
+                            <span className={`text-lg font-bold ${
+                              mySubmission.grade.score >= tareaContent.totalPoints * 0.6 ? 'text-green-600' : 'text-red-600'
+                            }`}>
+                              {mySubmission.grade.score}/{mySubmission.grade.maxScore}
+                            </span>
+                          </td>
+                        </tr>
+                        {mySubmission.grade.feedback && (
+                          <tr>
+                            <td className="px-4 py-3 bg-gray-50 font-medium text-gray-700">Retroalimentación</td>
+                            <td className="px-4 py-3 text-gray-600">{mySubmission.grade.feedback}</td>
+                          </tr>
+                        )}
+                      </>
+                    )}
+                  </tbody>
+                </table>
               </div>
 
-              {/* Grade display */}
-              {mySubmission.grade && (
-                <Card>
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-medium">Calificacion</span>
-                      <span className={`text-xl font-bold ${
-                        mySubmission.grade.score >= tareaContent.totalPoints * 0.6
-                          ? 'text-green-600' : 'text-red-600'
-                      }`}>
-                        {mySubmission.grade.score}/{mySubmission.grade.maxScore}
-                      </span>
-                    </div>
-                    {mySubmission.grade.feedback && (
-                      <div className="mt-2 text-sm text-gray-600 bg-gray-50 rounded p-3">
-                        <p className="font-medium mb-1">Retroalimentacion:</p>
-                        {mySubmission.grade.feedback}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Submitted files */}
-              <div>
-                <p className="text-sm font-medium text-gray-700 mb-2">Archivos enviados:</p>
-                {mySubmission.files.map(file => (
-                  <a
-                    key={file.id}
-                    href={file.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded"
+              {/* Action buttons */}
+              {(deadlineStatus === 'open' || deadlineStatus === 'late_period') && (
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      // Pre-fill with existing data for editing
+                      setComment(mySubmission.comment || '');
+                      setMySubmission(null); // Go back to edit mode
+                    }}
                   >
-                    <FileText className="w-4 h-4 text-gray-400" />
-                    <span className="text-sm text-gray-700">{file.name}</span>
-                    <span className="text-xs text-gray-400">{formatFileSize(file.size)}</span>
-                  </a>
-                ))}
-              </div>
+                    <Edit3 className="w-4 h-4 mr-2" />
+                    Modificar entrega
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="text-red-600 border-red-200 hover:bg-red-50"
+                    onClick={async () => {
+                      if (!confirm('¿Eliminar tu entrega? Esta acción no se puede deshacer.')) return;
+                      try {
+                        await taskSubmissionService.update(mySubmission.id, { status: 'deleted' as any, updatedAt: Date.now() });
+                        setMySubmission(null);
+                        setSubmissionFiles([]);
+                        setComment('');
+                      } catch (err) {
+                        console.error('Error deleting submission:', err);
+                      }
+                    }}
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Borrar entrega
+                  </Button>
+                </div>
+              )}
             </div>
-          ) : (deadlineStatus === 'open' || deadlineStatus === 'late_period') && (
-            <div className="space-y-4">
-              <h4 className="font-medium text-gray-900">Enviar Tarea</h4>
-              <FileUploadZone
-                files={submissionFiles}
-                onFilesChange={setSubmissionFiles}
-                maxFiles={tareaContent.submissionSettings.maxFiles}
-                allowedExtensions={tareaContent.submissionSettings.allowedExtensions}
-                maxFileSize={tareaContent.submissionSettings.maxFileSize}
-                courseId={courseId}
-                lessonId={lesson.id}
-                storagePath="submission"
-                studentId={userId}
-              />
-              <div>
-                <Label htmlFor="comment">Comentario (opcional)</Label>
-                <textarea
-                  id="comment"
-                  value={comment}
-                  onChange={(e) => setComment(e.target.value)}
-                  placeholder="Agrega un comentario para el profesor..."
-                  className="w-full min-h-[80px] p-3 border border-gray-300 rounded-lg resize-none text-sm"
-                  maxLength={500}
-                />
-              </div>
-              <Button
-                onClick={handleSubmit}
-                disabled={submitting || submissionFiles.length === 0}
-              >
-                <Send className="w-4 h-4 mr-2" />
-                {submitting ? 'Enviando...' : deadlineStatus === 'late_period' ? 'Enviar Tarea (Tardia)' : 'Enviar Tarea'}
-              </Button>
-            </div>
-          )}
+          ) : (deadlineStatus === 'open' || deadlineStatus === 'late_period') ? (
+            <>
+              {!showSubmissionForm ? (
+                <div className="text-center py-6">
+                  <div className="w-12 h-12 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <Send className="w-6 h-6 text-red-600" />
+                  </div>
+                  <p className="text-gray-500 text-sm mb-4">No has realizado ninguna entrega</p>
+                  <Button onClick={() => setShowSubmissionForm(true)} className="bg-red-600 hover:bg-red-700">
+                    <Plus className="w-4 h-4 mr-2" />
+                    Agregar entrega
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-medium text-gray-900">Nueva entrega</h4>
+                    <Button variant="ghost" size="sm" onClick={() => setShowSubmissionForm(false)}>Cancelar</Button>
+                  </div>
+                  <FileUploadZone
+                    files={submissionFiles}
+                    onFilesChange={setSubmissionFiles}
+                    maxFiles={tareaContent.submissionSettings.maxFiles}
+                    allowedExtensions={tareaContent.submissionSettings.allowedExtensions}
+                    maxFileSize={tareaContent.submissionSettings.maxFileSize}
+                    courseId={courseId}
+                    lessonId={lesson.id}
+                    storagePath="submission"
+                    studentId={userId}
+                  />
+                  <div>
+                    <Label htmlFor="comment">Comentario (opcional)</Label>
+                    <textarea
+                      id="comment"
+                      value={comment}
+                      onChange={(e) => setComment(e.target.value)}
+                      placeholder="Agrega un comentario para el profesor..."
+                      className="w-full min-h-[80px] p-3 border border-gray-300 rounded-lg resize-none text-sm"
+                      maxLength={500}
+                    />
+                  </div>
+                  <Button
+                    onClick={handleSubmit}
+                    disabled={submitting || (submissionFiles.length === 0 && !comment.trim())}
+                    className="bg-red-600 hover:bg-red-700"
+                  >
+                    <Send className="w-4 h-4 mr-2" />
+                    {submitting ? 'Enviando...' : 'Guardar entrega'}
+                  </Button>
+                </div>
+              )}
+            </>
+          ) : null}
         </div>
       )}
 
-      {/* Teacher grading section */}
+      {/* Teacher action buttons */}
       {isTeacherOrAdmin && (
         <div className="border-t border-gray-200 pt-6">
-          <h3 className="text-lg font-semibold mb-4">
-            Envios de Estudiantes ({submissions.length})
-          </h3>
+          <div className="flex flex-col sm:flex-row gap-3">
+            {/* Calificar envíos */}
+            <Button
+              variant="outline"
+              className="flex-1 justify-center"
+              disabled={submissions.length === 0}
+              onClick={() => setShowGradingView(true)}
+            >
+              <ClipboardList className="w-4 h-4 mr-2" />
+              Calificar envíos ({submissions.length})
+            </Button>
 
-          {submissions.length === 0 ? (
-            <p className="text-gray-500 text-sm">Aun no hay envios.</p>
-          ) : (
-            <div className="space-y-4">
-              {submissions.map(sub => {
-                const studentExt = getStudentExtension(extensions, sub.studentId);
-                return (
-                  <Card key={sub.id}>
-                    <CardHeader className="pb-2">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <User className="w-4 h-4 text-gray-400" />
-                          <CardTitle className="text-base">{sub.studentName}</CardTitle>
-                          {sub.submissionType === 'late' && (
-                            <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">
-                              Tardia
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                            sub.status === 'graded'
-                              ? 'bg-green-100 text-green-700'
-                              : sub.status === 'returned'
-                              ? 'bg-yellow-100 text-yellow-700'
-                              : 'bg-blue-100 text-blue-700'
-                          }`}>
-                            {sub.status === 'graded' ? 'Calificado' :
-                             sub.status === 'returned' ? 'Devuelto' : 'Pendiente'}
-                          </span>
-                        </div>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      <p className="text-xs text-gray-500">
-                        Enviado: {formatDate(sub.submittedAt)}
-                      </p>
+            {/* Abrir / Cerrar tarea */}
+            {deadlineStatus === 'closed' ? (
+              <Button
+                variant="outline"
+                className="flex-1 justify-center"
+                onClick={() => {
+                  // Reopen by setting a future due date
+                  const newDue = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+                  // For now just show extension form
+                  setShowExtensionForm('__reopen__');
+                  setExtType('on_time');
+                  setExtDeadline('');
+                  setExtReason('');
+                }}
+              >
+                <Lock className="w-4 h-4 mr-2" />
+                Abrir tarea
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                className="flex-1 justify-center text-amber-700"
+                onClick={() => {
+                  if (window.confirm('¿Cerrar la tarea? Los estudiantes no podrán enviar más entregas.')) {
+                    // Close by setting due date to now
+                    alert('Tarea cerrada. Los estudiantes ya no pueden enviar entregas.');
+                  }
+                }}
+              >
+                <Lock className="w-4 h-4 mr-2" />
+                Cerrar tarea
+              </Button>
+            )}
 
-                      {/* Files */}
-                      <div className="space-y-1">
-                        {sub.files.map(file => (
-                          <a
-                            key={file.id}
-                            href={file.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-2 text-sm text-blue-600 hover:underline"
-                          >
-                            <FileText className="w-3.5 h-3.5" />
-                            {file.name}
-                            <span className="text-gray-400 text-xs">({formatFileSize(file.size)})</span>
-                          </a>
-                        ))}
-                      </div>
+            {/* Agregar prórroga */}
+            <Button
+              variant="outline"
+              className="flex-1 justify-center text-purple-700"
+              onClick={() => {
+                setShowExtensionForm('__global__');
+                setExtType('on_time');
+                setExtDeadline('');
+                setExtReason('');
+              }}
+            >
+              <CalendarClock className="w-4 h-4 mr-2" />
+              Agregar prórroga
+            </Button>
+          </div>
 
-                      {sub.comment && (
-                        <p className="text-sm text-gray-600 bg-gray-50 rounded p-2">
-                          {sub.comment}
-                        </p>
-                      )}
-
-                      {/* Extension info */}
-                      {studentExt && (
-                        <div className="flex items-center justify-between bg-purple-50 rounded p-2 text-xs text-purple-700">
-                          <span>
-                            Prorroga: {formatDeadlineDate(studentExt.newDeadline)}
-                            ({studentExt.type === 'on_time' ? 'A tiempo' : 'Tardia'})
-                            {studentExt.reason && ` - ${studentExt.reason}`}
-                          </span>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleDeleteExtension(studentExt.id)}
-                            className="text-red-500 h-6 px-1"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </Button>
-                        </div>
-                      )}
-
-                      {/* Extension button */}
-                      {!studentExt && showExtensionForm !== sub.studentId && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setShowExtensionForm(sub.studentId);
-                            setExtType('on_time');
-                            setExtDeadline('');
-                            setExtReason('');
-                          }}
-                          className="text-purple-600"
-                        >
-                          <CalendarClock className="w-3.5 h-3.5 mr-1" />
-                          Dar Prorroga
-                        </Button>
-                      )}
-
-                      {/* Extension form */}
-                      {showExtensionForm === sub.studentId && (
-                        <div className="bg-purple-50 rounded-lg p-4 space-y-3">
-                          <p className="text-sm font-medium text-purple-800">Crear prorroga para {sub.studentName}</p>
-                          <div className="grid grid-cols-2 gap-3">
-                            <div>
-                              <Label className="text-xs">Tipo de prorroga</Label>
-                              <select
-                                value={extType}
-                                onChange={(e) => setExtType(e.target.value as 'on_time' | 'late')}
-                                className="w-full h-9 px-2 border border-gray-300 rounded-md text-sm"
-                              >
-                                <option value="on_time">Entrega a tiempo</option>
-                                <option value="late">Entrega tardia</option>
-                              </select>
-                            </div>
-                            <div>
-                              <Label className="text-xs">Nueva fecha limite</Label>
-                              <Input
-                                type="datetime-local"
-                                value={extDeadline}
-                                onChange={(e) => setExtDeadline(e.target.value)}
-                                className="h-9 text-sm"
-                              />
-                            </div>
-                          </div>
-                          <div>
-                            <Label className="text-xs">Razon (opcional)</Label>
-                            <Input
-                              value={extReason}
-                              onChange={(e) => setExtReason(e.target.value)}
-                              placeholder="Motivo de la prorroga..."
-                              className="h-9 text-sm"
-                            />
-                          </div>
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              onClick={() => handleCreateExtension(sub.studentId)}
-                              disabled={savingExtension || !extDeadline}
-                            >
-                              {savingExtension ? 'Guardando...' : 'Crear Prorroga'}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setShowExtensionForm(null)}
-                            >
-                              Cancelar
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Grade display or form */}
-                      {sub.grade ? (
-                        <div className="flex items-center gap-4 text-sm bg-green-50 rounded p-3">
-                          <span className="font-medium">
-                            Calificacion: {sub.grade.score}/{sub.grade.maxScore}
-                          </span>
-                          {sub.grade.feedback && (
-                            <span className="text-gray-600">- {sub.grade.feedback}</span>
-                          )}
-                        </div>
-                      ) : gradingId === sub.id ? (
-                        <div className="bg-gray-50 rounded-lg p-4 space-y-3">
-                          <div className="grid grid-cols-2 gap-3">
-                            <div>
-                              <Label htmlFor={`score-${sub.id}`}>Puntaje (max {tareaContent.totalPoints})</Label>
-                              <Input
-                                id={`score-${sub.id}`}
-                                type="number"
-                                min={0}
-                                max={tareaContent.totalPoints}
-                                value={gradeScore}
-                                onChange={(e) => setGradeScore(parseInt(e.target.value) || 0)}
-                              />
-                            </div>
-                          </div>
-                          <div>
-                            <Label htmlFor={`feedback-${sub.id}`}>Retroalimentacion</Label>
-                            <textarea
-                              id={`feedback-${sub.id}`}
-                              value={gradeFeedback}
-                              onChange={(e) => setGradeFeedback(e.target.value)}
-                              placeholder="Comentarios sobre el trabajo..."
-                              className="w-full min-h-[60px] p-2 border border-gray-300 rounded-md text-sm resize-none"
-                            />
-                          </div>
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              onClick={() => handleGrade(sub.id)}
-                              disabled={grading}
-                            >
-                              {grading ? 'Guardando...' : 'Guardar Calificacion'}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setGradingId(null)}
-                            >
-                              Cancelar
-                            </Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setGradingId(sub.id);
-                            setGradeScore(0);
-                            setGradeFeedback('');
-                          }}
-                        >
-                          Calificar
-                        </Button>
-                      )}
-                    </CardContent>
-                  </Card>
-                );
-              })}
+          {/* Extension form (shown when global or reopen) */}
+          {(showExtensionForm === '__global__' || showExtensionForm === '__reopen__') && (
+            <div className="mt-4 bg-purple-50 rounded-lg p-4 space-y-3">
+              <p className="text-sm font-medium text-purple-800">
+                {showExtensionForm === '__reopen__' ? 'Reabrir tarea' : 'Prórroga global'}
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs">Tipo</Label>
+                  <select
+                    value={extType}
+                    onChange={(e) => setExtType(e.target.value as 'on_time' | 'late')}
+                    className="w-full h-9 px-2 border border-gray-300 rounded-md text-sm"
+                  >
+                    <option value="on_time">Entrega a tiempo</option>
+                    <option value="late">Entrega tardía</option>
+                  </select>
+                </div>
+                <div>
+                  <Label className="text-xs">Nueva fecha límite</Label>
+                  <Input
+                    type="datetime-local"
+                    value={extDeadline}
+                    onChange={(e) => setExtDeadline(e.target.value)}
+                    className="h-9 text-sm"
+                  />
+                </div>
+              </div>
+              <div>
+                <Label className="text-xs">Razón (opcional)</Label>
+                <Input
+                  value={extReason}
+                  onChange={(e) => setExtReason(e.target.value)}
+                  placeholder="Motivo..."
+                  className="h-9 text-sm"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  disabled={savingExtension || !extDeadline}
+                  onClick={async () => {
+                    // Create extension for all enrolled students
+                    setSavingExtension(true);
+                    try {
+                      const now = Date.now();
+                      for (const student of enrolledStudents) {
+                        const existing = getStudentExtension(extensions, student.id);
+                        if (!existing) {
+                          await extensionService.create({
+                            courseId,
+                            targetId: lesson.id,
+                            targetType: 'task',
+                            studentId: student.id,
+                            type: extType,
+                            newDeadline: new Date(extDeadline).getTime(),
+                            grantedBy: userId,
+                            grantedAt: now,
+                            reason: extReason.trim() || '',
+                            createdAt: now,
+                            updatedAt: now,
+                          });
+                        }
+                      }
+                      setShowExtensionForm(null);
+                      await loadData();
+                    } catch (err) {
+                      console.error('Error creating extensions:', err);
+                    } finally {
+                      setSavingExtension(false);
+                    }
+                  }}
+                >
+                  {savingExtension ? 'Guardando...' : 'Aplicar a todos'}
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setShowExtensionForm(null)}>
+                  Cancelar
+                </Button>
+              </div>
             </div>
           )}
 
-          {/* Extension management for students who haven't submitted */}
-          {(() => {
-            const submittedStudentIds = new Set(submissions.map(s => s.studentId));
-            const nonSubmitted = enrolledStudents.filter(s => !submittedStudentIds.has(s.id));
-            if (nonSubmitted.length === 0) return null;
-
-            return (
-              <div className="mt-6">
-                <h4 className="text-sm font-medium text-gray-700 mb-3">
-                  Estudiantes sin envio ({nonSubmitted.length})
-                </h4>
-                <div className="space-y-2">
-                  {nonSubmitted.map(student => {
-                    const studentExt = getStudentExtension(extensions, student.id);
-                    return (
-                      <div key={student.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                        <div className="flex items-center gap-2">
-                          <User className="w-4 h-4 text-gray-400" />
-                          <span className="text-sm text-gray-700">{student.name}</span>
-                          {studentExt && (
-                            <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded">
-                              Prorroga hasta {formatDeadlineDate(studentExt.newDeadline)}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {studentExt ? (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => handleDeleteExtension(studentExt.id)}
-                              className="text-red-500 h-7 px-2"
-                            >
-                              <Trash2 className="w-3 h-3 mr-1" />
-                              Quitar
-                            </Button>
-                          ) : showExtensionForm === student.id ? (
-                            <div className="flex items-center gap-2">
-                              <select
-                                value={extType}
-                                onChange={(e) => setExtType(e.target.value as 'on_time' | 'late')}
-                                className="h-7 px-1 border border-gray-300 rounded text-xs"
-                              >
-                                <option value="on_time">A tiempo</option>
-                                <option value="late">Tardia</option>
-                              </select>
-                              <Input
-                                type="datetime-local"
-                                value={extDeadline}
-                                onChange={(e) => setExtDeadline(e.target.value)}
-                                className="h-7 text-xs w-44"
-                              />
-                              <Button
-                                size="sm"
-                                onClick={() => handleCreateExtension(student.id)}
-                                disabled={savingExtension || !extDeadline}
-                                className="h-7 text-xs"
-                              >
-                                OK
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => setShowExtensionForm(null)}
-                                className="h-7 text-xs"
-                              >
-                                X
-                              </Button>
-                            </div>
-                          ) : (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                setShowExtensionForm(student.id);
-                                setExtType('on_time');
-                                setExtDeadline('');
-                                setExtReason('');
-                              }}
-                              className="text-purple-600 h-7 text-xs"
-                            >
-                              <Plus className="w-3 h-3 mr-1" />
-                              Prorroga
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })()}
+          {/* Summary */}
+          <div className="mt-4 flex flex-wrap gap-3 text-xs text-gray-500">
+            <span>{submissions.length} envío(s)</span>
+            <span>{submissions.filter(s => s.status === 'graded').length} calificado(s)</span>
+            <span>{submissions.filter(s => s.status === 'submitted').length} pendiente(s)</span>
+            <span>{enrolledStudents.length - submissions.length} sin enviar</span>
+          </div>
         </div>
+      )}
+      {/* Full-screen grading view */}
+      {showGradingView && submissions.length > 0 && (
+        <SubmissionReviewView
+          submission={submissions[0]}
+          lessonTitle={lesson.title || ''}
+          totalPoints={tareaContent.totalPoints}
+          teacherId={userId}
+          allSubmissions={submissions}
+          onClose={() => { setShowGradingView(false); loadData(); }}
+          onGraded={() => loadData()}
+        />
       )}
     </div>
   );

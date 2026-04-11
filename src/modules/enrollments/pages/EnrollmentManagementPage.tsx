@@ -1,27 +1,28 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAuthStore } from '@app/store/authStore';
-import { dataService } from '@shared/services/dataService';
-import type { DBUser, DBCourse, DBEnrollment } from '@shared/services/dataService';
-import { 
-  Users, 
-  UserPlus, 
-  Search, 
-  Mail,
+import { dataService, sectionService } from '@shared/services/dataService';
+import type { DBUser, DBCourse, DBEnrollment, DBSection } from '@shared/services/dataService';
+import {
+  Users,
+  UserPlus,
+  Search,
   Clock,
   Award,
-  Book,
   CheckCircle,
   XCircle,
-  AlertTriangle
+  AlertTriangle,
+  Download,
+  X,
+  Loader2,
 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@shared/components/ui/Card';
+import { Card, CardContent } from '@shared/components/ui/Card';
 import { Button } from '@shared/components/ui/Button';
 import { Input } from '@shared/components/ui/Input';
 
 interface EnrollmentData extends Omit<DBEnrollment, 'progress'> {
   user?: DBUser;
   course?: DBCourse;
-  progress: number; // Simple number for display
+  progress: number;
 }
 
 interface EnrollmentStats {
@@ -42,8 +43,15 @@ export default function EnrollmentManagementPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [courseFilter, setCourseFilter] = useState<string>('all');
   const [selectedEnrollments, setSelectedEnrollments] = useState<Set<string>>(new Set());
+
+  // Modal state
   const [showEnrollModal, setShowEnrollModal] = useState(false);
-  const [enrollFormData, setEnrollFormData] = useState({ userId: '', courseId: '' });
+  const [modalCourseId, setModalCourseId] = useState('');
+  const [modalSectionId, setModalSectionId] = useState('');
+  const [modalSections, setModalSections] = useState<DBSection[]>([]);
+  const [modalSelectedStudents, setModalSelectedStudents] = useState<Set<string>>(new Set());
+  const [modalSearch, setModalSearch] = useState('');
+  const [enrolling, setEnrolling] = useState(false);
 
   const isAdmin = user?.role === 'admin';
   const isTeacher = user?.role === 'teacher';
@@ -56,39 +64,31 @@ export default function EnrollmentManagementPage() {
     if (!user) return;
     setLoading(true);
     try {
-      // Load all data in parallel
       const [enrollmentsData, usersData, coursesData] = await Promise.all([
         dataService.enrollments.getAll(),
         dataService.users.getAll(),
         dataService.courses.getAll()
       ]);
 
-      // Filter courses for teachers - only their own courses
       let filteredCourses = coursesData;
       if (isTeacher) {
         filteredCourses = coursesData.filter(c => c.instructorId === user.id);
       }
 
-      // Get course IDs that this user can manage
       const managedCourseIds = new Set(filteredCourses.map(c => c.id));
-
-      // Create lookup maps for faster access
       const usersMap = new Map(usersData.map(u => [u.id, u]));
       const coursesMap = new Map(coursesData.map(c => [c.id, c]));
 
-      // Filter enrollments - teachers only see enrollments in their courses
       const filteredEnrollments = enrollmentsData.filter(e =>
         isAdmin || managedCourseIds.has(e.courseId)
       );
 
-      // Enrich enrollments with user and course data
       const enrichedEnrollments: EnrollmentData[] = filteredEnrollments.map(enrollment => ({
         ...enrollment,
         user: usersMap.get(enrollment.userId),
         course: coursesMap.get(enrollment.courseId)
       }));
 
-      // Get only students for the enrollment modal
       const studentUsers = usersData.filter(u => u.role === 'student');
 
       setEnrollments(enrichedEnrollments);
@@ -106,24 +106,15 @@ export default function EnrollmentManagementPage() {
       const enrollment = enrollments.find(e => e.id === enrollmentId);
       if (!enrollment) return;
 
-      const updatedEnrollment = {
-        ...enrollment,
-        status,
-        lastUpdated: Date.now()
-      };
-
       await dataService.enrollments.update(enrollmentId, {
-        ...updatedEnrollment,
-        status: status as 'active' | 'completed' | 'paused' | 'cancelled'
-      });
-      
-      // Update local state
-      setEnrollments(prev =>
-        prev.map(e => e.id === enrollmentId ? { ...e, status: status as 'active' | 'completed' | 'paused' | 'cancelled' } : e)
-      );
+        ...enrollment,
+        status: status as 'active' | 'completed' | 'paused' | 'cancelled',
+        lastUpdated: Date.now()
+      } as any);
 
-      // TODO: Send notification to student
-      console.log(`Enrollment ${enrollmentId} status changed to ${status}`);
+      setEnrollments(prev =>
+        prev.map(e => e.id === enrollmentId ? { ...e, status: status as any } : e)
+      );
     } catch (error) {
       console.error('Error updating enrollment:', error);
       alert('Error al actualizar la inscripción');
@@ -132,71 +123,129 @@ export default function EnrollmentManagementPage() {
 
   const bulkUpdateStatus = async (status: string) => {
     if (selectedEnrollments.size === 0) return;
-
     try {
-      const updates = Array.from(selectedEnrollments).map(id =>
-        updateEnrollmentStatus(id, status)
+      await Promise.all(
+        Array.from(selectedEnrollments).map(id => updateEnrollmentStatus(id, status))
       );
-      
-      await Promise.all(updates);
       setSelectedEnrollments(new Set());
-      alert(`Se actualizaron ${selectedEnrollments.size} inscripciones`);
     } catch (error) {
       console.error('Error in bulk update:', error);
       alert('Error en la actualización masiva');
     }
   };
 
-  const createManualEnrollment = async () => {
-    if (!enrollFormData.userId || !enrollFormData.courseId) {
-      alert('Selecciona un estudiante y un curso');
-      return;
-    }
-
-    // Check if already enrolled
-    const existingEnrollment = enrollments.find(
-      e => e.userId === enrollFormData.userId && e.courseId === enrollFormData.courseId
+  // --- Multi-student enrollment ---
+  const enrolledStudentIdsForCourse = useMemo(() => {
+    if (!modalCourseId) return new Set<string>();
+    return new Set(
+      enrollments.filter(e => e.courseId === modalCourseId).map(e => e.userId)
     );
-    if (existingEnrollment) {
-      alert('El estudiante ya está inscrito en este curso');
-      return;
+  }, [modalCourseId, enrollments]);
+
+  const modalFilteredStudents = useMemo(() => {
+    if (!modalSearch) return students;
+    const q = modalSearch.toLowerCase();
+    return students.filter(s =>
+      s.name.toLowerCase().includes(q) || s.email.toLowerCase().includes(q)
+    );
+  }, [students, modalSearch]);
+
+  const handleOpenEnrollModal = () => {
+    setModalCourseId('');
+    setModalSectionId('');
+    setModalSections([]);
+    setModalSelectedStudents(new Set());
+    setModalSearch('');
+    setShowEnrollModal(true);
+  };
+
+  const handleModalCourseChange = async (courseId: string) => {
+    setModalCourseId(courseId);
+    setModalSectionId('');
+    setModalSelectedStudents(new Set());
+    if (courseId) {
+      const sections = await sectionService.getByCourse(courseId);
+      setModalSections(sections.filter(s => s.status === 'activa'));
+      if (sections.length === 1) {
+        setModalSectionId(sections[0].id);
+      }
+    } else {
+      setModalSections([]);
     }
+  };
 
+  const toggleModalStudent = (studentId: string) => {
+    const next = new Set(modalSelectedStudents);
+    if (next.has(studentId)) {
+      next.delete(studentId);
+    } else {
+      next.add(studentId);
+    }
+    setModalSelectedStudents(next);
+  };
+
+  const selectAllAvailable = () => {
+    const available = modalFilteredStudents.filter(s => !enrolledStudentIdsForCourse.has(s.id));
+    if (modalSelectedStudents.size === available.length) {
+      setModalSelectedStudents(new Set());
+    } else {
+      setModalSelectedStudents(new Set(available.map(s => s.id)));
+    }
+  };
+
+  const handleBulkEnroll = async () => {
+    if (!modalCourseId || modalSelectedStudents.size === 0) return;
+    // Enforce section selection when course has active sections
+    if (modalSections.length > 0 && !modalSectionId) return;
+    setEnrolling(true);
     try {
-      const newEnrollment = {
-        userId: enrollFormData.userId,
-        courseId: enrollFormData.courseId,
-        status: 'active' as const,
-        enrolledAt: new Date().toISOString(),
-        progress: 0,
-        completedLessons: [] as string[],
-        completedModules: [] as string[],
-        totalTimeSpent: 0,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
+      const now = Date.now();
+      const promises = Array.from(modalSelectedStudents).map(userId =>
+        dataService.enrollments.create({
+          userId,
+          courseId: modalCourseId,
+          sectionId: modalSectionId || undefined,
+          status: 'active' as const,
+          enrolledAt: new Date().toISOString(),
+          progress: 0,
+          completedLessons: [] as string[],
+          completedModules: [] as string[],
+          totalTimeSpent: 0,
+          createdAt: now,
+          updatedAt: now,
+        })
+      );
+      await Promise.all(promises);
 
-      await dataService.enrollments.create(newEnrollment);
-
-      // Update course student count
-      const course = courses.find(c => c.id === enrollFormData.courseId);
+      const course = courses.find(c => c.id === modalCourseId);
       if (course) {
-        await dataService.courses.update(enrollFormData.courseId, {
-          studentsCount: (course.studentsCount || 0) + 1
+        await dataService.courses.update(modalCourseId, {
+          studentsCount: (course.studentsCount || 0) + modalSelectedStudents.size
         });
       }
 
-      await loadData(); // Reload to get enriched data
+      // Update section studentsCount
+      if (modalSectionId) {
+        const section = modalSections.find(s => s.id === modalSectionId);
+        if (section) {
+          await sectionService.update(modalSectionId, {
+            studentsCount: (section.studentsCount || 0) + modalSelectedStudents.size
+          });
+        }
+      }
+
+      await loadData();
       setShowEnrollModal(false);
-      setEnrollFormData({ userId: '', courseId: '' });
-      alert('Inscripción creada exitosamente');
     } catch (error) {
-      console.error('Error creating manual enrollment:', error);
-      alert('Error al crear la inscripción');
+      console.error('Error enrolling students:', error);
+      alert('Error al inscribir estudiantes');
+    } finally {
+      setEnrolling(false);
     }
   };
 
   const exportEnrollmentData = () => {
+    if (filteredEnrollments.length === 0) return;
     const csvData = filteredEnrollments.map(enrollment => ({
       'ID': enrollment.id,
       'Estudiante': enrollment.user?.name || 'N/A',
@@ -210,10 +259,10 @@ export default function EnrollmentManagementPage() {
 
     const csv = [
       Object.keys(csvData[0]).join(','),
-      ...csvData.map(row => Object.values(row).join(','))
+      ...csvData.map(row => Object.values(row).map(v => `"${v}"`).join(','))
     ].join('\n');
 
-    const blob = new Blob([csv], { type: 'text/csv' });
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -226,7 +275,7 @@ export default function EnrollmentManagementPage() {
 
   // Filter logic
   const filteredEnrollments = enrollments.filter(enrollment => {
-    const matchesSearch = 
+    const matchesSearch =
       enrollment.user?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       enrollment.user?.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
       enrollment.course?.title.toLowerCase().includes(searchTerm.toLowerCase());
@@ -237,7 +286,6 @@ export default function EnrollmentManagementPage() {
     return matchesSearch && matchesStatus && matchesCourse;
   });
 
-  // Calculate stats
   const stats: EnrollmentStats = enrollments.reduce(
     (acc, enrollment) => {
       acc.total++;
@@ -268,163 +316,98 @@ export default function EnrollmentManagementPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-7xl mx-auto p-6">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">
-          {isTeacher ? 'Inscripciones de Mis Cursos' : 'Gestión de Inscripciones'}
-        </h1>
-        <p className="text-gray-600">
-          {isTeacher
-            ? 'Administra las inscripciones de estudiantes en tus cursos'
-            : 'Administra las inscripciones de estudiantes a cursos'
-          }
-        </p>
-      </div>
-
+    <div className="space-y-6">
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center">
-              <Users className="w-8 h-8 text-blue-500 mr-3" />
-              <div>
-                <p className="text-2xl font-bold">{stats.total}</p>
-                <p className="text-sm text-gray-600">Total</p>
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
+        {[
+          { label: 'Total', value: stats.total, icon: Users, color: 'text-red-600' },
+          { label: 'Pendientes', value: stats.pending, icon: Clock, color: 'text-red-400' },
+          { label: 'Activas', value: stats.active, icon: CheckCircle, color: 'text-red-500' },
+          { label: 'Completadas', value: stats.completed, icon: Award, color: 'text-red-600' },
+          { label: 'Abandonadas', value: stats.dropped, icon: XCircle, color: 'text-red-300' },
+        ].map((s) => (
+          <Card key={s.label}>
+            <CardContent className="p-4">
+              <div className="flex items-center">
+                <s.icon className={`w-7 h-7 ${s.color} mr-3 flex-shrink-0`} />
+                <div>
+                  <p className="text-2xl font-bold">{s.value}</p>
+                  <p className="text-xs text-gray-500">{s.label}</p>
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center">
-              <Clock className="w-8 h-8 text-yellow-500 mr-3" />
-              <div>
-                <p className="text-2xl font-bold">{stats.pending}</p>
-                <p className="text-sm text-gray-600">Pendientes</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center">
-              <CheckCircle className="w-8 h-8 text-green-500 mr-3" />
-              <div>
-                <p className="text-2xl font-bold">{stats.active}</p>
-                <p className="text-sm text-gray-600">Activas</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center">
-              <Award className="w-8 h-8 text-purple-500 mr-3" />
-              <div>
-                <p className="text-2xl font-bold">{stats.completed}</p>
-                <p className="text-sm text-gray-600">Completadas</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center">
-              <XCircle className="w-8 h-8 text-red-500 mr-3" />
-              <div>
-                <p className="text-2xl font-bold">{stats.dropped}</p>
-                <p className="text-sm text-gray-600">Abandonadas</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
-      {/* Actions */}
-      <div className="flex flex-col sm:flex-row gap-4 mb-6">
-        <div className="flex-1">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <Input
-              placeholder="Buscar por estudiante, email o curso..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
-          </div>
+      {/* Actions bar */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="flex-1 relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+          <Input
+            placeholder="Buscar por estudiante, email o curso..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-10"
+          />
         </div>
-        
-        <div className="flex gap-2">
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg"
-          >
-            <option value="all">Todos los estados</option>
-            <option value="pending">Pendientes</option>
-            <option value="active">Activas</option>
-            <option value="completed">Completadas</option>
-            <option value="dropped">Abandonadas</option>
-          </select>
 
-          <select
-            value={courseFilter}
-            onChange={(e) => setCourseFilter(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg"
-          >
-            <option value="all">Todos los cursos</option>
-            {courses.map(course => (
-              <option key={course.id} value={course.id}>
-                {course.title}
-              </option>
-            ))}
-          </select>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg text-sm"
+        >
+          <option value="all">Todos los estados</option>
+          <option value="pending">Pendientes</option>
+          <option value="active">Activas</option>
+          <option value="completed">Completadas</option>
+          <option value="dropped">Abandonadas</option>
+        </select>
 
-          <Button onClick={exportEnrollmentData} variant="outline">
-            Exportar CSV
-          </Button>
-        </div>
+        <select
+          value={courseFilter}
+          onChange={(e) => setCourseFilter(e.target.value)}
+          className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg text-sm"
+        >
+          <option value="all">Todos los cursos</option>
+          {courses.map(course => (
+            <option key={course.id} value={course.id}>{course.title}</option>
+          ))}
+        </select>
+
+        <Button onClick={handleOpenEnrollModal} className="flex items-center gap-2">
+          <UserPlus className="h-4 w-4" />
+          Inscribir
+        </Button>
+
+        <Button onClick={exportEnrollmentData} variant="outline" className="flex items-center gap-2">
+          <Download className="h-4 w-4" />
+          CSV
+        </Button>
       </div>
 
       {/* Bulk Actions */}
       {selectedEnrollments.size > 0 && (
-        <Card className="mb-6 border-blue-200 bg-blue-50">
-          <CardContent className="p-4">
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="p-3">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-blue-800">
-                {selectedEnrollments.size} inscripciones seleccionadas
+              <span className="text-sm text-red-800 font-medium">
+                {selectedEnrollments.size} seleccionadas
               </span>
               <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  onClick={() => bulkUpdateStatus('active')}
-                  variant="outline"
-                >
+                <Button size="sm" onClick={() => bulkUpdateStatus('active')} variant="outline">
                   Activar
                 </Button>
-                <Button
-                  size="sm"
-                  onClick={() => bulkUpdateStatus('dropped')}
-                  variant="outline"
-                >
+                <Button size="sm" onClick={() => bulkUpdateStatus('dropped')} variant="outline">
                   Suspender
                 </Button>
-                <Button
-                  size="sm"
-                  onClick={() => setSelectedEnrollments(new Set())}
-                  variant="ghost"
-                >
+                <Button size="sm" onClick={() => setSelectedEnrollments(new Set())} variant="ghost">
                   Cancelar
                 </Button>
               </div>
@@ -448,15 +431,15 @@ export default function EnrollmentManagementPage() {
                       className="rounded"
                     />
                   </th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Estudiante</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Curso</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Estado</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Progreso</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Inscripción</th>
-                  <th className="px-4 py-3 text-center text-sm font-medium text-gray-500">Acciones</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Estudiante</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Curso</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Estado</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Progreso</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Acción</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
+              <tbody className="divide-y divide-gray-100">
                 {filteredEnrollments.map((enrollment) => (
                   <tr key={enrollment.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3">
@@ -469,197 +452,258 @@ export default function EnrollmentManagementPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center">
-                        <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center mr-3">
-                          <span className="text-sm font-medium text-blue-600">
-                            {enrollment.user?.name.charAt(0).toUpperCase() || '?'}
+                        <div className="w-8 h-8 bg-red-50 rounded-full flex items-center justify-center mr-3 flex-shrink-0">
+                          <span className="text-sm font-medium text-red-600">
+                            {enrollment.user?.name?.charAt(0).toUpperCase() || '?'}
                           </span>
                         </div>
-                        <div>
-                          <div className="font-medium text-gray-900">
-                            {enrollment.user?.name || 'Usuario desconocido'}
-                          </div>
-                          <div className="text-sm text-gray-500">
-                            {enrollment.user?.email || 'Email no disponible'}
-                          </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">
+                            {enrollment.user?.name || 'Desconocido'}
+                          </p>
+                          <p className="text-xs text-gray-500 truncate">
+                            {enrollment.user?.email || '—'}
+                          </p>
                         </div>
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="text-sm">
-                        <div className="font-medium text-gray-900">
-                          {enrollment.course?.title || 'Curso eliminado'}
-                        </div>
-                        <div className="text-gray-500">
-                          {enrollment.course?.category || 'Categoría N/A'}
-                        </div>
-                      </div>
+                      <p className="text-sm font-medium text-gray-900 truncate max-w-[200px]">
+                        {enrollment.course?.title || 'Eliminado'}
+                      </p>
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        enrollment.status === 'completed' ? 'bg-green-100 text-green-800' :
-                        enrollment.status === 'active' ? 'bg-blue-100 text-blue-800' :
-                        (enrollment.status as string) === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                        (enrollment.status as string) === 'dropped' ? 'bg-red-100 text-red-800' :
-                        'bg-gray-100 text-gray-800'
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                        enrollment.status === 'completed' ? 'bg-green-100 text-green-700' :
+                        enrollment.status === 'active' ? 'bg-red-100 text-red-700' :
+                        enrollment.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                        enrollment.status === 'dropped' ? 'bg-gray-100 text-gray-600' :
+                        'bg-gray-100 text-gray-600'
                       }`}>
-                        {enrollment.status === 'completed' && <CheckCircle className="w-3 h-3 mr-1" />}
-                        {enrollment.status === 'active' && <Clock className="w-3 h-3 mr-1" />}
-                        {(enrollment.status as string) === 'pending' && <AlertTriangle className="w-3 h-3 mr-1" />}
-                        {(enrollment.status as string) === 'dropped' && <XCircle className="w-3 h-3 mr-1" />}
                         {enrollment.status === 'completed' ? 'Completada' :
                          enrollment.status === 'active' ? 'Activa' :
-                         (enrollment.status as string) === 'pending' ? 'Pendiente' :
-                         (enrollment.status as string) === 'dropped' ? 'Abandonada' :
+                         enrollment.status === 'pending' ? 'Pendiente' :
+                         enrollment.status === 'dropped' ? 'Abandonada' :
                          enrollment.status}
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center">
-                        <div className="w-16 bg-gray-200 rounded-full h-2 mr-2">
-                          <div 
-                            className="bg-blue-600 h-2 rounded-full" 
+                      <div className="flex items-center gap-2">
+                        <div className="w-16 bg-gray-200 rounded-full h-1.5">
+                          <div
+                            className="bg-red-500 h-1.5 rounded-full"
                             style={{ width: `${enrollment.progress || 0}%` }}
-                          ></div>
+                          />
                         </div>
-                        <span className="text-sm text-gray-600">{enrollment.progress || 0}%</span>
+                        <span className="text-xs text-gray-600">{enrollment.progress || 0}%</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-500">
+                    <td className="px-4 py-3 text-xs text-gray-500">
                       {new Date(enrollment.enrolledAt).toLocaleDateString('es-ES')}
                     </td>
                     <td className="px-4 py-3 text-center">
-                      <div className="flex items-center justify-center space-x-2">
-                        <select
-                          value={enrollment.status}
-                          onChange={(e) => updateEnrollmentStatus(enrollment.id, e.target.value)}
-                          className="text-xs border border-gray-300 rounded px-2 py-1"
-                        >
-                          <option value="pending">Pendiente</option>
-                          <option value="active">Activa</option>
-                          <option value="completed">Completada</option>
-                          <option value="dropped">Abandonada</option>
-                        </select>
-                      </div>
+                      <select
+                        value={enrollment.status}
+                        onChange={(e) => updateEnrollmentStatus(enrollment.id, e.target.value)}
+                        className="text-xs border border-gray-300 rounded px-2 py-1.5"
+                      >
+                        <option value="pending">Pendiente</option>
+                        <option value="active">Activa</option>
+                        <option value="completed">Completada</option>
+                        <option value="dropped">Abandonada</option>
+                      </select>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          
+
           {filteredEnrollments.length === 0 && (
             <div className="text-center py-12">
               <Users className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
-                No se encontraron inscripciones
-              </h3>
-              <p className="text-gray-600">
-                No hay inscripciones que coincidan con los filtros aplicados.
-              </p>
+              <p className="text-gray-500">No se encontraron inscripciones</p>
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Quick Actions Card */}
-      <Card className="mt-6">
-        <CardHeader>
-          <CardTitle>Acciones Rápidas</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="text-center p-4 border rounded-lg">
-              <UserPlus className="w-8 h-8 text-blue-500 mx-auto mb-2" />
-              <h4 className="font-medium mb-2">Inscripción Manual</h4>
-              <p className="text-sm text-gray-600 mb-3">
-                Inscribe manualmente a un estudiante en un curso
-              </p>
-              <Button size="sm" variant="outline" onClick={() => setShowEnrollModal(true)}>
-                Inscribir Estudiante
-              </Button>
-            </div>
-
-            <div className="text-center p-4 border rounded-lg">
-              <Mail className="w-8 h-8 text-green-500 mx-auto mb-2" />
-              <h4 className="font-medium mb-2">Enviar Recordatorios</h4>
-              <p className="text-sm text-gray-600 mb-3">
-                Envía recordatorios a estudiantes inactivos
-              </p>
-              <Button size="sm" variant="outline">
-                Enviar Notificaciones
-              </Button>
-            </div>
-
-            <div className="text-center p-4 border rounded-lg">
-              <Book className="w-8 h-8 text-purple-500 mx-auto mb-2" />
-              <h4 className="font-medium mb-2">Generar Reportes</h4>
-              <p className="text-sm text-gray-600 mb-3">
-                Genera reportes de inscripciones y progreso
-              </p>
-              <Button size="sm" variant="outline">
-                Ver Reportes
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Enrollment Modal */}
+      {/* Enrollment Modal - Course first, then multi-select students */}
       {showEnrollModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h3 className="text-lg font-semibold mb-4">Inscribir Estudiante</h3>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-lg max-h-[85vh] flex flex-col shadow-xl">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <h3 className="text-lg font-semibold text-gray-900">Inscribir Estudiantes</h3>
+              <button
+                onClick={() => setShowEnrollModal(false)}
+                className="p-1 text-gray-400 hover:text-gray-600 rounded"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
 
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Estudiante
-                </label>
-                <select
-                  value={enrollFormData.userId}
-                  onChange={(e) => setEnrollFormData({ ...enrollFormData, userId: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Selecciona un estudiante</option>
-                  {students.map(student => (
-                    <option key={student.id} value={student.id}>
-                      {student.name} ({student.email})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+              {/* Step 1: Select course */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Curso
                 </label>
                 <select
-                  value={enrollFormData.courseId}
-                  onChange={(e) => setEnrollFormData({ ...enrollFormData, courseId: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  value={modalCourseId}
+                  onChange={(e) => handleModalCourseChange(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-sm"
                 >
                   <option value="">Selecciona un curso</option>
                   {courses.map(course => (
-                    <option key={course.id} value={course.id}>
-                      {course.title}
-                    </option>
+                    <option key={course.id} value={course.id}>{course.title}</option>
                   ))}
                 </select>
               </div>
+
+              {/* Step 1.5: Select section */}
+              {modalCourseId && modalSections.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Sección
+                  </label>
+                  <select
+                    value={modalSectionId}
+                    onChange={(e) => setModalSectionId(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-sm"
+                  >
+                    <option value="">Selecciona una sección</option>
+                    {modalSections.map(section => (
+                      <option key={section.id} value={section.id}>
+                        {section.title} ({section.studentsCount} estudiantes)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {modalCourseId && modalSections.length > 0 && !modalSectionId && (
+                <p className="text-sm text-amber-600 bg-amber-50 p-3 rounded-lg">
+                  Selecciona una sección para inscribir estudiantes.
+                </p>
+              )}
+
+              {/* Step 2: Student list (only visible after course+section selected) */}
+              {modalCourseId && (modalSections.length === 0 || modalSectionId) && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-medium text-gray-700">
+                      Estudiantes
+                    </label>
+                    <button
+                      type="button"
+                      onClick={selectAllAvailable}
+                      className="text-xs text-red-600 hover:text-red-800 font-medium"
+                    >
+                      {modalSelectedStudents.size > 0 &&
+                       modalSelectedStudents.size === modalFilteredStudents.filter(s => !enrolledStudentIdsForCourse.has(s.id)).length
+                        ? 'Deseleccionar todos'
+                        : 'Seleccionar todos'}
+                    </button>
+                  </div>
+
+                  {/* Search students */}
+                  <div className="relative mb-3">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-3.5 h-3.5" />
+                    <input
+                      type="text"
+                      placeholder="Buscar estudiante..."
+                      value={modalSearch}
+                      onChange={(e) => setModalSearch(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                    />
+                  </div>
+
+                  {/* Student list */}
+                  <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-[300px] overflow-y-auto">
+                    {modalFilteredStudents.length === 0 ? (
+                      <div className="text-center py-6 text-sm text-gray-500">
+                        No se encontraron estudiantes
+                      </div>
+                    ) : (
+                      modalFilteredStudents.map((student) => {
+                        const alreadyEnrolled = enrolledStudentIdsForCourse.has(student.id);
+                        const isSelected = modalSelectedStudents.has(student.id);
+
+                        return (
+                          <label
+                            key={student.id}
+                            className={`flex items-center px-3 py-2.5 cursor-pointer transition-colors ${
+                              alreadyEnrolled
+                                ? 'bg-gray-50 opacity-60 cursor-not-allowed'
+                                : isSelected
+                                ? 'bg-red-50'
+                                : 'hover:bg-gray-50'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              disabled={alreadyEnrolled}
+                              onChange={() => !alreadyEnrolled && toggleModalStudent(student.id)}
+                              className="rounded border-gray-300 text-red-600 focus:ring-red-500 mr-3"
+                            />
+                            <div className="w-7 h-7 bg-red-50 rounded-full flex items-center justify-center mr-3 flex-shrink-0">
+                              <span className="text-xs font-medium text-red-600">
+                                {student.name.charAt(0).toUpperCase()}
+                              </span>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-900 truncate">
+                                {student.name}
+                              </p>
+                              <p className="text-xs text-gray-500 truncate">{student.email}</p>
+                            </div>
+                            {alreadyEnrolled && (
+                              <span className="text-xs text-gray-400 ml-2 flex-shrink-0">
+                                Ya inscrito
+                              </span>
+                            )}
+                          </label>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  {modalSelectedStudents.size > 0 && (
+                    <p className="text-xs text-gray-500 mt-2">
+                      {modalSelectedStudents.size} estudiante{modalSelectedStudents.size !== 1 ? 's' : ''} seleccionado{modalSelectedStudents.size !== 1 ? 's' : ''}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
 
-            <div className="flex justify-end gap-3 mt-6">
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t bg-gray-50 rounded-b-xl">
               <Button
                 variant="outline"
-                onClick={() => {
-                  setShowEnrollModal(false);
-                  setEnrollFormData({ userId: '', courseId: '' });
-                }}
+                onClick={() => setShowEnrollModal(false)}
+                disabled={enrolling}
               >
                 Cancelar
               </Button>
-              <Button onClick={createManualEnrollment}>
-                Inscribir
+              <Button
+                onClick={handleBulkEnroll}
+                disabled={!modalCourseId || modalSelectedStudents.size === 0 || enrolling || (modalSections.length > 0 && !modalSectionId)}
+              >
+                {enrolling ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Inscribiendo...
+                  </>
+                ) : (
+                  <>
+                    <UserPlus className="h-4 w-4 mr-2" />
+                    Inscribir {modalSelectedStudents.size > 0 ? `(${modalSelectedStudents.size})` : ''}
+                  </>
+                )}
               </Button>
             </div>
           </div>

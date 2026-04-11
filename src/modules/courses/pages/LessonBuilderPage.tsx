@@ -259,6 +259,23 @@ export default function LessonBuilderPage() {
       newErrors.maxAttempts = 'Debe permitir al menos 1 intento';
     }
 
+    // Due date required for quiz and tarea
+    if ((lessonType === 'quiz' || lessonType === 'tarea') && !settings.dueDate) {
+      newErrors.dueDate = 'La fecha de cierre (Due Date) es obligatoria';
+    }
+
+    // Cut-off date required for tarea
+    if (lessonType === 'tarea' && !settings.lateSubmissionDeadline) {
+      newErrors.lateSubmissionDeadline = 'La fecha de cierre definitivo (Cut-off Date) es obligatoria';
+    }
+
+    // Cut-off must be after due date
+    if (lessonType === 'tarea' && settings.dueDate && settings.lateSubmissionDeadline) {
+      if (new Date(settings.lateSubmissionDeadline) <= new Date(settings.dueDate)) {
+        newErrors.lateSubmissionDeadline = 'El Cut-off Date debe ser posterior al Due Date';
+      }
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -726,50 +743,22 @@ export default function LessonBuilderPage() {
               </div>
             )}
 
-            {/* Availability Settings */}
-            <div className="space-y-4">
-              <h3 className="font-medium">Disponibilidad</h3>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="availableFrom">Disponible desde</Label>
-                  <Input
-                    id="availableFrom"
-                    type="datetime-local"
-                    value={settings.availableFrom || ''}
-                    onChange={(e) => setSettings(prev => ({
-                      ...prev,
-                      availableFrom: e.target.value
-                    }))}
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="availableUntil">Disponible hasta</Label>
-                  <Input
-                    id="availableUntil"
-                    type="datetime-local"
-                    value={settings.availableUntil || ''}
-                    onChange={(e) => setSettings(prev => ({
-                      ...prev,
-                      availableUntil: e.target.value
-                    }))}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Tarea Deadline Settings */}
-            {lessonType === 'tarea' && (
+            {/* Due Date - for quiz and tarea */}
+            {(lessonType === 'quiz' || lessonType === 'tarea') && (
               <div className="space-y-4">
-                <h3 className="font-medium">Fechas de Entrega</h3>
+                <h3 className="font-medium">
+                  {lessonType === 'tarea' ? 'Fechas de Entrega' : 'Fecha Límite'}
+                  <span className="text-xs font-normal text-gray-400 ml-2">(por defecto para nuevas secciones)</span>
+                </h3>
                 <p className="text-sm text-gray-500">
-                  Configura las fechas límite para la entrega de la tarea
+                  {lessonType === 'tarea'
+                    ? 'Fechas por defecto. Cada sección puede sobrescribirlas.'
+                    : 'Fecha por defecto. Cada sección puede sobrescribirla.'}
                 </p>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className={`grid grid-cols-1 ${lessonType === 'tarea' ? 'md:grid-cols-2' : ''} gap-4`}>
                   <div>
-                    <Label htmlFor="dueDate">Fecha de cierre (entrega a tiempo)</Label>
+                    <Label htmlFor="dueDate">Due Date (fecha de cierre) *</Label>
                     <Input
                       id="dueDate"
                       type="datetime-local"
@@ -778,27 +767,39 @@ export default function LessonBuilderPage() {
                         ...prev,
                         dueDate: e.target.value
                       }))}
+                      className={errors.dueDate ? 'border-red-500' : ''}
                     />
-                    <p className="text-xs text-gray-500 mt-1">
-                      Después de esta fecha, la entrega se marca como tardía
-                    </p>
+                    {errors.dueDate
+                      ? <p className="text-red-500 text-xs mt-1">{errors.dueDate}</p>
+                      : <p className="text-xs text-gray-500 mt-1">
+                          {lessonType === 'tarea'
+                            ? 'Después de esta fecha, la entrega se marca como tardía'
+                            : 'Después de esta fecha, el quiz no estará disponible'}
+                        </p>
+                    }
                   </div>
 
-                  <div>
-                    <Label htmlFor="lateSubmissionDeadline">Fecha límite entrega tardía</Label>
-                    <Input
-                      id="lateSubmissionDeadline"
-                      type="datetime-local"
-                      value={settings.lateSubmissionDeadline || ''}
-                      onChange={(e) => setSettings(prev => ({
-                        ...prev,
-                        lateSubmissionDeadline: e.target.value
-                      }))}
-                    />
-                    <p className="text-xs text-gray-500 mt-1">
-                      Después de esta fecha, no se aceptan entregas
-                    </p>
-                  </div>
+                  {lessonType === 'tarea' && (
+                    <div>
+                      <Label htmlFor="lateSubmissionDeadline">Cut-off Date (cierre definitivo) *</Label>
+                      <Input
+                        id="lateSubmissionDeadline"
+                        type="datetime-local"
+                        value={settings.lateSubmissionDeadline || ''}
+                        onChange={(e) => setSettings(prev => ({
+                          ...prev,
+                          lateSubmissionDeadline: e.target.value
+                        }))}
+                        className={errors.lateSubmissionDeadline ? 'border-red-500' : ''}
+                      />
+                      {errors.lateSubmissionDeadline
+                        ? <p className="text-red-500 text-xs mt-1">{errors.lateSubmissionDeadline}</p>
+                        : <p className="text-xs text-gray-500 mt-1">
+                            Después de esta fecha, no se aceptan entregas
+                          </p>
+                      }
+                    </div>
+                  )}
                 </div>
               </div>
             )}

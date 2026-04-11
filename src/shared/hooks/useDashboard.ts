@@ -1,6 +1,8 @@
-import { useState, useEffect } from 'react';
-import { dashboardService } from '@shared/services/dataService';
-import type { DBActivity, DBSupportTicket } from '@shared/services/dataService';
+import { useState, useEffect, useCallback } from 'react';
+import { dashboardService, courseSnapshotService, sectionService, lessonService, moduleService } from '@shared/services/dataService';
+import { firebaseDB } from '@shared/services/firebaseDataService';
+import type { DBActivity, DBSupportTicket, DBCourseSnapshot, DBEnrollment } from '@shared/services/dataService';
+import { resolveDeadlines, parseTimestamp, getTimeRemaining } from '@shared/utils/deadlines';
 
 // Tipos para las estadísticas del sistema
 interface SystemStats {
@@ -137,7 +139,7 @@ export const useTeacherCourses = (teacherId: string) => {
   return { courses, loading, error };
 };
 
-// Hook para cursos del estudiante
+// Hook para cursos del estudiante (carga secciones inscritas como "cursos")
 export const useStudentCourses = (studentId: string) => {
   const [courses, setCourses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -147,8 +149,44 @@ export const useStudentCourses = (studentId: string) => {
     const fetchCourses = async () => {
       try {
         setLoading(true);
-        const data = await dashboardService.getStudentCourses(studentId);
-        setCourses(data);
+        const enrollments = await firebaseDB.getEnrollmentsByUser(studentId);
+        const results: any[] = [];
+
+        for (const enrollment of enrollments) {
+          if (!enrollment.sectionId) {
+            // Legacy enrollment without section — load course directly
+            const course = await firebaseDB.getCourseById(enrollment.courseId);
+            if (course) {
+              results.push({
+                ...course,
+                progress: enrollment.progress || 0,
+                enrollmentStatus: enrollment.status,
+                lastAccessedAt: enrollment.lastAccessedAt,
+                sectionId: null,
+              });
+            }
+            continue;
+          }
+          // Section-based enrollment
+          const section = await sectionService.getById(enrollment.sectionId);
+          if (section) {
+            results.push({
+              id: section.courseId,
+              title: section.courseTitle,
+              sectionTitle: section.title,
+              sectionId: section.id,
+              instructor: section.instructorName,
+              category: section.courseCategory,
+              level: section.courseLevel,
+              image: section.courseImage,
+              progress: enrollment.progress || 0,
+              enrollmentStatus: enrollment.status,
+              lastAccessedAt: enrollment.lastAccessedAt,
+            });
+          }
+        }
+
+        setCourses(results);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Error al cargar cursos');
       } finally {
@@ -193,6 +231,87 @@ export const useSupportTickets = (assigneeId?: string) => {
   return { tickets, loading, error };
 };
 
+// Hook for admin overview (user distribution, enrollment breakdown, top courses)
+export const useAdminOverview = () => {
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const result = await dashboardService.getAdminOverview();
+        setData(result);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Error al cargar overview');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+    const interval = setInterval(fetchData, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  return { data, loading, error };
+};
+
+// Hook for teacher performance data
+export const useTeacherPerformance = (teacherId: string) => {
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const result = await dashboardService.getTeacherPerformance(teacherId);
+        setData(result);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Error al cargar rendimiento');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (teacherId) {
+      fetchData();
+    }
+  }, [teacherId]);
+
+  return { data, loading, error };
+};
+
+// Hook for student grades summary
+export const useStudentGrades = (studentId: string) => {
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const result = await dashboardService.getStudentGradesSummary(studentId);
+        setData(result);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Error al cargar calificaciones');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (studentId) {
+      fetchData();
+    }
+  }, [studentId]);
+
+  return { data, loading, error };
+};
+
 // Hook para estadísticas de soporte
 export const useSupportStats = () => {
   const [stats, setStats] = useState<any>(null);
@@ -220,4 +339,118 @@ export const useSupportStats = () => {
   }, []);
 
   return { stats, loading, error };
+};
+
+// Hook for course snapshots (admin rollback history)
+export const useCourseSnapshots = () => {
+  const [snapshots, setSnapshots] = useState<DBCourseSnapshot[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchSnapshots = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await courseSnapshotService.getAll();
+      setSnapshots(data.sort((a, b) => b.savedAt - a.savedAt));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al cargar snapshots');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSnapshots();
+  }, [fetchSnapshots]);
+
+  const saveSnapshot = async (courseId: string, savedBy: string) => {
+    await courseSnapshotService.saveSnapshot(courseId, savedBy);
+    await fetchSnapshots();
+  };
+
+  const rollback = async (courseId: string) => {
+    await courseSnapshotService.rollback(courseId);
+    await fetchSnapshots();
+  };
+
+  return { snapshots, loading, error, saveSnapshot, rollback, refetch: fetchSnapshots };
+};
+
+// Hook for student upcoming deadlines
+export interface StudentDeadline {
+  lessonId: string;
+  lessonTitle: string;
+  courseId: string;
+  courseTitle: string;
+  sectionId?: string;
+  type: 'quiz' | 'tarea';
+  dueTimestamp: number;
+  timeRemaining: string;
+}
+
+export const useStudentDeadlines = (studentId: string) => {
+  const [deadlines, setDeadlines] = useState<StudentDeadline[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!studentId) { setLoading(false); return; }
+
+    const fetchDeadlines = async () => {
+      try {
+        setLoading(true);
+        const enrollments = await firebaseDB.getEnrollmentsByUser(studentId);
+        const activeEnrollments = enrollments.filter((e: DBEnrollment) => e.status === 'active');
+
+        const allDeadlines: StudentDeadline[] = [];
+
+        for (const enrollment of activeEnrollments) {
+          const course = await firebaseDB.getCourseById(enrollment.courseId);
+          if (!course) continue;
+
+          // Load section overrides if enrollment has sectionId
+          let overrideMap = new Map<string, any>();
+          if (enrollment.sectionId) {
+            const overrides = await sectionService.getLessonOverrides(enrollment.sectionId);
+            overrideMap = new Map(overrides.map(o => [o.lessonId, o]));
+          }
+
+          // Load all quiz/tarea lessons for this course
+          const modules = await moduleService.getByCourse(enrollment.courseId);
+          for (const mod of modules) {
+            const lessons = await lessonService.getByModule(mod.id);
+            for (const lesson of lessons) {
+              if (lesson.type !== 'quiz' && lesson.type !== 'tarea') continue;
+
+              const resolved = resolveDeadlines(lesson.settings, overrideMap.get(lesson.id));
+              const dueTs = parseTimestamp(resolved.dueDate);
+              if (!dueTs || dueTs <= Date.now()) continue;
+
+              allDeadlines.push({
+                lessonId: lesson.id,
+                lessonTitle: lesson.title,
+                courseId: enrollment.courseId,
+                courseTitle: course.title,
+                sectionId: enrollment.sectionId,
+                type: lesson.type as 'quiz' | 'tarea',
+                dueTimestamp: dueTs,
+                timeRemaining: getTimeRemaining(dueTs),
+              });
+            }
+          }
+        }
+
+        // Sort by closest due date
+        allDeadlines.sort((a, b) => a.dueTimestamp - b.dueTimestamp);
+        setDeadlines(allDeadlines);
+      } catch (err) {
+        console.error('Error loading student deadlines:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDeadlines();
+  }, [studentId]);
+
+  return { deadlines, loading };
 };

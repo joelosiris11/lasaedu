@@ -21,17 +21,14 @@ import type {
   DBNotification,
   DBSupportTicket,
   DBActivity,
-  DBUserPoints,
-  DBBadge,
-  DBUserBadge,
-  DBLearningStreak,
   DBSystemMetric,
-  DBProgressActivity,
   DBUserSettings,
   DBForumPost,
   DBForumReply,
   DBTaskSubmission,
   DBDeadlineExtension,
+  DBSection,
+  DBSectionLessonOverride,
 } from './firebaseDataService';
 
 // Re-exportar tipos para consumidores
@@ -49,17 +46,14 @@ export type {
   DBNotification,
   DBSupportTicket,
   DBActivity,
-  DBUserPoints,
-  DBBadge,
-  DBUserBadge,
-  DBLearningStreak,
   DBSystemMetric,
-  DBProgressActivity,
   DBUserSettings,
   DBForumPost,
   DBForumReply,
   DBTaskSubmission,
   DBDeadlineExtension,
+  DBSection,
+  DBSectionLessonOverride,
 };
 
 // ============================================
@@ -201,6 +195,117 @@ export const dashboardService = {
       highPriority: tickets.filter((t: DBSupportTicket) => t.priority === 'alta' || t.priority === 'urgente').length,
     };
   },
+
+  /**
+   * Admin overview: user distribution, enrollment breakdown, top courses
+   */
+  async getAdminOverview() {
+    const [users, courses, enrollments] = await Promise.all([
+      firebaseDB.getUsers(),
+      firebaseDB.getCourses(),
+      firebaseDB.getEnrollments(),
+    ]);
+
+    const usersByRole = {
+      admin: users.filter((u: DBUser) => u.role === 'admin').length,
+      teacher: users.filter((u: DBUser) => u.role === 'teacher').length,
+      student: users.filter((u: DBUser) => u.role === 'student').length,
+      support: users.filter((u: DBUser) => u.role === 'support').length,
+    };
+
+    const enrollmentsByStatus = {
+      active: enrollments.filter((e: DBEnrollment) => e.status === 'active').length,
+      completed: enrollments.filter((e: DBEnrollment) => e.status === 'completed').length,
+      paused: enrollments.filter((e: DBEnrollment) => e.status === 'paused').length,
+      cancelled: enrollments.filter((e: DBEnrollment) =>
+        e.status === 'cancelled' || e.status === 'dropped' || e.status === 'withdrawn'
+      ).length,
+    };
+
+    const topCourses = courses.map((c: DBCourse) => {
+      const courseEnrollments = enrollments.filter((e: DBEnrollment) => e.courseId === c.id);
+      const completed = courseEnrollments.filter((e: DBEnrollment) => e.status === 'completed').length;
+      const avgProgress = courseEnrollments.length > 0
+        ? Math.round(courseEnrollments.reduce((sum: number, e: DBEnrollment) => sum + (e.progress || 0), 0) / courseEnrollments.length)
+        : 0;
+      return {
+        id: c.id,
+        title: c.title,
+        enrollments: courseEnrollments.length,
+        avgProgress,
+        completionRate: courseEnrollments.length > 0 ? Math.round((completed / courseEnrollments.length) * 100) : 0,
+        status: c.status,
+      };
+    }).sort((a: any, b: any) => b.enrollments - a.enrollments).slice(0, 5);
+
+    const completionRate = enrollments.length > 0
+      ? Math.round((enrollments.filter((e: DBEnrollment) => e.status === 'completed').length / enrollments.length) * 100)
+      : 0;
+
+    return { usersByRole, enrollmentsByStatus, topCourses, completionRate };
+  },
+
+  /**
+   * Teacher performance: per-course stats with grade data
+   */
+  async getTeacherPerformance(teacherId: string) {
+    const courses = await firebaseDB.getCoursesByInstructor(teacherId);
+
+    // Fetch enrollments and grades per course in parallel, keep enrollments for reuse
+    const courseData = await Promise.all(
+      courses.map(async (course: DBCourse) => {
+        const [enrollments, courseGrades] = await Promise.all([
+          firebaseDB.getEnrollmentsByCourse(course.id),
+          firebaseDB.getGradesByCourse(course.id),
+        ]);
+        return { course, enrollments, courseGrades };
+      })
+    );
+
+    const coursePerformance = courseData.map(({ course, enrollments, courseGrades }) => {
+      const avgGrade = courseGrades.length > 0
+        ? Math.round(courseGrades.reduce((sum: number, g: DBGrade) => sum + (g.score || 0), 0) / courseGrades.length)
+        : null;
+      const avgProgress = enrollments.length > 0
+        ? Math.round(enrollments.reduce((sum: number, e: DBEnrollment) => sum + (e.progress || 0), 0) / enrollments.length)
+        : 0;
+      const completed = enrollments.filter((e: DBEnrollment) => e.status === 'completed').length;
+
+      return {
+        id: course.id,
+        title: course.title,
+        status: course.status,
+        students: enrollments.length,
+        avgProgress,
+        avgGrade,
+        completedStudents: completed,
+        activeStudents: enrollments.filter((e: DBEnrollment) => e.status === 'active').length,
+      };
+    });
+
+    // Reuse already-fetched enrollments (no duplicate queries)
+    const allEnrollments = courseData.flatMap(d => d.enrollments);
+
+    const progressDistribution = {
+      low: allEnrollments.filter((e: DBEnrollment) => (e.progress || 0) < 25).length,
+      medium: allEnrollments.filter((e: DBEnrollment) => (e.progress || 0) >= 25 && (e.progress || 0) < 50).length,
+      high: allEnrollments.filter((e: DBEnrollment) => (e.progress || 0) >= 50 && (e.progress || 0) < 75).length,
+      complete: allEnrollments.filter((e: DBEnrollment) => (e.progress || 0) >= 75).length,
+    };
+
+    return { coursePerformance, progressDistribution, totalStudents: new Set(allEnrollments.map(e => e.userId)).size };
+  },
+
+  /**
+   * Student grades summary
+   */
+  async getStudentGradesSummary(studentId: string) {
+    const grades = await firebaseDB.getGradesByStudent(studentId);
+    const avgGrade = grades.length > 0
+      ? Math.round(grades.reduce((sum: number, g: DBGrade) => sum + (g.score || 0), 0) / grades.length)
+      : null;
+    return { grades, avgGrade, totalGrades: grades.length };
+  },
 };
 
 // ============================================
@@ -234,6 +339,31 @@ export const courseService = {
   
   subscribe: (callback: (courses: DBCourse[]) => void) => 
     firebaseDB.subscribe<DBCourse>('courses', callback),
+};
+
+// ============================================
+// SECTION SERVICE
+// ============================================
+
+export const sectionService = {
+  getAll: () => firebaseDB.getSections(),
+  getById: (id: string) => firebaseDB.getSectionById(id),
+  getByCourse: (courseId: string) => firebaseDB.getSectionsByCourse(courseId),
+  getByInstructor: (instructorId: string) => firebaseDB.getSectionsByInstructor(instructorId),
+  create: (data: Omit<DBSection, 'id'>) => firebaseDB.createSection(data),
+  update: (id: string, data: Partial<DBSection>) => firebaseDB.updateSection(id, data),
+  delete: (id: string) => firebaseDB.deleteSection(id),
+
+  getLessonOverrides: (sectionId: string) => firebaseDB.getSectionLessonOverrides(sectionId),
+  saveLessonOverrides: (sectionId: string, overrides: (Omit<DBSectionLessonOverride, 'id'> & { id?: string })[]) =>
+    firebaseDB.bulkUpsertSectionLessonOverrides(sectionId, overrides),
+  upsertLessonOverride: (data: Omit<DBSectionLessonOverride, 'id'> & { id?: string }) =>
+    firebaseDB.upsertSectionLessonOverride(data),
+
+  getEnrollments: (sectionId: string) => firebaseDB.getEnrollmentsBySection(sectionId),
+
+  subscribe: (callback: (sections: DBSection[]) => void) =>
+    firebaseDB.subscribe<DBSection>('sections', callback),
 };
 
 // ============================================
@@ -485,39 +615,6 @@ export const activityService = {
 };
 
 // ============================================
-// GAMIFICATION SERVICE
-// ============================================
-
-export const gamificationService = {
-  // Puntos
-  getUserPoints: (userId: string) => firebaseDB.getUserPoints(userId),
-  createUserPoints: (userId: string) => firebaseDB.createUserPoints(userId),
-  addPoints: (userId: string, points: number, action: string, description: string) =>
-    firebaseDB.addPoints(userId, points, action, description),
-
-  // Insignias
-  getAllBadges: () => firebaseDB.getBadges(),
-  getUserBadges: (userId: string) => firebaseDB.getUserBadges(userId),
-  awardBadge: (userId: string, badgeId: string) => firebaseDB.awardBadge(userId, badgeId),
-
-  // Racha de aprendizaje
-  getUserStreak: (userId: string) => firebaseDB.getLearningStreak(userId),
-  updateStreak: (userId: string) => firebaseDB.updateStreak(userId),
-
-  // Leaderboard
-  getLeaderboard: (limit?: number) => firebaseDB.getLeaderboard(limit),
-};
-
-// ============================================
-// PROGRESS ACTIVITY SERVICE
-// ============================================
-
-export const progressActivityService = {
-  getByUser: (userId: string) => firebaseDB.getProgressActivities(userId),
-  log: (activity: Omit<DBProgressActivity, 'id'>) => firebaseDB.logProgressActivity(activity),
-};
-
-// ============================================
 // USER SETTINGS SERVICE
 // ============================================
 
@@ -588,6 +685,110 @@ export const metricsService = {
 };
 
 // ============================================
+// COURSE SNAPSHOT SERVICE (for admin rollback)
+// ============================================
+
+export interface DBCourseSnapshot {
+  id: string;
+  courseId: string;
+  courseTitle: string;
+  snapshotData: {
+    course: DBCourse;
+    modules: DBModule[];
+    lessons: DBLesson[];
+  };
+  savedAt: number;
+  savedBy: string;
+}
+
+export const courseSnapshotService = {
+  /** Get all snapshots */
+  getAll: () => firebaseDB.getAll<DBCourseSnapshot>('courseSnapshots'),
+
+  /** Get snapshot for a specific course (only one per course) */
+  async getByCourse(courseId: string): Promise<DBCourseSnapshot | null> {
+    const results = await firebaseDB.query<DBCourseSnapshot>('courseSnapshots', 'courseId', courseId);
+    return results[0] || null;
+  },
+
+  /** Save a snapshot for a course (replaces existing) */
+  async saveSnapshot(courseId: string, savedBy: string): Promise<DBCourseSnapshot> {
+    const course = await firebaseDB.getCourseById(courseId);
+    if (!course) throw new Error('Curso no encontrado');
+
+    const modules = await firebaseDB.getModulesByCourse(courseId);
+    const lessons = await firebaseDB.getLessonsByCourse(courseId);
+
+    // Check if snapshot already exists for this course
+    const existing = await this.getByCourse(courseId);
+
+    const snapshotData = {
+      courseId,
+      courseTitle: course.title,
+      snapshotData: { course, modules, lessons },
+      savedAt: Date.now(),
+      savedBy,
+    };
+
+    if (existing) {
+      await firebaseDB.update<DBCourseSnapshot>('courseSnapshots', existing.id, snapshotData);
+      return { ...existing, ...snapshotData };
+    } else {
+      return firebaseDB.create<DBCourseSnapshot>('courseSnapshots', snapshotData as any);
+    }
+  },
+
+  /** Rollback a course to its snapshot */
+  async rollback(courseId: string): Promise<boolean> {
+    const snapshot = await this.getByCourse(courseId);
+    if (!snapshot) throw new Error('No hay snapshot para este curso');
+
+    const { course, modules, lessons } = snapshot.snapshotData;
+
+    // Restore course data
+    await firebaseDB.updateCourse(courseId, {
+      title: course.title,
+      description: course.description,
+      category: course.category,
+      level: course.level,
+      duration: course.duration,
+      status: course.status,
+      image: course.image,
+      tags: course.tags,
+      requirements: course.requirements,
+      updatedAt: Date.now(),
+    });
+
+    // Restore modules - delete current and recreate from snapshot
+    const currentModules = await firebaseDB.getModulesByCourse(courseId);
+    for (const mod of currentModules) {
+      await firebaseDB.delete('modules', mod.id);
+    }
+    for (const mod of modules) {
+      await firebaseDB.create<DBModule>('modules', { ...mod, id: mod.id } as any);
+    }
+
+    // Restore lessons - delete current and recreate from snapshot
+    const currentLessons = await firebaseDB.getLessonsByCourse(courseId);
+    for (const lesson of currentLessons) {
+      await firebaseDB.delete('lessons', lesson.id);
+    }
+    for (const lesson of lessons) {
+      await firebaseDB.create<DBLesson>('lessons', { ...lesson, id: lesson.id } as any);
+    }
+
+    return true;
+  },
+
+  /** Delete a snapshot */
+  async delete(courseId: string): Promise<boolean> {
+    const snapshot = await this.getByCourse(courseId);
+    if (!snapshot) return false;
+    return firebaseDB.delete('courseSnapshots', snapshot.id);
+  },
+};
+
+// ============================================
 // UTILIDADES
 // ============================================
 
@@ -612,6 +813,7 @@ export default {
   dashboard: dashboardService,
   users: userService,
   courses: courseService,
+  sections: sectionService,
   modules: moduleService,
   lessons: lessonService,
   enrollments: enrollmentService,
@@ -623,8 +825,6 @@ export default {
   notifications: notificationService,
   supportTickets: supportTicketService,
   activities: activityService,
-  gamification: gamificationService,
-  progressActivities: progressActivityService,
   userSettings: userSettingsService,
   forums: forumService,
   taskSubmissions: taskSubmissionService,

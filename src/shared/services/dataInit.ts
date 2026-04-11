@@ -1,18 +1,17 @@
 /**
  * Data Init - Inicialización completa de datos para desarrollo/demo
  *
- * Crea 3 cursos con 7 módulos cada uno, evaluaciones, inscripciones,
- * notas aleatorias y progreso para cada estudiante.
+ * Crea 4 cursos con 7 módulos cada uno, evaluaciones, inscripciones,
+ * notas aleatorias y progreso para 16 usuarios (2 admins, 2 teachers, 10 students, 2 support).
  *
  * Uso desde consola del navegador:
- *   dataInit()           // Inicializar (sin borrar datos previos)
- *   dataInit(true)       // Borrar datos previos e inicializar
- *   dataClear()          // Solo borrar todos los datos
+ *   dataInit()           // Borrar datos previos e inicializar
+ *   dataClear()          // Solo borrar todos los datos (Firestore only)
  */
 
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
-import { ref, set, remove } from 'firebase/database';
-import { auth, database } from '@app/config/firebase';
+import { collection, doc, setDoc, getDocs, writeBatch } from 'firebase/firestore';
+import { auth, db } from '@app/config/firebase';
 import { firebaseDB } from './firebaseDataService';
 import { ENRICHED_CONTENT } from './lessonContentData';
 import type {
@@ -20,8 +19,7 @@ import type {
   DBCourse,
   DBModule,
   DBLesson,
-  DBEvaluation,
-  DBBadge
+  DBEvaluation
 } from './firebaseDataService';
 
 // ============================================
@@ -41,6 +39,290 @@ function pick<T>(arr: T[]): T {
 }
 
 const DAY = 86400000;
+
+const YOUTUBE_VIDEOS = [
+  'https://www.youtube.com/watch?v=hdI2bqOjy3c', // JavaScript Crash Course
+  'https://www.youtube.com/watch?v=UB1O30fR-EE', // HTML Crash Course
+  'https://www.youtube.com/watch?v=yfoY53QXEnI', // CSS Crash Course
+  'https://www.youtube.com/watch?v=w7ejDZ8SWv8', // React Tutorial
+  'https://www.youtube.com/watch?v=Oe421EPjeBE', // Node.js Tutorial
+  'https://www.youtube.com/watch?v=rfscVS0vtbw', // Python Tutorial
+  'https://www.youtube.com/watch?v=kqtD5dpn9C8', // CSS Flexbox
+  'https://www.youtube.com/watch?v=fYq5PXgSsbE', // Web Dev Full Course
+  'https://www.youtube.com/watch?v=pTFZrS8PCWE', // Responsive Design
+  'https://www.youtube.com/watch?v=ZYb_ZU8LNxs', // TypeScript Tutorial
+];
+
+/**
+ * Generate proper lesson content based on type.
+ * quiz → QuizLessonContent, tarea → TareaLessonContent,
+ * recurso → ResourceLessonContent, foro → ForumLessonContent,
+ * texto/video → ContentBlock array via mdToBlocks.
+ */
+function generateLessonContent(
+  title: string,
+  rawContent: string,
+  lessonType: string,
+  courseIdx: number,
+  moduleIdx: number,
+): string {
+  switch (lessonType) {
+    case 'quiz': {
+      // Build QuizLessonContent from the same question pool used by evaluations
+      const pool = getQuestionPool(courseIdx, moduleIdx);
+      const questions = pool.map((q, i) => {
+        const qId = `qlq-${i + 1}`;
+        if ((q as any).type === 'true_false') {
+          return {
+            id: qId,
+            type: 'true_false' as const,
+            question: q.q,
+            points: 10,
+            correctBool: q.ans === 'Verdadero',
+            explanation: `La respuesta correcta es: ${q.ans}`,
+          };
+        }
+        // Default: single_choice
+        const options = q.opts.map((text, oi) => ({
+          id: `${qId}-opt${oi + 1}`,
+          text,
+          isCorrect: text === q.ans,
+        }));
+        return {
+          id: qId,
+          type: 'single_choice' as const,
+          question: q.q,
+          points: 10,
+          options,
+          explanation: `La respuesta correcta es: ${q.ans}`,
+        };
+      });
+
+      return JSON.stringify({
+        questions,
+        settings: {
+          shuffleQuestions: true,
+          shuffleOptions: true,
+          showResults: true,
+          showCorrectAnswers: true,
+          passingScore: 60,
+        },
+      });
+    }
+
+    case 'tarea': {
+      // TareaLessonContent - convert markdown to HTML
+      const tareaHtml = rawContent
+        .replace(/^### (.+)/gm, '<h4>$1</h4>')
+        .replace(/^## (.+)/gm, '<h3>$1</h3>')
+        .replace(/^# (.+)/gm, '<h2>$1</h2>')
+        .replace(/^> (.+)/gm, '<blockquote>$1</blockquote>')
+        .replace(/\n\n/g, '</p><p>')
+        .replace(/\n/g, '<br/>');
+      return JSON.stringify({
+        instructions: `<p>${tareaHtml}</p>`,
+        totalPoints: 100,
+        referenceFiles: [],
+        submissionSettings: {
+          maxFiles: 3,
+          maxFileSize: 25 * 1024 * 1024,
+          allowedExtensions: ['.pdf', '.docx', '.pptx', '.xlsx', '.zip', '.jpg', '.jpeg', '.png'],
+        },
+      });
+    }
+
+    case 'recurso': {
+      // ResourceLessonContent - convert markdown to HTML
+      const recursoHtml = rawContent
+        .replace(/^### (.+)/gm, '<h4>$1</h4>')
+        .replace(/^## (.+)/gm, '<h3>$1</h3>')
+        .replace(/^# (.+)/gm, '<h2>$1</h2>')
+        .replace(/^> (.+)/gm, '<blockquote>$1</blockquote>')
+        .replace(/\n\n/g, '</p><p>')
+        .replace(/\n/g, '<br/>');
+      return JSON.stringify({
+        textContent: `<p>${recursoHtml}</p>`,
+        files: [],
+      });
+    }
+
+    case 'foro': {
+      // ForumLessonContent
+      return JSON.stringify({
+        prompt: rawContent,
+        settings: {
+          allowNewThreads: true,
+          requirePost: true,
+          requireReply: false,
+        },
+      });
+    }
+
+    default:
+      // texto, video → use mdToBlocks
+      return mdToBlocks(title, rawContent, lessonType);
+  }
+}
+
+/** Expose question pool for a given course+module index (used by both lesson & evaluation creation) */
+function getQuestionPool(courseIndex: number, moduleIndex: number) {
+  const allQuestionPools = [
+    // Course 0: Desarrollo Web
+    [
+      [
+        { q: '¿Cuál es la etiqueta HTML5 para contenido principal?', opts: ['<main>', '<div>', '<section>', '<article>'], ans: '<main>' },
+        { q: '¿Flexbox es un modelo de layout unidimensional?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+        { q: '¿Qué propiedad CSS hace un diseño responsivo?', opts: ['media queries', 'float', 'position', 'z-index'], ans: 'media queries' },
+      ],
+      [
+        { q: '¿Cuál es la diferencia entre let y const?', opts: ['const no se puede reasignar', 'let es global', 'const es más rápido', 'No hay diferencia'], ans: 'const no se puede reasignar' },
+        { q: '¿Las arrow functions tienen su propio this?', opts: ['Verdadero', 'Falso'], ans: 'Falso', type: 'true_false' as const },
+        { q: '¿Qué retorna una función async?', opts: ['Una Promise', 'Un callback', 'undefined', 'Un Observable'], ans: 'Una Promise' },
+      ],
+      [
+        { q: '¿Qué es JSX?', opts: ['Extensión de sintaxis de JavaScript', 'Un framework', 'Un lenguaje', 'Una base de datos'], ans: 'Extensión de sintaxis de JavaScript' },
+        { q: '¿useState retorna un array?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+        { q: '¿Cuándo se ejecuta useEffect sin dependencias?', opts: ['Cada render', 'Solo al montar', 'Nunca', 'Al desmontar'], ans: 'Cada render' },
+      ],
+      [
+        { q: '¿Zustand requiere un Provider?', opts: ['No', 'Sí', 'Solo en producción', 'Depende'], ans: 'No' },
+        { q: '¿React Router v6 usa element en vez de component?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+        { q: '¿Qué librería se usa para validación de formularios?', opts: ['Zod', 'Lodash', 'Axios', 'Moment'], ans: 'Zod' },
+      ],
+      [
+        { q: '¿Node.js usa el motor V8?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+        { q: '¿Qué método HTTP se usa para crear recursos?', opts: ['POST', 'GET', 'PUT', 'DELETE'], ans: 'POST' },
+        { q: '¿JWT significa?', opts: ['JSON Web Token', 'JavaScript Web Tool', 'Java Web Template', 'JSON Widget Token'], ans: 'JSON Web Token' },
+      ],
+      [
+        { q: '¿SQL es un lenguaje declarativo?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+        { q: '¿Qué tipo de base de datos es Firebase?', opts: ['NoSQL', 'SQL', 'Grafo', 'Columnar'], ans: 'NoSQL' },
+        { q: '¿Qué hace un ORM?', opts: ['Mapea objetos a tablas', 'Optimiza queries', 'Crea backups', 'Encripta datos'], ans: 'Mapea objetos a tablas' },
+      ],
+      [
+        { q: '¿Docker empaqueta aplicaciones en contenedores?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+        { q: '¿Qué es CI/CD?', opts: ['Integración y Despliegue Continuo', 'Code Integration/Delivery', 'Continuous Input/Data', 'Cloud Infrastructure/Design'], ans: 'Integración y Despliegue Continuo' },
+        { q: '¿Vercel es ideal para desplegar aplicaciones?', opts: ['Frontend', 'Backend', 'Bases de datos', 'Mobile'], ans: 'Frontend' },
+      ],
+    ],
+    // Course 1: Ciencia de Datos
+    [
+      [
+        { q: '¿Jupyter permite ejecutar código interactivamente?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+        { q: '¿Qué librería se usa para arrays numéricos?', opts: ['NumPy', 'Pandas', 'Matplotlib', 'Seaborn'], ans: 'NumPy' },
+        { q: '¿Un diccionario en Python usa llaves {}?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+      ],
+      [
+        { q: '¿Cuál es la estructura principal de Pandas?', opts: ['DataFrame', 'Array', 'List', 'Dictionary'], ans: 'DataFrame' },
+        { q: '¿dropna() elimina filas con valores nulos?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+        { q: '¿Qué método agrupa datos en Pandas?', opts: ['groupby()', 'sort()', 'filter()', 'merge()'], ans: 'groupby()' },
+      ],
+      [
+        { q: '¿Matplotlib es la librería base de visualización?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+        { q: '¿Seaborn está construido sobre Matplotlib?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+        { q: '¿Plotly crea gráficos interactivos?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+      ],
+      [
+        { q: '¿La mediana es resistente a outliers?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+        { q: '¿Qué distribución tiene forma de campana?', opts: ['Normal', 'Uniforme', 'Poisson', 'Exponencial'], ans: 'Normal' },
+        { q: '¿Un p-value < 0.05 se considera significativo?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+      ],
+      [
+        { q: '¿Regresión lineal predice valores continuos?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+        { q: '¿Random Forest es un ensemble de árboles?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+        { q: '¿Qué métrica se usa para clasificación?', opts: ['F1-Score', 'MSE', 'R²', 'MAE'], ans: 'F1-Score' },
+      ],
+      [
+        { q: '¿K-Means requiere especificar K?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+        { q: '¿PCA reduce la dimensionalidad?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+        { q: '¿Qué técnica detecta datos anómalos?', opts: ['Isolation Forest', 'Random Forest', 'Gradient Boost', 'AdaBoost'], ans: 'Isolation Forest' },
+      ],
+      [
+        { q: '¿EDA significa Exploratory Data Analysis?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+        { q: '¿Feature engineering crea nuevas variables?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+        { q: '¿Qué es lo más importante al presentar datos?', opts: ['Contar una historia', 'Usar muchos gráficos', 'Mostrar todo el código', 'Usar colores'], ans: 'Contar una historia' },
+      ],
+    ],
+    // Course 2: Ingles para TI
+    [
+      [
+        { q: '¿"Bug" en programación significa error?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+        { q: '¿Qué significa "deploy"?', opts: ['Desplegar', 'Destruir', 'Diseñar', 'Depurar'], ans: 'Desplegar' },
+        { q: '¿"Sprint" es un período de trabajo en Agile?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+      ],
+      [
+        { q: '¿"Endpoint" en una API es una URL de acceso?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+        { q: '¿Qué significa "PR" en GitHub?', opts: ['Pull Request', 'Program Run', 'Project Review', 'Push Release'], ans: 'Pull Request' },
+        { q: '¿"RFC" significa Request for Comments?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+      ],
+      [
+        { q: '¿Cuál es el cierre correcto de un email formal?', opts: ['Best regards', 'See ya', 'Bye', 'XOXO'], ans: 'Best regards' },
+        { q: '¿En code reviews se deben dar sugerencias constructivas?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+        { q: '¿README es documentación del proyecto?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+      ],
+      [
+        { q: '¿Qué se reporta en un standup?', opts: ['Lo que hice, haré y bloqueos', 'Solo problemas', 'Código escrito', 'Horas trabajadas'], ans: 'Lo que hice, haré y bloqueos' },
+        { q: '¿"Trade-off" significa compromiso entre opciones?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+        { q: '¿"I suggest we..." es una frase para proponer?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+      ],
+      [
+        { q: '¿STAR significa Situation, Task, Action, Result?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+        { q: '¿En entrevistas técnicas debes explicar tu razonamiento?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+        { q: '¿"Scalability" se refiere a escalabilidad?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+      ],
+      [
+        { q: '¿Escuchar podcasts mejora la comprensión auditiva?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+        { q: '¿Todos los hablantes de inglés tienen el mismo acento?', opts: ['Verdadero', 'Falso'], ans: 'Falso', type: 'true_false' as const },
+        { q: '¿Tomar notas ayuda a retener información?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+      ],
+      [
+        { q: '¿Contribuir a open source mejora el inglés técnico?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+        { q: '¿Una presentación técnica debe tener estructura clara?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+        { q: '¿Practicar regularmente es clave para mejorar?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+      ],
+    ],
+    // Course 3: Diseno UX/UI
+    [
+      [
+        { q: '¿UX se refiere a la experiencia del usuario?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+        { q: '¿Cuántas heurísticas de usabilidad definió Nielsen?', opts: ['10', '5', '15', '20'], ans: '10' },
+        { q: '¿Un mapa de empatía ayuda a entender al usuario?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+      ],
+      [
+        { q: '¿Card sorting ayuda a organizar contenido?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+        { q: '¿Qué es un wireframe?', opts: ['Esquema visual de baja fidelidad', 'Un tipo de fuente', 'Un lenguaje de programación', 'Un framework CSS'], ans: 'Esquema visual de baja fidelidad' },
+        { q: '¿Los flujos de usuario mapean el recorrido del usuario?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+      ],
+      [
+        { q: '¿Los colores cálidos transmiten energía?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+        { q: '¿Qué es una grilla en diseño UI?', opts: ['Sistema de alineación visual', 'Un tipo de animación', 'Un formato de imagen', 'Un patrón de navegación'], ans: 'Sistema de alineación visual' },
+        { q: '¿La jerarquía visual guía la atención del usuario?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+      ],
+      [
+        { q: '¿Figma es una herramienta de diseño colaborativa?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+        { q: '¿Qué hace Auto Layout en Figma?', opts: ['Crear layouts responsivos', 'Generar código', 'Animar prototipos', 'Exportar imágenes'], ans: 'Crear layouts responsivos' },
+        { q: '¿Las variantes permiten crear estados de componentes?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+      ],
+      [
+        { q: '¿Los prototipos interactivos simulan la experiencia final?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+        { q: '¿Qué es una micro-interacción?', opts: ['Animación sutil de feedback', 'Un tipo de prueba', 'Una métrica de UX', 'Un componente de UI'], ans: 'Animación sutil de feedback' },
+        { q: '¿Los prototipos deben probarse con usuarios reales?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+      ],
+      [
+        { q: '¿Un design system incluye tokens de diseño?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+        { q: '¿Qué son los tokens de diseño?', opts: ['Variables reutilizables de estilo', 'Tipos de usuario', 'Métodos de investigación', 'Herramientas de prototipado'], ans: 'Variables reutilizables de estilo' },
+        { q: '¿Material Design es un design system de Google?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+      ],
+      [
+        { q: '¿Un caso de estudio UX documenta el proceso de diseño?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
+        { q: '¿Feature engineering es un concepto de UX?', opts: ['Verdadero', 'Falso'], ans: 'Falso', type: 'true_false' as const },
+        { q: '¿Qué es lo más importante en un portfolio de UX?', opts: ['Mostrar el proceso de diseño', 'Tener muchos proyectos', 'Usar colores llamativos', 'Incluir todo el código'], ans: 'Mostrar el proceso de diseño' },
+      ],
+    ],
+  ];
+
+  return allQuestionPools[courseIndex]?.[moduleIndex] || allQuestionPools[0][0];
+}
 
 /** Converts markdown-style lesson content to JSON ContentBlock array for the ContentEditor */
 function mdToBlocks(title: string, md: string, lessonType: string): string {
@@ -133,15 +415,19 @@ export async function dataClear(): Promise<void> {
     'enrollments', 'evaluations', 'evaluationAttempts',
     'grades', 'certificates', 'messages', 'conversations',
     'notifications', 'supportTickets', 'activities',
-    'userPoints', 'badges', 'userBadges',
-    'learningStreaks', 'progressActivities',
     'userSettings', 'systemMetrics',
-    'forumPosts', 'forumReplies'
+    'forumPosts', 'forumReplies',
+    'courseSnapshots', 'taskSubmissions', 'deadlineExtensions',
+    'sections', 'sectionLessonOverrides'
   ];
 
   for (const col of collections) {
     try {
-      await remove(ref(database, col));
+      const snapshot = await getDocs(collection(db, col));
+      if (snapshot.empty) continue;
+      const batch = writeBatch(db);
+      snapshot.docs.forEach(d => batch.delete(d.ref));
+      await batch.commit();
     } catch {
       // ignore
     }
@@ -172,6 +458,7 @@ const COURSES_DATA = [
           { title: 'Estructura HTML5', type: 'texto' as const, duration: '30 min', content: '# HTML5\n\nHTML5 es el estándar actual para estructurar contenido web. En esta lección aprenderás las etiquetas semánticas principales...' },
           { title: 'CSS3 y Flexbox', type: 'video' as const, duration: '45 min', content: 'Aprende a estilizar páginas web con CSS3 moderno incluyendo Flexbox para layouts responsivos.' },
           { title: 'Responsive Design', type: 'texto' as const, duration: '35 min', content: '# Diseño Responsivo\n\nEl diseño responsivo permite que tu página se vea bien en cualquier dispositivo...' },
+          { title: 'Quiz: HTML y CSS Basics', type: 'quiz' as const, duration: '15 min', content: 'Pon a prueba tus conocimientos sobre HTML5 semántico, Flexbox y diseño responsivo.' },
         ]
       },
       {
@@ -190,6 +477,7 @@ const COURSES_DATA = [
           { title: 'Componentes y JSX', type: 'video' as const, duration: '45 min', content: 'Creación de componentes funcionales con JSX en React.' },
           { title: 'Estado y Props', type: 'texto' as const, duration: '40 min', content: '# Estado y Props\n\nEl estado (state) y las propiedades (props) son los mecanismos principales para manejar datos en React...' },
           { title: 'Hooks: useState y useEffect', type: 'video' as const, duration: '55 min', content: 'Los hooks más importantes de React para manejar estado y efectos secundarios.' },
+          { title: 'Recursos: Documentación oficial de React', type: 'recurso' as const, duration: '20 min', content: '# Recursos de React\n\nEnlaces a la documentación oficial de React, tutoriales interactivos y ejemplos prácticos para profundizar en componentes y hooks.' },
         ]
       },
       {
@@ -208,6 +496,7 @@ const COURSES_DATA = [
           { title: 'Introducción a Node.js', type: 'video' as const, duration: '40 min', content: 'Fundamentos de Node.js y el runtime de JavaScript en el servidor.' },
           { title: 'API REST con Express', type: 'texto' as const, duration: '50 min', content: '# APIs REST con Express\n\nExpress es el framework más popular para crear APIs REST con Node.js...' },
           { title: 'Middleware y Autenticación', type: 'video' as const, duration: '55 min', content: 'Middleware en Express, JWT y autenticación de usuarios.' },
+          { title: 'Foro: Mejores prácticas en APIs REST', type: 'foro' as const, duration: '30 min', content: 'Discute con tus compañeros sobre las mejores prácticas en diseño de APIs REST: versionado, manejo de errores, paginación y seguridad.' },
         ]
       },
       {
@@ -226,6 +515,7 @@ const COURSES_DATA = [
           { title: 'Docker Basics', type: 'video' as const, duration: '45 min', content: 'Containerización de aplicaciones con Docker y Docker Compose.' },
           { title: 'CI/CD con GitHub Actions', type: 'texto' as const, duration: '40 min', content: '# CI/CD\n\nIntegración y despliegue continuo con GitHub Actions para automatizar el proceso de release...' },
           { title: 'Deploy en Vercel y Firebase', type: 'video' as const, duration: '35 min', content: 'Despliegue de frontend en Vercel y backend en Firebase Hosting.' },
+          { title: 'Proyecto: Deploy de Aplicación Full Stack', type: 'tarea' as const, duration: '60 min', content: 'Despliega una aplicación full stack completa usando Docker, GitHub Actions y Vercel/Firebase.' },
         ]
       }
     ]
@@ -265,6 +555,7 @@ const COURSES_DATA = [
           { title: 'Matplotlib Fundamentals', type: 'video' as const, duration: '45 min', content: 'Gráficos básicos con Matplotlib: líneas, barras, scatter plots e histogramas.' },
           { title: 'Seaborn para Estadísticas', type: 'texto' as const, duration: '40 min', content: '# Seaborn\n\nSeaborn extiende Matplotlib con gráficos estadísticos elegantes...' },
           { title: 'Dashboards con Plotly', type: 'video' as const, duration: '50 min', content: 'Visualizaciones interactivas y dashboards web con Plotly y Dash.' },
+          { title: 'Quiz: Visualización de Datos', type: 'quiz' as const, duration: '15 min', content: 'Evalúa tus conocimientos sobre Matplotlib, Seaborn y Plotly.' },
         ]
       },
       {
@@ -283,6 +574,7 @@ const COURSES_DATA = [
           { title: 'Regresión Lineal y Logística', type: 'video' as const, duration: '50 min', content: 'Modelos de regresión para predicción numérica y clasificación binaria.' },
           { title: 'Árboles de Decisión y Random Forest', type: 'texto' as const, duration: '45 min', content: '# Árboles de Decisión\n\nLos árboles de decisión son modelos intuitivos que dividen los datos según reglas...' },
           { title: 'Evaluación de Modelos', type: 'video' as const, duration: '40 min', content: 'Métricas de evaluación: accuracy, precision, recall, F1-score, AUC-ROC.' },
+          { title: 'Recursos: Datasets y herramientas de ML', type: 'recurso' as const, duration: '20 min', content: '# Recursos de ML\n\nColección de datasets de Kaggle, documentación de scikit-learn y notebooks de ejemplo para practicar modelos supervisados.' },
         ]
       },
       {
@@ -292,6 +584,7 @@ const COURSES_DATA = [
           { title: 'Clustering con K-Means', type: 'video' as const, duration: '45 min', content: 'Agrupamiento de datos con K-Means y selección del número óptimo de clusters.' },
           { title: 'Reducción de Dimensionalidad (PCA)', type: 'texto' as const, duration: '50 min', content: '# PCA\n\nEl Análisis de Componentes Principales reduce la dimensionalidad manteniendo la varianza...' },
           { title: 'Detección de Anomalías', type: 'video' as const, duration: '40 min', content: 'Técnicas para identificar outliers y datos anómalos en datasets.' },
+          { title: 'Foro: Aplicaciones reales de ML no supervisado', type: 'foro' as const, duration: '30 min', content: 'Comparte y discute casos de uso reales de clustering, PCA y detección de anomalías en la industria.' },
         ]
       },
       {
@@ -331,6 +624,7 @@ const COURSES_DATA = [
           { title: 'API Documentation', type: 'texto' as const, duration: '40 min', content: '# Reading API Docs\n\nLearn to navigate and understand API documentation: endpoints, parameters, response codes, examples...' },
           { title: 'Stack Overflow & GitHub', type: 'video' as const, duration: '35 min', content: 'Cómo leer y escribir en Stack Overflow, issues de GitHub y pull request reviews.' },
           { title: 'Technical Blogs & RFCs', type: 'texto' as const, duration: '45 min', content: '# Technical Reading\n\nEstratégias para leer blogs técnicos, RFCs y whitepapers en inglés...' },
+          { title: 'Quiz: Reading Comprehension', type: 'quiz' as const, duration: '15 min', content: 'Evalúa tu comprensión de documentación técnica en inglés con ejercicios prácticos.' },
         ]
       },
       {
@@ -358,6 +652,7 @@ const COURSES_DATA = [
           { title: 'Behavioral Questions', type: 'video' as const, duration: '45 min', content: 'Método STAR para responder preguntas de comportamiento en entrevistas en inglés.' },
           { title: 'Technical Interview Patterns', type: 'texto' as const, duration: '50 min', content: '# Technical Interviews\n\nCómo explicar tu proceso de pensamiento mientras resuelves problemas de código en inglés...' },
           { title: 'System Design Discussions', type: 'video' as const, duration: '55 min', content: 'Vocabulario y estructura para discusiones de diseño de sistemas en entrevistas.' },
+          { title: 'Recursos: Plataformas de práctica de entrevistas', type: 'recurso' as const, duration: '20 min', content: '# Recursos de Entrevistas\n\nPlataformas como Pramp, Interviewing.io y LeetCode para practicar entrevistas técnicas en inglés.' },
         ]
       },
       {
@@ -367,6 +662,7 @@ const COURSES_DATA = [
           { title: 'Tech Podcasts & Talks', type: 'video' as const, duration: '40 min', content: 'Práctica de listening con conferencias técnicas, podcasts y tutoriales en inglés.' },
           { title: 'Accents & Speaking Styles', type: 'video' as const, duration: '35 min', content: 'Familiarización con diferentes acentos y estilos de comunicación en equipos internacionales.' },
           { title: 'Note-taking Strategies', type: 'texto' as const, duration: '30 min', content: '# Note-taking\n\nEstrategias para tomar notas efectivas durante reuniones y presentaciones en inglés...' },
+          { title: 'Foro: Comparte tus recursos de listening favoritos', type: 'foro' as const, duration: '25 min', content: 'Comparte podcasts, canales de YouTube y charlas técnicas en inglés que te hayan ayudado a mejorar tu comprensión auditiva.' },
         ]
       },
       {
@@ -379,130 +675,93 @@ const COURSES_DATA = [
         ]
       }
     ]
+  },
+  {
+    title: 'Diseño UX/UI',
+    description: 'Aprende a diseñar interfaces de usuario centradas en la experiencia del usuario. Desde investigación hasta prototipos interactivos con Figma.',
+    category: 'diseno',
+    level: 'principiante' as const,
+    duration: '10 semanas',
+    tags: ['ux', 'ui', 'figma', 'diseño', 'prototipos'],
+    requirements: ['Conocimientos básicos de informática', 'Interés en diseño visual'],
+    objectives: ['Comprender los principios de UX', 'Dominar Figma para diseño UI', 'Crear prototipos interactivos', 'Realizar pruebas de usabilidad', 'Diseñar sistemas de diseño'],
+    modules: [
+      {
+        title: 'Fundamentos de UX',
+        description: 'Principios de experiencia de usuario',
+        lessons: [
+          { title: '¿Qué es UX Design?', type: 'video' as const, duration: '35 min', content: 'Introducción al diseño de experiencia de usuario: historia, principios y por qué importa.' },
+          { title: 'Principios de Usabilidad', type: 'texto' as const, duration: '40 min', content: '# Principios de Usabilidad\n\nLas heurísticas de Nielsen, accesibilidad y diseño centrado en el usuario...' },
+          { title: 'Investigación de Usuarios', type: 'video' as const, duration: '45 min', content: 'Métodos de investigación: entrevistas, encuestas, personas y mapas de empatía.' },
+          { title: 'Quiz: Fundamentos de UX', type: 'quiz' as const, duration: '15 min', content: 'Evalúa tus conocimientos sobre principios de UX, usabilidad e investigación de usuarios.' },
+        ]
+      },
+      {
+        title: 'Arquitectura de Información',
+        description: 'Organización y estructura del contenido',
+        lessons: [
+          { title: 'Card Sorting y Taxonomías', type: 'video' as const, duration: '35 min', content: 'Técnicas de card sorting para organizar contenido de forma intuitiva.' },
+          { title: 'Flujos de Usuario', type: 'texto' as const, duration: '40 min', content: '# Flujos de Usuario\n\nCómo mapear los recorridos del usuario a través de tu aplicación...' },
+          { title: 'Wireframes de Baja Fidelidad', type: 'tarea' as const, duration: '50 min', content: 'Crea wireframes de baja fidelidad para una aplicación móvil usando las técnicas aprendidas.' },
+          { title: 'Recursos: Herramientas de IA y diagramación', type: 'recurso' as const, duration: '20 min', content: '# Recursos de AI\n\nHerramientas como Whimsical, Miro y FigJam para crear diagramas de flujo y wireframes colaborativos.' },
+        ]
+      },
+      {
+        title: 'Diseño Visual y UI',
+        description: 'Principios de diseño de interfaces',
+        lessons: [
+          { title: 'Teoría del Color y Tipografía', type: 'video' as const, duration: '45 min', content: 'Psicología del color, paletas armónicas, selección tipográfica y jerarquía visual.' },
+          { title: 'Layouts y Grillas', type: 'texto' as const, duration: '35 min', content: '# Layouts y Grillas\n\nSistemas de grillas, espaciado consistente y principios de alineación para interfaces limpias...' },
+          { title: 'Iconografía y Componentes', type: 'video' as const, duration: '40 min', content: 'Diseño de iconos, botones, formularios y componentes UI reutilizables.' },
+          { title: 'Foro: Crítica de diseño colaborativa', type: 'foro' as const, duration: '30 min', content: 'Comparte tus diseños de UI y recibe feedback constructivo de compañeros y profesores.' },
+        ]
+      },
+      {
+        title: 'Figma: Herramienta de Diseño',
+        description: 'Domina Figma para diseño profesional',
+        lessons: [
+          { title: 'Interfaz y Herramientas Básicas', type: 'video' as const, duration: '40 min', content: 'Tour por la interfaz de Figma: frames, capas, componentes y estilos.' },
+          { title: 'Auto Layout y Constraints', type: 'texto' as const, duration: '45 min', content: '# Auto Layout\n\nAuto Layout permite crear diseños responsivos y flexibles en Figma...' },
+          { title: 'Componentes y Variantes', type: 'video' as const, duration: '50 min', content: 'Creación de componentes reutilizables con variantes, propiedades y slots en Figma.' },
+          { title: 'Quiz: Dominio de Figma', type: 'quiz' as const, duration: '15 min', content: 'Pon a prueba tus conocimientos sobre las herramientas y funcionalidades de Figma.' },
+        ]
+      },
+      {
+        title: 'Prototipado Interactivo',
+        description: 'Crear prototipos funcionales',
+        lessons: [
+          { title: 'Prototipos en Figma', type: 'video' as const, duration: '45 min', content: 'Conexiones de prototipos, transiciones, animaciones y flujos interactivos en Figma.' },
+          { title: 'Micro-interacciones', type: 'texto' as const, duration: '35 min', content: '# Micro-interacciones\n\nAnimaciones sutiles que mejoran la experiencia: hover states, loading, feedback visual...' },
+          { title: 'Proyecto: Prototipo de App Móvil', type: 'tarea' as const, duration: '90 min', content: 'Diseña y prototipa una aplicación móvil completa con al menos 5 pantallas y flujos interactivos.' },
+          { title: 'Recursos: Plugins esenciales de Figma', type: 'recurso' as const, duration: '20 min', content: '# Plugins de Figma\n\nPlugins recomendados: Unsplash, Iconify, Content Reel, Stark (accesibilidad) y Autoflow.' },
+        ]
+      },
+      {
+        title: 'Design Systems',
+        description: 'Sistemas de diseño escalables',
+        lessons: [
+          { title: '¿Qué es un Design System?', type: 'video' as const, duration: '40 min', content: 'Introducción a los sistemas de diseño: tokens, componentes, documentación y gobernanza.' },
+          { title: 'Tokens de Diseño', type: 'texto' as const, duration: '35 min', content: '# Tokens de Diseño\n\nColores, tipografías, espaciados y sombras como variables reutilizables...' },
+          { title: 'Construye tu Design System', type: 'tarea' as const, duration: '80 min', content: 'Crea un mini design system en Figma con tokens, 5 componentes base y documentación.' },
+          { title: 'Foro: Sistemas de diseño que admiras', type: 'foro' as const, duration: '25 min', content: 'Comparte y analiza design systems de empresas como Material Design, Ant Design, Atlassian y otros.' },
+        ]
+      },
+      {
+        title: 'Proyecto Final: Caso de Estudio UX/UI',
+        description: 'Proyecto integrador completo',
+        lessons: [
+          { title: 'Definición del Problema', type: 'texto' as const, duration: '30 min', content: '# Proyecto Final\n\nElige un problema real, investiga usuarios y define los objetivos de tu diseño...' },
+          { title: 'De la Investigación al Prototipo', type: 'video' as const, duration: '60 min', content: 'Proceso end-to-end: research, ideación, wireframes, diseño visual y prototipo interactivo.' },
+          { title: 'Presentación del Caso de Estudio', type: 'tarea' as const, duration: '90 min', content: 'Prepara y presenta tu caso de estudio UX/UI completo con proceso, decisiones de diseño y prototipo final.' },
+        ]
+      }
+    ]
   }
 ];
 
-// Questions for evaluations
+// Questions for evaluations (uses shared pool from getQuestionPool)
 function generateQuestions(courseIndex: number, moduleIndex: number): DBEvaluation['questions'] {
-  const allQuestions = [
-    // Course 0: Desarrollo Web
-    [
-      // Module questions pools
-      [
-        { q: '¿Cuál es la etiqueta HTML5 para contenido principal?', opts: ['<main>', '<div>', '<section>', '<article>'], ans: '<main>' },
-        { q: '¿Flexbox es un modelo de layout unidimensional?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
-        { q: '¿Qué propiedad CSS hace un diseño responsivo?', opts: ['media queries', 'float', 'position', 'z-index'], ans: 'media queries' },
-      ],
-      [
-        { q: '¿Cuál es la diferencia entre let y const?', opts: ['const no se puede reasignar', 'let es global', 'const es más rápido', 'No hay diferencia'], ans: 'const no se puede reasignar' },
-        { q: '¿Las arrow functions tienen su propio this?', opts: ['Verdadero', 'Falso'], ans: 'Falso', type: 'true_false' as const },
-        { q: '¿Qué retorna una función async?', opts: ['Una Promise', 'Un callback', 'undefined', 'Un Observable'], ans: 'Una Promise' },
-      ],
-      [
-        { q: '¿Qué es JSX?', opts: ['Extensión de sintaxis de JavaScript', 'Un framework', 'Un lenguaje', 'Una base de datos'], ans: 'Extensión de sintaxis de JavaScript' },
-        { q: '¿useState retorna un array?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
-        { q: '¿Cuándo se ejecuta useEffect sin dependencias?', opts: ['Cada render', 'Solo al montar', 'Nunca', 'Al desmontar'], ans: 'Cada render' },
-      ],
-      [
-        { q: '¿Zustand requiere un Provider?', opts: ['No', 'Sí', 'Solo en producción', 'Depende'], ans: 'No' },
-        { q: '¿React Router v6 usa element en vez de component?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
-        { q: '¿Qué librería se usa para validación de formularios?', opts: ['Zod', 'Lodash', 'Axios', 'Moment'], ans: 'Zod' },
-      ],
-      [
-        { q: '¿Node.js usa el motor V8?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
-        { q: '¿Qué método HTTP se usa para crear recursos?', opts: ['POST', 'GET', 'PUT', 'DELETE'], ans: 'POST' },
-        { q: '¿JWT significa?', opts: ['JSON Web Token', 'JavaScript Web Tool', 'Java Web Template', 'JSON Widget Token'], ans: 'JSON Web Token' },
-      ],
-      [
-        { q: '¿SQL es un lenguaje declarativo?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
-        { q: '¿Qué tipo de base de datos es Firebase?', opts: ['NoSQL', 'SQL', 'Grafo', 'Columnar'], ans: 'NoSQL' },
-        { q: '¿Qué hace un ORM?', opts: ['Mapea objetos a tablas', 'Optimiza queries', 'Crea backups', 'Encripta datos'], ans: 'Mapea objetos a tablas' },
-      ],
-      [
-        { q: '¿Docker empaqueta aplicaciones en contenedores?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
-        { q: '¿Qué es CI/CD?', opts: ['Integración y Despliegue Continuo', 'Code Integration/Delivery', 'Continuous Input/Data', 'Cloud Infrastructure/Design'], ans: 'Integración y Despliegue Continuo' },
-        { q: '¿Vercel es ideal para desplegar aplicaciones?', opts: ['Frontend', 'Backend', 'Bases de datos', 'Mobile'], ans: 'Frontend' },
-      ],
-    ],
-    // Course 1: Ciencia de Datos
-    [
-      [
-        { q: '¿Jupyter permite ejecutar código interactivamente?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
-        { q: '¿Qué librería se usa para arrays numéricos?', opts: ['NumPy', 'Pandas', 'Matplotlib', 'Seaborn'], ans: 'NumPy' },
-        { q: '¿Un diccionario en Python usa llaves {}?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
-      ],
-      [
-        { q: '¿Cuál es la estructura principal de Pandas?', opts: ['DataFrame', 'Array', 'List', 'Dictionary'], ans: 'DataFrame' },
-        { q: '¿dropna() elimina filas con valores nulos?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
-        { q: '¿Qué método agrupa datos en Pandas?', opts: ['groupby()', 'sort()', 'filter()', 'merge()'], ans: 'groupby()' },
-      ],
-      [
-        { q: '¿Matplotlib es la librería base de visualización?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
-        { q: '¿Seaborn está construido sobre Matplotlib?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
-        { q: '¿Plotly crea gráficos interactivos?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
-      ],
-      [
-        { q: '¿La mediana es resistente a outliers?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
-        { q: '¿Qué distribución tiene forma de campana?', opts: ['Normal', 'Uniforme', 'Poisson', 'Exponencial'], ans: 'Normal' },
-        { q: '¿Un p-value < 0.05 se considera significativo?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
-      ],
-      [
-        { q: '¿Regresión lineal predice valores continuos?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
-        { q: '¿Random Forest es un ensemble de árboles?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
-        { q: '¿Qué métrica se usa para clasificación?', opts: ['F1-Score', 'MSE', 'R²', 'MAE'], ans: 'F1-Score' },
-      ],
-      [
-        { q: '¿K-Means requiere especificar K?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
-        { q: '¿PCA reduce la dimensionalidad?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
-        { q: '¿Qué técnica detecta datos anómalos?', opts: ['Isolation Forest', 'Random Forest', 'Gradient Boost', 'AdaBoost'], ans: 'Isolation Forest' },
-      ],
-      [
-        { q: '¿EDA significa Exploratory Data Analysis?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
-        { q: '¿Feature engineering crea nuevas variables?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
-        { q: '¿Qué es lo más importante al presentar datos?', opts: ['Contar una historia', 'Usar muchos gráficos', 'Mostrar todo el código', 'Usar colores'], ans: 'Contar una historia' },
-      ],
-    ],
-    // Course 2: Inglés para TI
-    [
-      [
-        { q: '¿"Bug" en programación significa error?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
-        { q: '¿Qué significa "deploy"?', opts: ['Desplegar', 'Destruir', 'Diseñar', 'Depurar'], ans: 'Desplegar' },
-        { q: '¿"Sprint" es un período de trabajo en Agile?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
-      ],
-      [
-        { q: '¿"Endpoint" en una API es una URL de acceso?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
-        { q: '¿Qué significa "PR" en GitHub?', opts: ['Pull Request', 'Program Run', 'Project Review', 'Push Release'], ans: 'Pull Request' },
-        { q: '¿"RFC" significa Request for Comments?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
-      ],
-      [
-        { q: '¿Cuál es el cierre correcto de un email formal?', opts: ['Best regards', 'See ya', 'Bye', 'XOXO'], ans: 'Best regards' },
-        { q: '¿En code reviews se deben dar sugerencias constructivas?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
-        { q: '¿README es documentación del proyecto?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
-      ],
-      [
-        { q: '¿Qué se reporta en un standup?', opts: ['Lo que hice, haré y bloqueos', 'Solo problemas', 'Código escrito', 'Horas trabajadas'], ans: 'Lo que hice, haré y bloqueos' },
-        { q: '¿"Trade-off" significa compromiso entre opciones?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
-        { q: '¿"I suggest we..." es una frase para proponer?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
-      ],
-      [
-        { q: '¿STAR significa Situation, Task, Action, Result?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
-        { q: '¿En entrevistas técnicas debes explicar tu razonamiento?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
-        { q: '¿"Scalability" se refiere a escalabilidad?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
-      ],
-      [
-        { q: '¿Escuchar podcasts mejora la comprensión auditiva?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
-        { q: '¿Todos los hablantes de inglés tienen el mismo acento?', opts: ['Verdadero', 'Falso'], ans: 'Falso', type: 'true_false' as const },
-        { q: '¿Tomar notas ayuda a retener información?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
-      ],
-      [
-        { q: '¿Contribuir a open source mejora el inglés técnico?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
-        { q: '¿Una presentación técnica debe tener estructura clara?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
-        { q: '¿Practicar regularmente es clave para mejorar?', opts: ['Verdadero', 'Falso'], ans: 'Verdadero', type: 'true_false' as const },
-      ],
-    ],
-  ];
-
-  const pool = allQuestions[courseIndex]?.[moduleIndex] || allQuestions[0][0];
+  const pool = getQuestionPool(courseIndex, moduleIndex);
   return pool.map((q, i) => ({
     id: `q${i + 1}`,
     type: (q as any).type || 'multiple_choice',
@@ -518,13 +777,11 @@ function generateQuestions(courseIndex: number, moduleIndex: number): DBEvaluati
 // MAIN INIT FUNCTION
 // ============================================
 
-export async function dataInit(clearFirst = false): Promise<void> {
+export async function dataInit(): Promise<void> {
   const startTime = Date.now();
   console.log('🚀 Iniciando Data Init...');
 
-  if (clearFirst) {
-    await dataClear();
-  }
+  await dataClear();
 
   const PASSWORD = 'password123';
   const now = Date.now();
@@ -535,6 +792,7 @@ export async function dataInit(clearFirst = false): Promise<void> {
   console.log('\n👥 Creando usuarios...');
 
   const usersData: Omit<DBUser, 'id'>[] = [
+    // 2 Admins
     {
       email: 'admin@lasaedu.com', name: 'Administrador', role: 'admin',
       emailVerified: true, loginAttempts: 0,
@@ -542,6 +800,14 @@ export async function dataInit(clearFirst = false): Promise<void> {
       preferences: { language: 'es', timezone: 'America/Santo_Domingo', notifications: { email: true, push: true, sms: false, marketing: false }, privacy: { showProfile: true, showProgress: true, showBadges: true } },
       createdAt: now - 60 * DAY, updatedAt: now, lastActive: now
     },
+    {
+      email: 'admin2@lasaedu.com', name: 'Administrador 2', role: 'admin',
+      emailVerified: true, loginAttempts: 0,
+      profile: { avatar: '', bio: 'Administrador auxiliar del sistema LasaEdu', phone: '+18091234580', location: 'Santiago' },
+      preferences: { language: 'es', timezone: 'America/Santo_Domingo', notifications: { email: true, push: true, sms: false, marketing: false }, privacy: { showProfile: true, showProgress: true, showBadges: true } },
+      createdAt: now - 59 * DAY, updatedAt: now, lastActive: now - 1 * DAY
+    },
+    // 2 Teachers
     {
       email: 'teacher@lasaedu.com', name: 'Prof. María García', role: 'teacher',
       emailVerified: true, loginAttempts: 0,
@@ -552,37 +818,95 @@ export async function dataInit(clearFirst = false): Promise<void> {
     {
       email: 'teacher2@lasaedu.com', name: 'Prof. Carlos Martínez', role: 'teacher',
       emailVerified: true, loginAttempts: 0,
-      profile: { avatar: '', bio: 'Profesor de idiomas con certificación TOEFL y 8 años enseñando inglés técnico', phone: '+18091234573', location: 'Santo Domingo' },
+      profile: { avatar: '', bio: 'Profesor de idiomas y diseño UX/UI con certificación TOEFL y 8 años de experiencia', phone: '+18091234573', location: 'Santo Domingo' },
       preferences: { language: 'es', timezone: 'America/Santo_Domingo', notifications: { email: true, push: true, sms: false, marketing: false }, privacy: { showProfile: true, showProgress: true, showBadges: true } },
       createdAt: now - 50 * DAY, updatedAt: now, lastActive: now
     },
+    // 10 Students
     {
-      email: 'student@lasaedu.com', name: 'Carlos Rodríguez', role: 'student',
+      email: 'student@lasaedu.com', name: 'Carlos Mendez', role: 'student',
       emailVerified: true, loginAttempts: 0,
       profile: { avatar: '', bio: 'Estudiante de ingeniería de software', phone: '+18091234569', location: 'Santo Domingo' },
       preferences: { language: 'es', timezone: 'America/Santo_Domingo', notifications: { email: true, push: true, sms: false, marketing: false }, privacy: { showProfile: true, showProgress: true, showBadges: true } },
       createdAt: now - 45 * DAY, updatedAt: now, lastActive: now - 1 * DAY
     },
     {
-      email: 'laura@lasaedu.com', name: 'Laura Mendoza', role: 'student',
+      email: 'student2@lasaedu.com', name: 'Maria Rodriguez', role: 'student',
       emailVerified: true, loginAttempts: 0,
       profile: { avatar: '', bio: 'Diseñadora gráfica aprendiendo desarrollo web', phone: '+18091234571', location: 'Santiago' },
       preferences: { language: 'es', timezone: 'America/Santo_Domingo', notifications: { email: true, push: false, sms: false, marketing: true }, privacy: { showProfile: true, showProgress: true, showBadges: true } },
-      createdAt: now - 40 * DAY, updatedAt: now, lastActive: now - 2 * DAY
+      createdAt: now - 44 * DAY, updatedAt: now, lastActive: now - 2 * DAY
     },
     {
-      email: 'pedro@lasaedu.com', name: 'Pedro Sánchez', role: 'student',
+      email: 'student3@lasaedu.com', name: 'Luis Perez', role: 'student',
       emailVerified: true, loginAttempts: 0,
       profile: { avatar: '', bio: 'Analista de datos en formación', phone: '+18091234572', location: 'Santo Domingo' },
       preferences: { language: 'es', timezone: 'America/Santo_Domingo', notifications: { email: true, push: true, sms: false, marketing: false }, privacy: { showProfile: true, showProgress: true, showBadges: true } },
-      createdAt: now - 35 * DAY, updatedAt: now, lastActive: now - 3 * DAY
+      createdAt: now - 43 * DAY, updatedAt: now, lastActive: now - 3 * DAY
     },
+    {
+      email: 'student4@lasaedu.com', name: 'Ana Garcia', role: 'student',
+      emailVerified: true, loginAttempts: 0,
+      profile: { avatar: '', bio: 'Desarrolladora frontend aprendiendo backend', phone: '+18091234574', location: 'Santiago' },
+      preferences: { language: 'es', timezone: 'America/Santo_Domingo', notifications: { email: true, push: true, sms: false, marketing: false }, privacy: { showProfile: true, showProgress: true, showBadges: true } },
+      createdAt: now - 42 * DAY, updatedAt: now, lastActive: now - 1 * DAY
+    },
+    {
+      email: 'student5@lasaedu.com', name: 'Pedro Ramirez', role: 'student',
+      emailVerified: true, loginAttempts: 0,
+      profile: { avatar: '', bio: 'Estudiante de sistemas computacionales', phone: '+18091234575', location: 'Santo Domingo' },
+      preferences: { language: 'es', timezone: 'America/Santo_Domingo', notifications: { email: true, push: true, sms: false, marketing: true }, privacy: { showProfile: true, showProgress: true, showBadges: true } },
+      createdAt: now - 41 * DAY, updatedAt: now, lastActive: now - 4 * DAY
+    },
+    {
+      email: 'student6@lasaedu.com', name: 'Sofia Herrera', role: 'student',
+      emailVerified: true, loginAttempts: 0,
+      profile: { avatar: '', bio: 'Diseñadora UX en transición a desarrollo', phone: '+18091234576', location: 'La Vega' },
+      preferences: { language: 'es', timezone: 'America/Santo_Domingo', notifications: { email: true, push: false, sms: false, marketing: false }, privacy: { showProfile: true, showProgress: true, showBadges: true } },
+      createdAt: now - 40 * DAY, updatedAt: now, lastActive: now - 2 * DAY
+    },
+    {
+      email: 'student7@lasaedu.com', name: 'Diego Torres', role: 'student',
+      emailVerified: true, loginAttempts: 0,
+      profile: { avatar: '', bio: 'Ingeniero mecánico aprendiendo programación', phone: '+18091234577', location: 'Santo Domingo' },
+      preferences: { language: 'es', timezone: 'America/Santo_Domingo', notifications: { email: true, push: true, sms: false, marketing: false }, privacy: { showProfile: true, showProgress: true, showBadges: true } },
+      createdAt: now - 39 * DAY, updatedAt: now, lastActive: now - 5 * DAY
+    },
+    {
+      email: 'student8@lasaedu.com', name: 'Valentina Cruz', role: 'student',
+      emailVerified: true, loginAttempts: 0,
+      profile: { avatar: '', bio: 'Estudiante de marketing digital interesada en datos', phone: '+18091234578', location: 'Santiago' },
+      preferences: { language: 'es', timezone: 'America/Santo_Domingo', notifications: { email: true, push: true, sms: false, marketing: true }, privacy: { showProfile: true, showProgress: true, showBadges: true } },
+      createdAt: now - 38 * DAY, updatedAt: now, lastActive: now - 1 * DAY
+    },
+    {
+      email: 'student9@lasaedu.com', name: 'Andres Morales', role: 'student',
+      emailVerified: true, loginAttempts: 0,
+      profile: { avatar: '', bio: 'Programador autodidacta formalizando conocimientos', phone: '+18091234579', location: 'Santo Domingo' },
+      preferences: { language: 'es', timezone: 'America/Santo_Domingo', notifications: { email: true, push: true, sms: false, marketing: false }, privacy: { showProfile: true, showProgress: true, showBadges: true } },
+      createdAt: now - 37 * DAY, updatedAt: now, lastActive: now - 3 * DAY
+    },
+    {
+      email: 'student10@lasaedu.com', name: 'Isabella Fernandez', role: 'student',
+      emailVerified: true, loginAttempts: 0,
+      profile: { avatar: '', bio: 'Recién graduada en comunicación explorando tech', phone: '+18091234581', location: 'La Romana' },
+      preferences: { language: 'es', timezone: 'America/Santo_Domingo', notifications: { email: true, push: false, sms: false, marketing: true }, privacy: { showProfile: true, showProgress: true, showBadges: true } },
+      createdAt: now - 36 * DAY, updatedAt: now, lastActive: now - 2 * DAY
+    },
+    // 2 Support
     {
       email: 'support@lasaedu.com', name: 'Ana Soporte', role: 'support',
       emailVerified: true, loginAttempts: 0,
       profile: { avatar: '', bio: 'Agente de soporte técnico', phone: '+18091234570', location: 'Santo Domingo' },
       preferences: { language: 'es', timezone: 'America/Santo_Domingo', notifications: { email: true, push: true, sms: true, marketing: false }, privacy: { showProfile: false, showProgress: false, showBadges: false } },
       createdAt: now - 58 * DAY, updatedAt: now, lastActive: now
+    },
+    {
+      email: 'support2@lasaedu.com', name: 'Roberto Ayuda', role: 'support',
+      emailVerified: true, loginAttempts: 0,
+      profile: { avatar: '', bio: 'Agente de soporte y atención al estudiante', phone: '+18091234582', location: 'Santiago' },
+      preferences: { language: 'es', timezone: 'America/Santo_Domingo', notifications: { email: true, push: true, sms: true, marketing: false }, privacy: { showProfile: false, showProgress: false, showBadges: false } },
+      createdAt: now - 57 * DAY, updatedAt: now, lastActive: now - 1 * DAY
     }
   ];
 
@@ -591,7 +915,7 @@ export async function dataInit(clearFirst = false): Promise<void> {
     const uid = await createAuthUser(u.email, PASSWORD);
     // Store user with Auth UID as key so login can find them by UID directly
     const userData = { ...u, id: uid };
-    await set(ref(database, `users/${uid}`), userData);
+    await setDoc(doc(db, 'users', uid), userData);
     createdUsers.push(userData as DBUser);
     console.log(`   ✅ ${userData.role}: ${userData.name} (${userData.email})`);
   }
@@ -602,20 +926,21 @@ export async function dataInit(clearFirst = false): Promise<void> {
   const supportUser = createdUsers.find(u => u.role === 'support')!;
 
   // =============================================
-  // 2. CURSOS (3 cursos, teacher1 maneja 2)
+  // 2. CURSOS (4 cursos, teacher1 maneja 0-1, teacher2 maneja 2-3)
   // =============================================
   console.log('\n📚 Creando cursos...');
 
   const instructors = [
     { id: teacher1.id, name: teacher1.name },  // Curso 0: Desarrollo Web
     { id: teacher1.id, name: teacher1.name },  // Curso 1: Ciencia de Datos
-    { id: teacher2.id, name: teacher2.name },  // Curso 2: Inglés (otro teacher)
+    { id: teacher2.id, name: teacher2.name },  // Curso 2: Inglés
   ];
 
   const createdCourses: DBCourse[] = [];
   const allModules: { courseIdx: number; module: DBModule; lessons: DBLesson[] }[] = [];
 
-  for (let ci = 0; ci < COURSES_DATA.length; ci++) {
+  const NUM_COURSES = 3; // Only first 3 courses (skip UX/UI)
+  for (let ci = 0; ci < NUM_COURSES; ci++) {
     const cd = COURSES_DATA[ci];
     const inst = instructors[ci];
 
@@ -630,6 +955,7 @@ export async function dataInit(clearFirst = false): Promise<void> {
       status: 'publicado',
       rating: randFloat(4.2, 4.9),
       studentsCount: students.length,
+      sectionsCount: 1,
       tags: cd.tags,
       requirements: cd.requirements,
       objectives: cd.objectives,
@@ -656,16 +982,31 @@ export async function dataInit(clearFirst = false): Promise<void> {
       const createdLessons: DBLesson[] = [];
       for (let li = 0; li < md.lessons.length; li++) {
         const ld = md.lessons[li];
+        const rawContent = ENRICHED_CONTENT[ld.title] || ld.content;
         const lesson = await firebaseDB.createLesson({
           moduleId: mod.id,
           courseId: course.id,
           title: ld.title,
           description: ld.content.replace(/^#[^\n]*\n+/, '').split(/\n\n/)[0].substring(0, 120),
           type: ld.type,
-          content: mdToBlocks(ld.title, ENRICHED_CONTENT[ld.title] || ld.content, ld.type),
-          ...(ld.type === 'video' ? { videoUrl: `https://example.com/videos/${course.id}/${mod.id}/${li + 1}` } : {}),
+          content: generateLessonContent(ld.title, rawContent, ld.type, ci, mi),
+          ...(ld.type === 'video' ? { videoUrl: pick(YOUTUBE_VIDEOS) } : {}),
           duration: ld.duration,
           order: li + 1,
+          settings: {
+            isRequired: true,
+            allowComments: true,
+            ...(ld.type === 'quiz' ? {
+              dueDate: new Date(now + 30 * DAY).toISOString(),
+              timeLimit: 15,
+              maxAttempts: 3,
+              passingScore: 60,
+            } : {}),
+            ...(ld.type === 'tarea' ? {
+              dueDate: new Date(now + 14 * DAY).toISOString(),
+              lateSubmissionDeadline: new Date(now + 21 * DAY).toISOString(),
+            } : {}),
+          },
           status: 'publicado',
           createdAt: now - (47 - ci * 5) * DAY,
           updatedAt: now
@@ -675,6 +1016,68 @@ export async function dataInit(clearFirst = false): Promise<void> {
       allModules.push({ courseIdx: ci, module: mod, lessons: createdLessons });
       console.log(`      📦 Módulo ${mi + 1}: ${mod.title} (${createdLessons.length} lecciones)`);
     }
+  }
+
+  // =============================================
+  // 2.5 SECCIONES (1 por curso)
+  // =============================================
+  console.log('\n📋 Creando secciones...');
+
+  const createdSections: { courseIdx: number; sectionId: string }[] = [];
+
+  for (let ci = 0; ci < NUM_COURSES; ci++) {
+    const course = createdCourses[ci];
+    const inst = instructors[ci];
+    const sectionStart = now - 30 * DAY;
+    const sectionTitle = `${course.title} - ${new Date(sectionStart).toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })}`;
+
+    const section = await firebaseDB.createSection({
+      courseId: course.id,
+      title: sectionTitle,
+      description: `Sección principal del curso ${course.title}`,
+      instructorId: inst.id,
+      instructorName: inst.name,
+      startDate: sectionStart,
+      endDate: now + 150 * DAY,
+      accessType: 'publico',
+      courseTitle: course.title,
+      courseCategory: course.category,
+      courseLevel: course.level,
+      ...(course.image ? { courseImage: course.image } : {}),
+      studentsCount: students.length,
+      status: 'activa',
+      createdAt: sectionStart,
+      updatedAt: now,
+    });
+    createdSections.push({ courseIdx: ci, sectionId: section.id });
+    console.log(`   ✅ Sección: ${section.title} → ${course.title}`);
+
+    // Create lesson overrides for quiz/tarea lessons
+    const courseModules = allModules.filter(m => m.courseIdx === ci);
+    for (const { lessons } of courseModules) {
+      for (const lesson of lessons) {
+        if (lesson.type !== 'quiz' && lesson.type !== 'tarea') continue;
+        await firebaseDB.upsertSectionLessonOverride({
+          sectionId: section.id,
+          lessonId: lesson.id,
+          courseId: course.id,
+          availableFrom: new Date(now - 14 * DAY).toISOString().slice(0, 16),
+          dueDate: new Date(now + 30 * DAY).toISOString().slice(0, 16),
+          ...(lesson.type === 'tarea' ? {
+            lateSubmissionDeadline: new Date(now + 37 * DAY).toISOString().slice(0, 16),
+          } : {}),
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    }
+  }
+  console.log(`   ✅ ${createdSections.length} secciones con overrides de fechas`);
+
+  // Build sectionId lookup for enrollments
+  const courseSectionMap = new Map<number, string>();
+  for (const { courseIdx, sectionId } of createdSections) {
+    courseSectionMap.set(courseIdx, sectionId);
   }
 
   // =============================================
@@ -716,213 +1119,171 @@ export async function dataInit(clearFirst = false): Promise<void> {
   console.log(`   ✅ ${createdEvals.length} evaluaciones creadas`);
 
   // =============================================
-  // 4. INSCRIPCIONES + PROGRESO + NOTAS
+  // 4. INSCRIPCIONES + ACTIVIDADES + PROGRESO + NOTAS
   // =============================================
-  console.log('\n🎓 Creando inscripciones, progreso y notas...');
+  console.log('\n🎓 Creando inscripciones, actividades y notas...');
 
-  for (const student of students) {
-    for (let ci = 0; ci < createdCourses.length; ci++) {
-      const course = createdCourses[ci];
-      const courseModules = allModules.filter(m => m.courseIdx === ci);
-      const totalLessons = courseModules.reduce((acc, m) => acc + m.lessons.length, 0);
-
-      // Random progress: between 20% and 100%
-      const progressPct = rand(20, 100);
-      const completedLessonCount = Math.floor((progressPct / 100) * totalLessons);
-      const completedModuleCount = Math.floor((progressPct / 100) * courseModules.length);
-
-      // Build completed lessons list
-      const allLessonsFlat = courseModules.flatMap(m => m.lessons);
-      const completedLessons = allLessonsFlat.slice(0, completedLessonCount).map(l => l.id);
-      const completedModules = courseModules.slice(0, completedModuleCount).map(m => m.module.id);
-
-      const enrollDaysAgo = rand(20, 40);
-      const isCompleted = progressPct === 100;
-
-      await firebaseDB.createEnrollment({
-        courseId: course.id,
-        userId: student.id,
-        enrolledAt: new Date(now - enrollDaysAgo * DAY).toISOString(),
-        progress: progressPct,
-        status: isCompleted ? 'completed' : 'active',
-        completedLessons,
-        completedModules,
-        totalTimeSpent: rand(60, 600), // minutes
-        lastAccessedAt: new Date(now - rand(0, 5) * DAY).toISOString(),
-        ...(isCompleted ? { grade: rand(70, 98) } : {}),
-        createdAt: now - enrollDaysAgo * DAY,
-        updatedAt: now
-      });
-
-      console.log(`   📋 ${student.name} → ${course.title}: ${progressPct}%`);
-
-      // Create evaluation attempts and grades for completed modules
-      const courseEvals = createdEvals.filter(e => e.courseIdx === ci);
-
-      for (let ei = 0; ei < courseEvals.length; ei++) {
-        const { eval: evaluation, moduleId: _moduleId } = courseEvals[ei];
-
-        // Only create attempts for modules the student has reached
-        if (ei >= completedModuleCount + 1) continue;
-
-        const score = rand(4, 10) * evaluation.questions.length; // per question max 10
-        const maxScore = evaluation.questions.length * 10;
-        const percentage = Math.round((score / maxScore) * 100);
-        const passed = percentage >= 60;
-        const attemptDaysAgo = enrollDaysAgo - rand(1, enrollDaysAgo - 1);
-
-        // Evaluation attempt
-        await firebaseDB.create('evaluationAttempts', {
-          evaluationId: evaluation.id,
-          userId: student.id,
-          courseId: course.id,
-          answers: evaluation.questions.map((q, _qi) => {
-            const isCorrect = Math.random() < (percentage / 100);
-            return {
-              questionId: q.id,
-              answer: isCorrect ? q.correctAnswer : (q.options?.[0] || ''),
-              isCorrect,
-              pointsEarned: isCorrect ? q.points : 0
-            };
-          }),
-          score,
-          maxScore,
-          percentage,
-          passed,
-          timeSpent: rand(180, 900), // seconds
-          startedAt: new Date(now - attemptDaysAgo * DAY).toISOString(),
-          completedAt: new Date(now - attemptDaysAgo * DAY + rand(300, 900) * 1000).toISOString(),
-          status: 'completed',
-          createdAt: now - attemptDaysAgo * DAY,
-          updatedAt: now - attemptDaysAgo * DAY
-        });
-
-        // Grade
-        await firebaseDB.createGrade({
-          courseId: course.id,
-          evaluationId: evaluation.id,
-          studentId: student.id,
-          teacherId: instructors[ci].id,
-          type: 'evaluation',
-          score,
-          maxScore,
-          percentage,
-          weight: 1,
-          feedback: percentage >= 90 ? 'Excelente trabajo' :
-                    percentage >= 70 ? 'Buen desempeño' :
-                    percentage >= 60 ? 'Aprobado, pero puedes mejorar' :
-                    'Necesitas repasar el material',
-          status: 'graded',
-          createdAt: now - attemptDaysAgo * DAY,
-          updatedAt: now - attemptDaysAgo * DAY
-        });
-      }
+  // Each student enrolls in 2-3 sections. Progress is derived from completed lessons.
+  const enrollmentMap: { studentIdx: number; courseIdx: number }[] = [];
+  for (let si = 0; si < students.length; si++) {
+    const numCourses = rand(2, 3);
+    const courseIndices = [0, 1, 2].sort(() => Math.random() - 0.5).slice(0, numCourses);
+    for (const ci of courseIndices) {
+      enrollmentMap.push({ studentIdx: si, courseIdx: ci });
     }
   }
 
-  // =============================================
-  // 5. INSIGNIAS
-  // =============================================
-  console.log('\n🏆 Creando insignias...');
+  let activityCount = 0;
 
-  const badges: Omit<DBBadge, 'id'>[] = [
-    { name: 'Primer Paso', description: 'Completar tu primera lección', icon: '🎯', category: 'course', criteria: { type: 'lessons_completed', value: 1, description: 'Completar 1 lección' }, points: 10, rarity: 'common', isActive: true, createdAt: now },
-    { name: 'Estudiante Dedicado', description: 'Completar 5 cursos', icon: '📚', category: 'course', criteria: { type: 'courses_completed', value: 5, description: 'Completar 5 cursos' }, points: 150, rarity: 'rare', isActive: true, createdAt: now },
-    { name: 'Perfeccionista', description: 'Obtener 100% en una evaluación', icon: '💯', category: 'achievement', criteria: { type: 'perfect_score', value: 1, description: '100% en evaluación' }, points: 100, rarity: 'epic', isActive: true, createdAt: now },
-    { name: 'Constante', description: 'Mantener una racha de 7 días', icon: '🔥', category: 'streak', criteria: { type: 'streak_days', value: 7, description: 'Racha de 7 días' }, points: 70, rarity: 'rare', isActive: true, createdAt: now },
-    { name: 'Imparable', description: 'Mantener una racha de 30 días', icon: '⚡', category: 'streak', criteria: { type: 'streak_days', value: 30, description: 'Racha de 30 días' }, points: 300, rarity: 'legendary', isActive: true, createdAt: now },
-    { name: 'Maestro del Quiz', description: 'Completar 20 quizzes', icon: '🧠', category: 'achievement', criteria: { type: 'quizzes_completed', value: 20, description: 'Completar 20 quizzes' }, points: 200, rarity: 'epic', isActive: true, createdAt: now },
-  ];
+  for (const { studentIdx, courseIdx: ci } of enrollmentMap) {
+    const student = students[studentIdx];
+    const course = createdCourses[ci];
+    const sectionId = courseSectionMap.get(ci);
+    const courseModules = allModules.filter(m => m.courseIdx === ci);
+    const allLessonsFlat = courseModules.flatMap(m => m.lessons);
+    const totalLessons = allLessonsFlat.length;
 
-  for (const badge of badges) {
-    await firebaseDB.create('badges', badge);
-  }
-  console.log(`   ✅ ${badges.length} insignias creadas`);
+    // Decide how many lessons this student completes (0 to all)
+    const roll = Math.random();
+    const completedCount = roll < 0.08 ? 0 : roll < 0.20 ? totalLessons : rand(1, totalLessons - 1);
+    const completedLessons = allLessonsFlat.slice(0, completedCount).map(l => l.id);
 
-  // =============================================
-  // 6. PUNTOS Y GAMIFICACIÓN
-  // =============================================
-  console.log('\n🎮 Creando puntos y gamificación...');
+    // A module is completed if ALL its lessons are in completedLessons
+    const completedLessonsSet = new Set(completedLessons);
+    const completedModules = courseModules
+      .filter(m => m.lessons.every(l => completedLessonsSet.has(l.id)))
+      .map(m => m.module.id);
 
-  const levels = [
-    { min: 0, name: 'Novato' },
-    { min: 100, name: 'Aprendiz' },
-    { min: 300, name: 'Estudiante' },
-    { min: 600, name: 'Aplicado' },
-    { min: 1000, name: 'Experto' },
-  ];
+    const progress = totalLessons > 0 ? Math.round((completedCount / totalLessons) * 100) : 0;
+    const isCompleted = progress >= 100;
+    const enrollDaysAgo = rand(25, 40);
 
-  for (const student of students) {
-    const pts = rand(100, 800);
-    const lvl = levels.filter(l => l.min <= pts).pop()!;
-    const lvlIdx = levels.indexOf(lvl);
-    const nextLvl = levels[lvlIdx + 1] || { min: 1500 };
-
-    await firebaseDB.create('userPoints', {
+    // Create enrollment
+    await firebaseDB.createEnrollment({
+      courseId: course.id,
+      sectionId,
       userId: student.id,
-      totalPoints: pts,
-      level: lvlIdx + 1,
-      levelName: lvl.name,
-      nextLevelPoints: nextLvl.min,
-      history: [
-        { id: 'h1', action: 'enrollment', points: 50, description: 'Inscripción en curso', timestamp: new Date(now - 30 * DAY).toISOString() },
-        { id: 'h2', action: 'lesson_complete', points: rand(25, 100), description: 'Lecciones completadas', timestamp: new Date(now - 15 * DAY).toISOString() },
-        { id: 'h3', action: 'quiz_pass', points: rand(30, 80), description: 'Quizzes aprobados', timestamp: new Date(now - 7 * DAY).toISOString() },
-      ],
-      createdAt: now - 30 * DAY,
-      updatedAt: now
+      enrolledAt: new Date(now - enrollDaysAgo * DAY).toISOString(),
+      progress,
+      status: isCompleted ? 'completed' : 'active',
+      completedLessons,
+      completedModules,
+      totalTimeSpent: completedCount * rand(5, 20), // ~5-20 min per lesson
+      lastAccessedAt: new Date(now - rand(0, 5) * DAY).toISOString(),
+      ...(isCompleted ? { grade: rand(70, 98) } : {}),
+      createdAt: now - enrollDaysAgo * DAY,
+      updatedAt: now,
     });
 
-    // Learning streaks
-    const streak = rand(1, 14);
-    await firebaseDB.create('learningStreaks', {
-      userId: student.id,
-      currentStreak: streak,
-      longestStreak: rand(streak, 21),
-      lastActiveDate: new Date().toISOString().split('T')[0],
-      weeklyActivity: Array.from({ length: 7 }, () => rand(0, 5)),
-      monthlyActivity: {},
-      createdAt: now - 30 * DAY,
-      updatedAt: now
-    });
-
-    // Award first badge to all students
-    await firebaseDB.create('userBadges', {
-      userId: student.id,
-      badgeId: 'first_step',
-      earnedAt: new Date(now - 25 * DAY).toISOString(),
-      notified: true,
-      createdAt: now - 25 * DAY
-    });
-
-    console.log(`   ✅ ${student.name}: ${pts} pts, nivel ${lvlIdx + 1} (${lvl.name}), racha ${streak}`);
-  }
-
-  // =============================================
-  // 7. ACTIVIDADES RECIENTES
-  // =============================================
-  console.log('\n📊 Creando actividades...');
-
-  const activityTypes: DBActivity['type'][] = ['login', 'lesson_complete', 'evaluation_submit', 'course_view'];
-  for (const student of students) {
-    for (let i = 0; i < 8; i++) {
-      const type = pick(activityTypes);
-      const daysAgo = rand(0, 14);
+    // Create activity for each completed lesson
+    for (let li = 0; li < completedCount; li++) {
+      const lesson = allLessonsFlat[li];
+      const lessonDaysAgo = enrollDaysAgo - Math.floor(((li + 1) / totalLessons) * enrollDaysAgo);
       await firebaseDB.create('activities', {
         userId: student.id,
         userName: student.name,
-        type,
-        action: type,
-        description: type === 'login' ? 'Inicio de sesión' :
-                     type === 'lesson_complete' ? `Completó lección en ${pick(createdCourses).title}` :
-                     type === 'evaluation_submit' ? `Envió evaluación en ${pick(createdCourses).title}` :
-                     `Visitó curso ${pick(createdCourses).title}`,
-        timestamp: now - daysAgo * DAY - rand(0, DAY),
-        createdAt: now - daysAgo * DAY
+        type: 'lesson_complete',
+        action: 'lesson_complete',
+        description: `Completó "${lesson.title}" en ${course.title}`,
+        metadata: { lessonId: lesson.id, courseId: course.id, sectionId },
+        timestamp: now - lessonDaysAgo * DAY - rand(0, DAY),
+        createdAt: now - lessonDaysAgo * DAY,
       });
+      activityCount++;
+    }
+
+    // Login activity
+    await firebaseDB.create('activities', {
+      userId: student.id,
+      userName: student.name,
+      type: 'login',
+      action: 'login',
+      description: 'Inicio de sesión',
+      timestamp: now - rand(0, 3) * DAY,
+      createdAt: now - rand(0, 3) * DAY,
+    });
+    activityCount++;
+
+    console.log(`   📋 ${student.name} → ${course.title}: ${progress}% (${completedCount}/${totalLessons} lecciones)`);
+
+    // Create evaluation attempts + grades for completed modules only
+    const courseEvals = createdEvals.filter(e => e.courseIdx === ci);
+    for (let ei = 0; ei < courseEvals.length; ei++) {
+      const { eval: evaluation } = courseEvals[ei];
+      const moduleForEval = courseModules[ei];
+      if (!moduleForEval) continue;
+
+      // Only create attempt if module is fully completed
+      if (!completedModules.includes(moduleForEval.module.id)) continue;
+
+      const score = rand(4, 10) * evaluation.questions.length;
+      const maxScore = evaluation.questions.length * 10;
+      const percentage = Math.round((score / maxScore) * 100);
+      const passed = percentage >= 60;
+      const attemptDaysAgo = rand(1, enrollDaysAgo - 1);
+
+      await firebaseDB.create('evaluationAttempts', {
+        evaluationId: evaluation.id,
+        userId: student.id,
+        courseId: course.id,
+        sectionId,
+        answers: evaluation.questions.map((q) => {
+          const isCorrect = Math.random() < (percentage / 100);
+          return {
+            questionId: q.id,
+            answer: isCorrect ? q.correctAnswer : (q.options?.[0] || ''),
+            isCorrect,
+            pointsEarned: isCorrect ? q.points : 0,
+          };
+        }),
+        score,
+        maxScore,
+        percentage,
+        passed,
+        timeSpent: rand(180, 900),
+        startedAt: new Date(now - attemptDaysAgo * DAY).toISOString(),
+        completedAt: new Date(now - attemptDaysAgo * DAY + rand(300, 900) * 1000).toISOString(),
+        status: 'completed',
+        createdAt: now - attemptDaysAgo * DAY,
+        updatedAt: now - attemptDaysAgo * DAY,
+      });
+
+      await firebaseDB.createGrade({
+        courseId: course.id,
+        sectionId,
+        evaluationId: evaluation.id,
+        studentId: student.id,
+        teacherId: instructors[ci].id,
+        type: 'evaluation',
+        score,
+        maxScore,
+        percentage,
+        weight: 1,
+        feedback: percentage >= 90 ? 'Excelente trabajo' :
+                  percentage >= 70 ? 'Buen desempeño' :
+                  percentage >= 60 ? 'Aprobado, pero puedes mejorar' :
+                  'Necesitas repasar el material',
+        status: 'graded',
+        createdAt: now - attemptDaysAgo * DAY,
+        updatedAt: now - attemptDaysAgo * DAY,
+      });
+
+      // Activity for evaluation
+      await firebaseDB.create('activities', {
+        userId: student.id,
+        userName: student.name,
+        type: 'evaluation_submit',
+        action: 'evaluation_submit',
+        description: `Envió evaluación "${evaluation.title}" en ${course.title}`,
+        metadata: { evaluationId: evaluation.id, courseId: course.id, score: percentage },
+        timestamp: now - attemptDaysAgo * DAY,
+        createdAt: now - attemptDaysAgo * DAY,
+      });
+      activityCount++;
     }
   }
-  console.log(`   ✅ ${students.length * 8} actividades creadas`);
+
+  console.log(`   ✅ ${enrollmentMap.length} inscripciones, ${activityCount} actividades creadas`);
 
   // =============================================
   // 8. NOTIFICACIONES
@@ -1361,61 +1722,6 @@ export async function dataInit(clearFirst = false): Promise<void> {
   console.log(`   ✅ ${createdUsers.length} configuraciones creadas`);
 
   // =============================================
-  // 15. PROGRESS ACTIVITIES (historial detallado)
-  // =============================================
-  console.log('\n📜 Creando historial de progreso...');
-
-  let paCount = 0;
-  for (const student of students) {
-    // Enrollment activities
-    for (const course of createdCourses) {
-      await firebaseDB.create('progressActivities', {
-        userId: student.id,
-        type: 'course_started',
-        courseId: course.id,
-        details: `Inició el curso ${course.title}`,
-        points: 10,
-        timestamp: new Date(now - rand(20, 40) * DAY).toISOString(),
-        createdAt: now - rand(20, 40) * DAY
-      });
-      paCount++;
-    }
-
-    // Lesson completions
-    for (let i = 0; i < rand(3, 8); i++) {
-      const courseModule = pick(allModules);
-      const lesson = pick(courseModule.lessons);
-      await firebaseDB.create('progressActivities', {
-        userId: student.id,
-        type: 'lesson_completed',
-        courseId: createdCourses[courseModule.courseIdx].id,
-        lessonId: lesson.id,
-        details: `Completó la lección ${lesson.title}`,
-        points: rand(5, 15),
-        timestamp: new Date(now - rand(1, 20) * DAY).toISOString(),
-        createdAt: now - rand(1, 20) * DAY
-      });
-      paCount++;
-    }
-
-    // Quiz passes
-    for (let i = 0; i < rand(1, 4); i++) {
-      const evalItem = pick(createdEvals);
-      await firebaseDB.create('progressActivities', {
-        userId: student.id,
-        type: 'quiz_passed',
-        courseId: createdCourses[evalItem.courseIdx].id,
-        details: `Aprobó ${evalItem.eval.title}`,
-        points: rand(15, 30),
-        timestamp: new Date(now - rand(1, 15) * DAY).toISOString(),
-        createdAt: now - rand(1, 15) * DAY
-      });
-      paCount++;
-    }
-  }
-  console.log(`   ✅ ${paCount} actividades de progreso creadas`);
-
-  // =============================================
   // RESUMEN FINAL
   // =============================================
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -1424,24 +1730,25 @@ export async function dataInit(clearFirst = false): Promise<void> {
   console.log(`⏱️  Tiempo: ${elapsed}s`);
   console.log(`${'='.repeat(50)}`);
   console.log('\n📋 Resumen:');
-  console.log(`   👥 ${createdUsers.length} usuarios (2 teachers, 3 students, 1 admin, 1 support)`);
+  console.log(`   👥 ${createdUsers.length} usuarios (2 admins, 2 teachers, 10 students, 2 support)`);
   console.log(`   📚 ${createdCourses.length} cursos con 7 módulos cada uno`);
   console.log(`   📖 ${allModules.reduce((acc, m) => acc + m.lessons.length, 0)} lecciones totales`);
   console.log(`   📝 ${createdEvals.length} evaluaciones`);
-  console.log(`   🎓 ${students.length * createdCourses.length} inscripciones con notas aleatorias`);
+  console.log(`   🎓 ${enrollmentMap.length} inscripciones`);
+  console.log(`   📜 ${activityCount} actividades (lecciones + evaluaciones + logins)`);
   console.log(`   🎫 ${ticketCount} tickets de soporte`);
   console.log(`   🏅 ${certCount} certificados`);
   console.log(`   📈 7 días de métricas del sistema`);
   console.log(`   ⚙️  ${createdUsers.length} configuraciones de usuario`);
-  console.log(`   📜 ${paCount} actividades de progreso`);
   console.log('\n🔑 Credenciales:');
   console.log('   admin@lasaedu.com / password123');
-  console.log('   teacher@lasaedu.com / password123 (2 cursos)');
-  console.log('   teacher2@lasaedu.com / password123 (1 curso)');
+  console.log('   admin2@lasaedu.com / password123');
+  console.log('   teacher@lasaedu.com / password123 (cursos 0-1)');
+  console.log('   teacher2@lasaedu.com / password123 (curso 2)');
   console.log('   student@lasaedu.com / password123');
-  console.log('   laura@lasaedu.com / password123');
-  console.log('   pedro@lasaedu.com / password123');
+  console.log('   student2@lasaedu.com ... student10@lasaedu.com / password123');
   console.log('   support@lasaedu.com / password123');
+  console.log('   support2@lasaedu.com / password123');
 }
 
 // Type for activities

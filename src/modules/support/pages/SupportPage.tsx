@@ -12,7 +12,8 @@ import {
   XCircle,
   User,
   Send,
-  ChevronRight
+  ChevronRight,
+  ArrowLeft
 } from 'lucide-react';
 import { Card, CardContent } from '@shared/components/ui/Card';
 import { Button } from '@shared/components/ui/Button';
@@ -245,26 +246,14 @@ export default function SupportPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">
-            {isSupport ? 'Centro de Soporte' : 'Mis Tickets'}
-          </h1>
-          <p className="text-gray-600">
-            {isSupport 
-              ? 'Gestiona los tickets de soporte de los usuarios'
-              : '¿Necesitas ayuda? Crea un ticket y te responderemos pronto'
-            }
-          </p>
-        </div>
+      <div className="flex items-center justify-end">
         {!isSupport && (
           <Button onClick={() => setShowCreateModal(true)}>
             <Plus className="h-4 w-4 mr-2" />
@@ -278,8 +267,8 @@ export default function SupportPage() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card>
             <CardContent className="p-4 flex items-center">
-              <div className="p-3 bg-blue-100 rounded-lg">
-                <HelpCircle className="h-6 w-6 text-blue-600" />
+              <div className="p-3 bg-red-100 rounded-lg">
+                <HelpCircle className="h-6 w-6 text-red-600" />
               </div>
               <div className="ml-4">
                 <p className="text-2xl font-bold">{stats.total}</p>
@@ -289,8 +278,8 @@ export default function SupportPage() {
           </Card>
           <Card>
             <CardContent className="p-4 flex items-center">
-              <div className="p-3 bg-yellow-100 rounded-lg">
-                <Clock className="h-6 w-6 text-yellow-600" />
+              <div className="p-3 bg-red-50 rounded-lg">
+                <Clock className="h-6 w-6 text-red-500" />
               </div>
               <div className="ml-4">
                 <p className="text-2xl font-bold">{stats.open}</p>
@@ -300,8 +289,8 @@ export default function SupportPage() {
           </Card>
           <Card>
             <CardContent className="p-4 flex items-center">
-              <div className="p-3 bg-green-100 rounded-lg">
-                <CheckCircle className="h-6 w-6 text-green-600" />
+              <div className="p-3 bg-red-50 rounded-lg">
+                <CheckCircle className="h-6 w-6 text-red-400" />
               </div>
               <div className="ml-4">
                 <p className="text-2xl font-bold">{stats.resolved}</p>
@@ -341,7 +330,7 @@ export default function SupportPage() {
             <select
               value={statusFilter}
               onChange={e => setStatusFilter(e.target.value)}
-              className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
+              className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-red-500"
             >
               <option value="all">Todos los estados</option>
               <option value="new">Nuevos</option>
@@ -353,7 +342,7 @@ export default function SupportPage() {
             <select
               value={priorityFilter}
               onChange={e => setPriorityFilter(e.target.value)}
-              className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
+              className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-red-500"
             >
               <option value="all">Todas las prioridades</option>
               <option value="urgente">Urgente</option>
@@ -368,7 +357,7 @@ export default function SupportPage() {
       {/* Main Content */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Tickets List */}
-        <div className={`${selectedTicket ? 'lg:col-span-1' : 'lg:col-span-3'}`}>
+        <div className={`${selectedTicket ? 'hidden lg:block lg:col-span-1' : 'lg:col-span-3'}`}>
           <Card>
             <CardContent className="p-0">
               {filteredTickets.length === 0 ? (
@@ -391,7 +380,7 @@ export default function SupportPage() {
                       key={ticket.id}
                       onClick={() => setSelectedTicket(ticket)}
                       className={`p-4 cursor-pointer hover:bg-gray-50 ${
-                        selectedTicket?.id === ticket.id ? 'bg-indigo-50' : ''
+                        selectedTicket?.id === ticket.id ? 'bg-red-50' : ''
                       }`}
                     >
                       <div className="flex items-start justify-between">
@@ -432,6 +421,13 @@ export default function SupportPage() {
                 {/* Ticket Header */}
                 <div className="flex items-start justify-between mb-6">
                   <div>
+                    <button
+                      onClick={() => setSelectedTicket(null)}
+                      className="lg:hidden flex items-center text-sm text-gray-500 hover:text-gray-700 mb-2"
+                    >
+                      <ArrowLeft className="h-4 w-4 mr-1" />
+                      Volver a tickets
+                    </button>
                     <div className="flex items-center space-x-2 mb-2">
                       <span className="text-sm text-gray-500 font-mono">
                         #{selectedTicket.id.split('_')[1]}
@@ -500,19 +496,19 @@ export default function SupportPage() {
                       className={`flex ${message.senderId === user?.id ? 'justify-end' : 'justify-start'}`}
                     >
                       <div className={`max-w-[80%] rounded-lg p-3 ${
-                        message.senderId === user?.id 
-                          ? 'bg-indigo-600 text-white'
+                        message.senderId === user?.id
+                          ? 'bg-red-600 text-white'
                           : message.senderRole === 'support'
-                            ? 'bg-green-100 text-green-900'
+                            ? 'bg-red-50 text-gray-900'
                             : 'bg-gray-100 text-gray-900'
                       }`}>
                         <div className="flex items-center space-x-2 mb-1">
                           <span className="font-medium text-sm">{message.senderName}</span>
                           {(message.senderRole === 'support') && (
                             <span className={`text-xs px-1.5 py-0.5 rounded ${
-                              message.senderId === user?.id 
-                                ? 'bg-indigo-500' 
-                                : 'bg-green-200 text-green-800'
+                              message.senderId === user?.id
+                                ? 'bg-red-500'
+                                : 'bg-red-200 text-red-800'
                             }`}>
                               Soporte
                             </span>
@@ -520,7 +516,7 @@ export default function SupportPage() {
                         </div>
                         <p className="text-sm">{message.content}</p>
                         <p className={`text-xs mt-1 ${
-                          message.senderId === user?.id ? 'text-indigo-200' : 'text-gray-500'
+                          message.senderId === user?.id ? 'text-red-200' : 'text-gray-500'
                         }`}>
                           {new Date(message.createdAt).toLocaleString()}
                         </p>
@@ -552,7 +548,7 @@ export default function SupportPage() {
       {/* Create Ticket Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg w-full max-w-lg">
+          <div className="bg-white rounded-lg w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <h2 className="text-xl font-bold mb-4">Nuevo Ticket de Soporte</h2>
               
@@ -566,7 +562,7 @@ export default function SupportPage() {
                   />
                 </div>
                 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <Label>Categoría</Label>
                     <select
@@ -575,7 +571,7 @@ export default function SupportPage() {
                         ...prev, 
                         category: e.target.value as Ticket['category']
                       }))}
-                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
                     >
                       <option value="tecnico">Técnico</option>
                       <option value="academico">Académico</option>
@@ -592,7 +588,7 @@ export default function SupportPage() {
                         ...prev, 
                         priority: e.target.value as Ticket['priority']
                       }))}
-                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
                     >
                       <option value="baja">Baja</option>
                       <option value="media">Media</option>
@@ -607,7 +603,7 @@ export default function SupportPage() {
                   <textarea
                     value={ticketForm.description}
                     onChange={e => setTicketForm(prev => ({ ...prev, description: e.target.value }))}
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
                     rows={5}
                     placeholder="Describe tu problema con el mayor detalle posible..."
                   />

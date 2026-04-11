@@ -300,16 +300,16 @@ const CommunicationPage = () => {
                     key={channel.id}
                     onClick={() => setSelectedChannel(channel)}
                     className={`w-full text-left p-3 rounded-lg transition-colors ${
-                      isSelected 
-                        ? 'bg-blue-100 border-l-4 border-blue-500' 
+                      isSelected
+                        ? 'bg-red-100 border-l-4 border-red-500'
                         : 'hover:bg-gray-100'
                     }`}
                   >
                     <div className="flex items-center space-x-3">
                       <div className={`p-2 rounded ${
-                        channel.type === 'course' ? 'bg-green-100 text-green-600' :
-                        channel.type === 'private' ? 'bg-purple-100 text-purple-600' :
-                        'bg-blue-100 text-blue-600'
+                        channel.type === 'course' ? 'bg-red-100 text-red-600' :
+                        channel.type === 'private' ? 'bg-red-100 text-red-600' :
+                        'bg-red-100 text-red-600'
                       }`}>
                         <ChannelIcon className="h-4 w-4" />
                       </div>
@@ -319,7 +319,7 @@ const CommunicationPage = () => {
                             {channel.name}
                           </h3>
                           {channel.unreadCount > 0 && (
-                            <span className="bg-blue-500 text-white text-xs rounded-full px-2 py-0.5 min-w-[20px] text-center">
+                            <span className="bg-red-500 text-white text-xs rounded-full px-2 py-0.5 min-w-[20px] text-center">
                               {channel.unreadCount}
                             </span>
                           )}
@@ -355,9 +355,9 @@ const CommunicationPage = () => {
             <div className="p-4 border-b bg-white flex items-center justify-between">
               <div className="flex items-center space-x-3">
                 <div className={`p-2 rounded ${
-                  selectedChannel.type === 'course' ? 'bg-green-100 text-green-600' :
-                  selectedChannel.type === 'private' ? 'bg-purple-100 text-purple-600' :
-                  'bg-blue-100 text-blue-600'
+                  selectedChannel.type === 'course' ? 'bg-red-100 text-red-600' :
+                  selectedChannel.type === 'private' ? 'bg-red-100 text-red-600' :
+                  'bg-red-100 text-red-600'
                 }`}>
                   {(() => {
                     const Icon = getChannelIcon(selectedChannel.type);
@@ -415,8 +415,8 @@ const CommunicationPage = () => {
                           <div className="w-8"></div>
                         )}
                         <div className={`rounded-lg px-3 py-2 ${
-                          isOwnMessage 
-                            ? 'bg-blue-500 text-white' 
+                          isOwnMessage
+                            ? 'bg-red-500 text-white'
                             : 'bg-white text-gray-900 shadow-sm border'
                         }`}>
                           {!isOwnMessage && showAvatar && (
@@ -426,7 +426,7 @@ const CommunicationPage = () => {
                           )}
                           <p className="text-sm">{message.content}</p>
                           <p className={`text-xs mt-1 ${
-                            isOwnMessage ? 'text-blue-100' : 'text-gray-500'
+                            isOwnMessage ? 'text-red-100' : 'text-gray-500'
                           }`}>
                             {formatTime(message.timestamp)}
                           </p>
@@ -542,7 +542,7 @@ const CreateChannelModal = ({
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               placeholder="Describe el propósito del canal..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 h-20 resize-none"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 h-20 resize-none"
             />
           </div>
 
@@ -552,7 +552,7 @@ const CreateChannelModal = ({
               id="type"
               value={formData.type}
               onChange={(e) => setFormData({ ...formData, type: e.target.value as Channel['type'] })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
             >
               <option value="general">General</option>
               <option value="course">Curso</option>
@@ -579,7 +579,7 @@ const CreateChannelModal = ({
               id="isPrivate"
               checked={formData.isPrivate}
               onChange={(e) => setFormData({ ...formData, isPrivate: e.target.checked })}
-              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              className="rounded border-gray-300 text-red-600 focus:ring-red-500"
             />
             <Label htmlFor="isPrivate">Canal privado</Label>
           </div>

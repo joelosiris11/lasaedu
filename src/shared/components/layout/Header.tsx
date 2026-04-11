@@ -1,15 +1,39 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAuthStore } from '@app/store/authStore';
-import { useNavigate } from 'react-router-dom';
-import { Search, User, ChevronDown, LogOut } from 'lucide-react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { User, ChevronDown, LogOut } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { NotificationCenter } from './NotificationCenter';
+
+const pageMeta: Record<string, { title: string; subtitle: string }> = {
+  '/dashboard': { title: 'Dashboard', subtitle: 'Resumen general de tu actividad' },
+  '/user-management': { title: 'Gestión de Usuarios', subtitle: 'Administra roles y permisos' },
+  '/users': { title: 'Usuarios', subtitle: 'Listado de usuarios del sistema' },
+  '/enrollments': { title: 'Inscripciones', subtitle: 'Gestiona las inscripciones a cursos' },
+  '/my-sections': { title: 'Mis Secciones', subtitle: 'Tus secciones inscritas y activas' },
+  '/sections': { title: 'Sección', subtitle: 'Detalle de la sección' },
+  '/courses': { title: 'Cursos', subtitle: 'Gestiona y accede a tus cursos' },
+  '/grades': { title: 'Calificaciones', subtitle: 'Consulta y gestiona calificaciones' },
+  '/certificates': { title: 'Certificados', subtitle: 'Certificados obtenidos y disponibles' },
+  '/communication': { title: 'Comunicación', subtitle: 'Mensajes y anuncios' },
+  '/forums': { title: 'Foros', subtitle: 'Participa en las discusiones' },
+  '/support': { title: 'Soporte', subtitle: 'Centro de ayuda y soporte técnico' },
+  '/settings': { title: 'Configuración', subtitle: 'Ajustes de tu cuenta y preferencias' },
+};
+
+function getPageMeta(pathname: string) {
+  const match = Object.keys(pageMeta).find(key => pathname.startsWith(key));
+  return match ? pageMeta[match] : { title: 'lasa EDU', subtitle: '' };
+}
 
 export const Header = () => {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
+  const location = useLocation();
   const [showProfile, setShowProfile] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const { title, subtitle } = getPageMeta(location.pathname);
 
   useEffect(() => {
     if (!showProfile) return;
@@ -23,22 +47,15 @@ export const Header = () => {
   }, [showProfile]);
 
   return (
-    <header className="bg-white border-b border-gray-200 px-4 py-3 md:px-6">
+    <header className="sticky top-0 z-30 bg-white border-b border-gray-200 px-4 py-2.5 pl-[4.5rem] md:pl-6">
       <div className="flex items-center justify-between">
-        {/* Search Bar */}
-        <div className="flex-1 max-w-md">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Buscar cursos, usuarios, contenido..."
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            />
-          </div>
+        {/* Page Title */}
+        <div>
+          <h1 className="text-lg font-semibold text-gray-900">{title}</h1>
         </div>
 
         {/* Right Side: Notifications + Profile */}
-        <div className="flex items-center space-x-4">
+        <div className="flex items-center space-x-2 md:space-x-4">
           {/* Notifications - Real-time component */}
           <NotificationCenter />
 
@@ -50,7 +67,7 @@ export const Header = () => {
               onClick={() => setShowProfile(!showProfile)}
               className="flex items-center space-x-2"
             >
-              <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-700 rounded-full flex items-center justify-center">
+              <div className="w-8 h-8 bg-gradient-to-br from-red-500 to-red-700 rounded-full flex items-center justify-center">
                 <User className="h-4 w-4 text-white" />
               </div>
               <span className="hidden md:block text-sm font-medium text-gray-700">
@@ -65,12 +82,9 @@ export const Header = () => {
                 <div className="p-3 border-b border-gray-200">
                   <div className="text-sm font-medium text-gray-800">{user?.name}</div>
                   <div className="text-xs text-gray-500">{user?.email}</div>
-                  <div className="text-xs text-blue-600 capitalize">{user?.role}</div>
+                  <div className="text-xs text-red-600 capitalize">{user?.role}</div>
                 </div>
                 <div className="py-1">
-                  <button onClick={() => { setShowProfile(false); navigate('/settings'); }} className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100">
-                    Mi Perfil
-                  </button>
                   <button onClick={() => { setShowProfile(false); navigate('/settings'); }} className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100">
                     Configuración
                   </button>

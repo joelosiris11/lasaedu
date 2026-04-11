@@ -124,43 +124,6 @@
         ".read": "data.child('userId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin'"
       }
     },
-    "userPoints": {
-      ".read": "auth != null",
-      ".indexOn": ["userId", "totalPoints", "level"],
-      "$pointsId": {
-        ".read": "auth != null",
-        ".write": "data.child('userId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin'"
-      }
-    },
-    "badges": {
-      ".read": "auth != null",
-      ".write": "root.child('users').child(auth.uid).child('role').val() === 'admin'",
-      ".indexOn": ["category", "rarity", "isActive"]
-    },
-    "userBadges": {
-      ".read": "auth != null",
-      ".indexOn": ["userId", "badgeId"],
-      "$userBadgeId": {
-        ".read": "auth != null",
-        ".write": "data.child('userId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin'"
-      }
-    },
-    "learningStreaks": {
-      ".read": "auth != null",
-      ".indexOn": ["userId", "currentStreak"],
-      "$streakId": {
-        ".read": "data.child('userId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin'",
-        ".write": "data.child('userId').val() === auth.uid || $streakId === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin'"
-      }
-    },
-    "progressActivities": {
-      ".read": "auth != null",
-      ".indexOn": ["userId", "type", "courseId"],
-      "$activityId": {
-        ".read": "data.child('userId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin'",
-        ".write": "data.child('userId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin'"
-      }
-    },
     "userSettings": {
       ".indexOn": ["userId"],
       "$settingsId": {

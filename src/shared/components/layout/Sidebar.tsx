@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useAuthStore } from '@app/store/authStore';
 import {
   Home,
@@ -7,22 +7,17 @@ import {
   Users,
   Settings,
   HelpCircle,
-  LogOut,
   Menu,
   X,
-  FileText,
-  BarChart3,
   MessageCircle,
-  GraduationCap,
   Award,
-  Trophy,
   ClipboardList,
-  Compass,
-  TrendingUp,
   MessageSquare,
   UserCog,
-  Bell,
-  UserPlus
+  UserPlus,
+  ChevronsLeft,
+  ChevronsRight,
+  Layers,
 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import type { UserRole } from '@shared/types';
@@ -34,68 +29,108 @@ interface SidebarItem {
   roles?: UserRole[];
 }
 
-const sidebarItems: SidebarItem[] = [
-  // Todos los roles
-  { icon: Home, label: 'Dashboard', path: '/dashboard' },
+interface SidebarSection {
+  label: string;
+  items: SidebarItem[];
+  roles?: UserRole[]; // hide entire section for certain roles
+}
 
-  // Admin: gestión completa
-  { icon: UserCog, label: 'Gestión Usuarios', path: '/user-management', roles: ['admin'] },
-  { icon: Users, label: 'Usuarios', path: '/users', roles: ['admin'] },
-  { icon: UserPlus, label: 'Inscripciones', path: '/enrollments', roles: ['admin', 'teacher'] },
-  { icon: Bell, label: 'Notificaciones', path: '/notifications', roles: ['admin', 'teacher'] },
-
-  // Cursos y catálogo
-  { icon: Compass, label: 'Catálogo', path: '/catalog', roles: ['admin', 'teacher', 'student'] },
-  { icon: BookOpen, label: 'Cursos', path: '/courses', roles: ['admin', 'teacher', 'student'] },
-
-  // Solo estudiantes
-  { icon: TrendingUp, label: 'Mi Progreso', path: '/progress', roles: ['student'] },
-
-  // Evaluaciones y calificaciones
-  { icon: FileText, label: 'Evaluaciones', path: '/evaluations', roles: ['admin', 'teacher', 'student'] },
-  { icon: ClipboardList, label: 'Calificaciones', path: '/grades', roles: ['admin', 'teacher', 'student'] },
-
-  // Certificados y gamificación
-  { icon: Award, label: 'Certificados', path: '/certificates', roles: ['admin', 'teacher', 'student'] },
-  { icon: Trophy, label: 'Gamificación', path: '/gamification', roles: ['admin', 'teacher', 'student'] },
-
-  // Reportes (solo admin y teacher)
-  { icon: BarChart3, label: 'Reportes', path: '/reports', roles: ['admin', 'teacher'] },
-
-  // Comunicación
-  { icon: MessageCircle, label: 'Comunicación', path: '/communication', roles: ['admin', 'teacher', 'student'] },
-  { icon: MessageSquare, label: 'Foros', path: '/forums', roles: ['admin', 'teacher', 'student'] },
-
-  // Soporte
-  { icon: HelpCircle, label: 'Soporte', path: '/support', roles: ['admin', 'support', 'student', 'teacher'] },
-
-  // Configuración (todos)
-  { icon: Settings, label: 'Configuración', path: '/settings' },
+const sidebarSections: SidebarSection[] = [
+  {
+    label: '',
+    items: [
+      { icon: Home, label: 'Dashboard', path: '/dashboard' },
+    ],
+  },
+  // Student: "Aprendizaje" section
+  {
+    label: 'Aprendizaje',
+    roles: ['student'],
+    items: [
+      { icon: BookOpen, label: 'Mis Cursos', path: '/my-sections', roles: ['student'] },
+      { icon: ClipboardList, label: 'Calificaciones', path: '/grades', roles: ['student'] },
+      { icon: Award, label: 'Certificados', path: '/certificates', roles: ['student'] },
+    ],
+  },
+  // Teacher: "Docencia" section with their courses, grades, enrollments, certificates
+  {
+    label: 'Docencia',
+    roles: ['teacher'],
+    items: [
+      { icon: BookOpen, label: 'Mis Cursos', path: '/courses', roles: ['teacher'] },
+      { icon: Layers, label: 'Secciones', path: '/my-sections', roles: ['teacher'] },
+      { icon: UserPlus, label: 'Inscripciones', path: '/enrollments', roles: ['teacher'] },
+      { icon: ClipboardList, label: 'Calificaciones', path: '/grades', roles: ['teacher'] },
+      { icon: Award, label: 'Certificados', path: '/certificates', roles: ['teacher'] },
+    ],
+  },
+  // Admin: "Gestión" section - no duplicates, no reportes
+  {
+    label: 'Gestión',
+    roles: ['admin'],
+    items: [
+      { icon: UserCog, label: 'Gestión Usuarios', path: '/user-management', roles: ['admin'] },
+      { icon: UserPlus, label: 'Inscripciones', path: '/enrollments', roles: ['admin'] },
+      { icon: BookOpen, label: 'Cursos', path: '/courses', roles: ['admin'] },
+      { icon: ClipboardList, label: 'Calificaciones', path: '/grades', roles: ['admin'] },
+      { icon: Award, label: 'Certificados', path: '/certificates', roles: ['admin'] },
+    ],
+  },
+  {
+    label: 'Comunicación',
+    roles: ['admin', 'teacher', 'student'],
+    items: [
+      { icon: MessageCircle, label: 'Mensajes', path: '/communication', roles: ['admin', 'teacher', 'student'] },
+      { icon: MessageSquare, label: 'Foros', path: '/forums', roles: ['admin', 'teacher', 'student'] },
+    ],
+  },
+  {
+    label: 'Sistema',
+    items: [
+      { icon: HelpCircle, label: 'Soporte', path: '/support', roles: ['admin', 'support', 'student', 'teacher'] },
+      { icon: Settings, label: 'Configuración', path: '/settings' },
+    ],
+  },
 ];
 
-export const Sidebar = () => {
+interface SidebarProps {
+  collapsed: boolean;
+  onToggleCollapse: () => void;
+}
+
+export const Sidebar = ({ collapsed, onToggleCollapse }: SidebarProps) => {
   const [isOpen, setIsOpen] = useState(false);
-  const { user, logout } = useAuthStore();
+  const { user } = useAuthStore();
   const location = useLocation();
-  const navigate = useNavigate();
 
-  const handleLogout = async () => {
-    await logout();
-    navigate('/login');
-  };
+  const userRole = user?.role as UserRole;
 
-  const filteredItems = sidebarItems.filter(item => 
-    !item.roles || item.roles.includes(user?.role as UserRole)
-  );
+  // Filter sections: check section-level roles, then item-level roles
+  const visibleSections = sidebarSections
+    .filter((section) => !section.roles || section.roles.includes(userRole))
+    .map((section) => ({
+      ...section,
+      items: section.items.filter(
+        (item) => !item.roles || item.roles.includes(userRole)
+      ),
+    }))
+    .filter((section) => section.items.length > 0);
 
   const toggleSidebar = () => setIsOpen(!isOpen);
+
+  const roleLabels: Record<string, string> = {
+    admin: 'Administrador',
+    teacher: 'Profesor',
+    student: 'Estudiante',
+    support: 'Soporte',
+  };
 
   return (
     <>
       {/* Mobile menu button */}
       <Button
         onClick={toggleSidebar}
-        className="fixed top-4 left-4 z-50 md:hidden"
+        className="fixed top-[11px] left-3 z-50 md:hidden"
         size="sm"
         variant="outline"
       >
@@ -104,78 +139,142 @@ export const Sidebar = () => {
 
       {/* Overlay for mobile */}
       {isOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-black bg-opacity-50 z-40 md:hidden"
           onClick={() => setIsOpen(false)}
         />
       )}
 
       {/* Sidebar */}
-      <aside className={`
-        fixed top-0 left-0 z-40 w-64 h-screen transition-transform
+      <aside
+        className={`
+        fixed top-0 left-0 z-40 h-screen transition-all duration-300
+        ${collapsed ? 'w-16' : 'w-64'}
         ${isOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0
         bg-white border-r border-gray-200 shadow-lg
-      `}>
-        <div className="h-full px-3 py-4 overflow-y-auto">
-          {/* Logo/Header */}
-          <div className="flex items-center mb-5 px-2">
-            <div className="flex items-center">
-              <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-700 rounded-lg flex items-center justify-center">
-                <GraduationCap className="h-5 w-5 text-white" />
-              </div>
-              <span className="ml-2 text-xl font-bold text-gray-800">LasaEdu</span>
-            </div>
-          </div>
-
-          {/* User Info */}
-          <div className="mb-5 px-2">
-            <div className="bg-gray-50 rounded-lg p-3">
-              <div className="text-sm font-medium text-gray-800 truncate">
-                {user?.name}
-              </div>
-              <div className="text-xs text-gray-500 capitalize">
-                {user?.role}
-              </div>
-            </div>
-          </div>
-
-          {/* Navigation */}
-          <nav className="space-y-1">
-            {filteredItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = location.pathname.startsWith(item.path);
-              
-              return (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  onClick={() => setIsOpen(false)}
-                  className={`
-                    flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors
-                    ${isActive 
-                      ? 'bg-blue-100 text-blue-800 border-r-2 border-blue-600' 
-                      : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                    }
-                  `}
+      `}
+      >
+        <div className="h-full flex flex-col overflow-hidden pt-14 md:pt-0">
+          {/* Fixed top: logo + collapse button */}
+          <div className="flex-shrink-0">
+            {collapsed ? (
+              <>
+                <div className="hidden md:flex justify-center px-1 pt-3 mb-2">
+                  <button
+                    onClick={onToggleCollapse}
+                    className="p-1.5 text-gray-400 hover:text-gray-600 transition-colors rounded-lg hover:bg-gray-100"
+                    title="Expandir sidebar"
+                  >
+                    <ChevronsRight className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="flex justify-center px-1 pb-4">
+                  <img
+                    src="/LaAuroraLogo.png"
+                    alt="lasa EDU"
+                    className="h-10 w-auto transition-all duration-300"
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="relative">
+                <div className="flex justify-center pt-3 pb-4 px-3">
+                  <img
+                    src="/LaAuroraLogo.png"
+                    alt="lasa EDU"
+                    className="h-16 md:h-20 w-auto transition-all duration-300"
+                  />
+                </div>
+                <button
+                  onClick={onToggleCollapse}
+                  className="hidden md:flex absolute top-2 right-2 p-1 text-gray-400 hover:text-gray-600 transition-colors rounded-lg hover:bg-gray-100"
+                  title="Colapsar sidebar"
                 >
-                  <Icon className="h-5 w-5 mr-3" />
-                  {item.label}
-                </Link>
-              );
-            })}
+                  <ChevronsLeft className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Scrollable navigation */}
+          <nav
+            className={`flex-1 overflow-y-auto pb-4 ${
+              collapsed ? 'px-1' : 'px-3'
+            }`}
+          >
+            {visibleSections.map((section, sectionIndex) => (
+              <div key={sectionIndex} className="mb-1">
+                {/* Section label */}
+                {section.label && (
+                  collapsed ? (
+                    <div className="my-2 mx-2 border-t border-gray-200" />
+                  ) : (
+                    <div className="px-3 pt-4 pb-1">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                        {section.label}
+                      </span>
+                    </div>
+                  )
+                )}
+
+                {/* Section items */}
+                <div className="space-y-0.5">
+                  {section.items.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = location.pathname.startsWith(item.path);
+
+                    return (
+                      <Link
+                        key={item.path}
+                        to={item.path}
+                        onClick={() => setIsOpen(false)}
+                        title={collapsed ? item.label : undefined}
+                        className={`
+                          flex items-center ${
+                            collapsed ? 'justify-center px-2' : 'px-3'
+                          } py-2.5 text-sm font-medium rounded-lg transition-all duration-150
+                          ${
+                            isActive
+                              ? 'bg-red-50 text-red-700 shadow-sm'
+                              : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                          }
+                        `}
+                      >
+                        <Icon
+                          className={`h-5 w-5 flex-shrink-0 ${
+                            collapsed ? '' : 'mr-3'
+                          } ${isActive ? 'text-red-600' : ''}`}
+                        />
+                        {!collapsed && item.label}
+                        {isActive && !collapsed && (
+                          <div className="ml-auto w-1.5 h-1.5 rounded-full bg-red-600" />
+                        )}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </nav>
 
-          {/* Logout Button */}
-          <div className="absolute bottom-4 left-3 right-3">
-            <Button
-              onClick={handleLogout}
-              variant="outline"
-              className="w-full justify-start text-gray-600 hover:text-gray-900"
-            >
-              <LogOut className="h-4 w-4 mr-3" />
-              Cerrar Sesión
-            </Button>
-          </div>
+          {/* User role badge at bottom */}
+          {!collapsed && (
+            <div className="flex-shrink-0 px-3 py-3 border-t border-gray-100">
+              <div className="flex items-center px-3 py-2 rounded-lg bg-gray-50">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-red-500 to-red-700 flex items-center justify-center text-white text-xs font-bold">
+                  {user?.name?.charAt(0)?.toUpperCase() || '?'}
+                </div>
+                <div className="ml-3 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 truncate">
+                    {user?.name}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {roleLabels[userRole] || userRole}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </aside>
     </>

@@ -206,6 +206,7 @@ export default function CourseWizardPage() {
         status: 'borrador',
         image: formData.image || undefined,
         studentsCount: 0,
+        sectionsCount: 0,
         tags: formData.tags,
         requirements: formData.requirements,
         objectives: formData.objectives,
@@ -214,8 +215,8 @@ export default function CourseWizardPage() {
       };
       
       const newCourse = await courseService.create(courseData);
-      
-      // Navigate to course detail/editor
+
+      // Navigate to course — teacher can add modules, then create sections
       navigate(`/courses/${newCourse.id}`);
     } catch (error) {
       console.error('Error creating course:', error);
@@ -235,7 +236,7 @@ export default function CourseWizardPage() {
             Volver
           </Button>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Crear Nuevo Curso</h1>
+            <h1 className="text-xl md:text-2xl font-bold text-gray-900">Crear Nuevo Curso</h1>
             <p className="text-gray-600">Completa los pasos para crear tu curso</p>
           </div>
         </div>
@@ -276,7 +277,7 @@ export default function CourseWizardPage() {
                     )}
                   </div>
                 </div>
-                <span className={`mt-2 text-sm font-medium ${
+                <span className={`hidden sm:block mt-2 text-sm font-medium ${
                   isActive ? 'text-blue-600' : isCompleted ? 'text-blue-600' : 'text-gray-500'
                 }`}>
                   {step.title}
@@ -595,34 +596,14 @@ export default function CourseWizardPage() {
                 </div>
               )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="startDate">Fecha de inicio</Label>
-                  <div className="relative">
-                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <Input
-                      id="startDate"
-                      type="date"
-                      value={formData.startDate}
-                      onChange={(e) => setFormData(prev => ({ ...prev, startDate: e.target.value }))}
-                      className="pl-10"
-                    />
-                  </div>
+              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center gap-2 text-blue-700 text-sm font-medium mb-1">
+                  <Calendar className="h-4 w-4" />
+                  Fechas de inicio y fin
                 </div>
-
-                <div>
-                  <Label htmlFor="endDate">Fecha de fin (opcional)</Label>
-                  <div className="relative">
-                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <Input
-                      id="endDate"
-                      type="date"
-                      value={formData.endDate}
-                      onChange={(e) => setFormData(prev => ({ ...prev, endDate: e.target.value }))}
-                      className="pl-10"
-                    />
-                  </div>
-                </div>
+                <p className="text-blue-600 text-sm">
+                  Las fechas se configuran al crear secciones del curso. Cada sección puede tener fechas diferentes.
+                </p>
               </div>
 
               <div>
@@ -638,7 +619,7 @@ export default function CourseWizardPage() {
                       enrollmentLimit: e.target.value ? parseInt(e.target.value) : null 
                     }))}
                     placeholder="Sin límite"
-                    className="w-40"
+                    className="w-full sm:w-40"
                     disabled={formData.enrollmentLimit === null}
                   />
                   <label className="flex items-center">

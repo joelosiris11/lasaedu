@@ -1,4 +1,4 @@
-import type { DBDeadlineExtension } from '@shared/services/firebaseDataService';
+import type { DBDeadlineExtension, DBSectionLessonOverride } from '@shared/services/firebaseDataService';
 
 /**
  * Utilidades para fechas límite, disponibilidad y prórrogas
@@ -135,4 +135,41 @@ export function getTimeRemaining(deadline: number): string {
   if (days > 0) return `${days}d ${hours}h`;
   if (hours > 0) return `${hours}h ${minutes}min`;
   return `${minutes}min`;
+}
+
+export interface ResolvedDeadlines {
+  availableFrom?: string;
+  dueDate?: string;
+  lateSubmissionDeadline?: string;
+  availableUntil?: string;
+}
+
+/**
+ * Resuelve las fechas finales de una lección combinando template + section override.
+ * Prioridad: sectionOverride > templateSettings > sin fecha
+ */
+export function resolveDeadlines(
+  templateSettings?: {
+    availableFrom?: string;
+    dueDate?: string;
+    lateSubmissionDeadline?: string;
+    availableUntil?: string;
+  },
+  sectionOverride?: DBSectionLessonOverride | null
+): ResolvedDeadlines {
+  const base: ResolvedDeadlines = {
+    availableFrom: templateSettings?.availableFrom,
+    dueDate: templateSettings?.dueDate,
+    lateSubmissionDeadline: templateSettings?.lateSubmissionDeadline,
+    availableUntil: templateSettings?.availableUntil,
+  };
+
+  if (!sectionOverride) return base;
+
+  return {
+    availableFrom: sectionOverride.availableFrom || base.availableFrom,
+    dueDate: sectionOverride.dueDate || base.dueDate,
+    lateSubmissionDeadline: sectionOverride.lateSubmissionDeadline || base.lateSubmissionDeadline,
+    availableUntil: sectionOverride.availableUntil || base.availableUntil,
+  };
 }

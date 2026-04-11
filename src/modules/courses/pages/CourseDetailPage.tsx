@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@app/store/authStore';
-import { courseService, moduleService, lessonService, type DBModule, type DBLesson, type DBCourse } from '@shared/services/dataService';
+import { courseService, moduleService, lessonService, legacyEnrollmentService, type DBModule, type DBLesson, type DBCourse, type DBEnrollment } from '@shared/services/dataService';
 import { fileUploadService } from '@shared/services/fileUploadService';
 import {
   BookOpen,
@@ -23,7 +23,10 @@ import {
   X,
   Loader2,
   Target,
-  MessageSquare
+  MessageSquare,
+  CheckCircle,
+  Circle,
+  Layers
 } from 'lucide-react';
 import { Card, CardContent } from '@shared/components/ui/Card';
 import { Button } from '@shared/components/ui/Button';
@@ -33,6 +36,7 @@ import { SortableList, arrayMove } from '@shared/components/dnd';
 import { RichTextEditor } from '@shared/components/editor';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import LessonStudentProgress from '../components/LessonStudentProgress';
 
 // Tipos locales extendidos para la UI
 interface CourseModuleWithLessons extends DBModule {
@@ -57,6 +61,8 @@ function SortableModuleCard({
   onLessonReorder,
   getLessonIcon,
   courseId,
+  completedLessons,
+  onShowProgress,
 }: {
   module: CourseModuleWithLessons;
   moduleIndex: number;
@@ -71,6 +77,8 @@ function SortableModuleCard({
   onLessonReorder: (moduleId: string, oldIndex: number, newIndex: number) => void;
   getLessonIcon: (type: string) => React.ReactNode;
   courseId: string;
+  completedLessons?: Set<string>;
+  onShowProgress?: (lesson: DBLesson) => void;
 }) {
   const {
     attributes,
@@ -102,7 +110,7 @@ function SortableModuleCard({
               ref={setActivatorNodeRef}
               {...listeners}
               {...attributes}
-              className="cursor-grab active:cursor-grabbing touch-none p-1 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 rounded"
+              className="cursor-grab active:cursor-grabbing touch-none p-1 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 rounded"
               aria-label="Arrastrar para reordenar módulo"
               type="button"
               onClick={e => e.stopPropagation()}
@@ -130,7 +138,7 @@ function SortableModuleCard({
               {module.objectives && module.objectives.length > 0 && (
                 <div className="flex flex-wrap gap-1 mt-1">
                   {module.objectives.slice(0, 3).map((obj, i) => (
-                    <span key={i} className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-indigo-100 text-indigo-700">
+                    <span key={i} className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700">
                       {obj}
                     </span>
                   ))}
@@ -215,6 +223,8 @@ function SortableModuleCard({
                   onView={() => navigate(`/courses/${courseId}/lesson/${lesson.id}`)}
                   onEdit={() => onEditLesson(lesson)}
                   onDelete={() => onDeleteLesson(lesson.id)}
+                  isCompleted={completedLessons?.has(lesson.id)}
+                  onShowProgress={onShowProgress ? () => onShowProgress(lesson) : undefined}
                 />
               ))}
             </SortableList>
@@ -233,6 +243,8 @@ function SortableLessonRow({
   onView,
   onEdit,
   onDelete,
+  isCompleted,
+  onShowProgress,
 }: {
   lesson: DBLesson;
   lessonIndex: number;
@@ -241,6 +253,8 @@ function SortableLessonRow({
   onView: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  isCompleted?: boolean;
+  onShowProgress?: () => void;
 }) {
   const {
     attributes,
@@ -270,14 +284,18 @@ function SortableLessonRow({
             ref={setActivatorNodeRef}
             {...listeners}
             {...attributes}
-            className="cursor-grab active:cursor-grabbing touch-none p-1 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 rounded"
+            className="cursor-grab active:cursor-grabbing touch-none p-1 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 rounded"
             aria-label="Arrastrar para reordenar lección"
             type="button"
           >
             <GripVertical className="h-4 w-4" />
           </button>
         )}
-        <span className="text-gray-400 text-sm w-6">{lessonIndex + 1}.</span>
+        {isCompleted ? (
+          <CheckCircle className="h-5 w-5 text-red-500 flex-shrink-0" />
+        ) : (
+          <span className="text-gray-400 text-sm w-6">{lessonIndex + 1}.</span>
+        )}
         {getLessonIcon(lesson.type)}
         <div>
           <p className="font-medium">{lesson.title}</p>
@@ -290,12 +308,10 @@ function SortableLessonRow({
       </div>
 
       <div className="flex items-center space-x-2">
-        {!canEdit && (
-          <Button size="sm" variant="outline" onClick={onView}>
-            <Play className="h-4 w-4 mr-1" />
-            Ver
-          </Button>
-        )}
+        <Button size="sm" variant="outline" onClick={onView}>
+          <Play className="h-4 w-4 mr-1" />
+          Ver
+        </Button>
         {canEdit && (
           <>
             <Button
@@ -331,10 +347,13 @@ export default function CourseDetailPage() {
   const [modules, setModules] = useState<CourseModuleWithLessons[]>([]);
   const [expandedModules, setExpandedModules] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
+  const [enrollment, setEnrollment] = useState<DBEnrollment | null>(null);
+  const [completedLessons, setCompletedLessons] = useState<Set<string>>(new Set());
 
   // Modal states
   const [showModuleModal, setShowModuleModal] = useState(false);
   const [selectedModule, setSelectedModule] = useState<CourseModuleWithLessons | null>(null);
+  const [progressLesson, setProgressLesson] = useState<{id: string; title: string; type: string} | null>(null);
 
   // Module form states (enhanced)
   const [moduleForm, setModuleForm] = useState({
@@ -384,6 +403,22 @@ export default function CourseDetailPage() {
 
       if (modulesWithLessons.length > 0) {
         setExpandedModules(new Set([modulesWithLessons[0].id]));
+      }
+
+      // Load enrollment for students
+      if (user?.role === 'student' && user?.id && courseId) {
+        try {
+          const userEnrollments = await legacyEnrollmentService.getByUser(user.id);
+          const courseEnrollment = (userEnrollments as DBEnrollment[]).find(
+            (e) => e.courseId === courseId
+          );
+          if (courseEnrollment) {
+            setEnrollment(courseEnrollment);
+            setCompletedLessons(new Set(courseEnrollment.completedLessons || []));
+          }
+        } catch (err) {
+          console.error('Error loading enrollment:', err);
+        }
       }
     } catch (error) {
       console.error('Error loading course:', error);
@@ -577,17 +612,17 @@ export default function CourseDetailPage() {
   const getLessonIcon = (type: string) => {
     switch (type) {
       case 'video':
-        return <Video className="h-4 w-4 text-purple-500" />;
+        return <Video className="h-4 w-4 text-red-500" />;
       case 'texto':
-        return <FileText className="h-4 w-4 text-blue-500" />;
+        return <FileText className="h-4 w-4 text-red-500" />;
       case 'recurso':
         return <File className="h-4 w-4 text-red-500" />;
       case 'quiz':
-        return <HelpCircle className="h-4 w-4 text-green-500" />;
+        return <HelpCircle className="h-4 w-4 text-red-500" />;
       case 'tarea':
-        return <Edit3 className="h-4 w-4 text-orange-500" />;
+        return <Edit3 className="h-4 w-4 text-red-500" />;
       case 'foro':
-        return <MessageSquare className="h-4 w-4 text-teal-500" />;
+        return <MessageSquare className="h-4 w-4 text-red-500" />;
       default:
         return <FileText className="h-4 w-4 text-gray-500" />;
     }
@@ -608,7 +643,7 @@ export default function CourseDetailPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
       </div>
     );
   }
@@ -628,30 +663,64 @@ export default function CourseDetailPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center space-x-4">
           <Button variant="outline" onClick={() => navigate('/courses')}>
             <ArrowLeft className="h-4 w-4 mr-2" />
             Volver
           </Button>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">{course.title}</h1>
+            <h1 className="text-xl md:text-2xl font-bold text-gray-900">{course.title}</h1>
             <p className="text-gray-600">{course.description}</p>
           </div>
         </div>
-        {canEdit && (
-          <Button onClick={handleCreateModule}>
-            <Plus className="h-4 w-4 mr-2" />
-            Agregar Módulo
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {canEdit && (
+            <Button variant="outline" onClick={() => navigate('/my-sections')}>
+              <Layers className="h-4 w-4 mr-2" />
+              Secciones{course.sectionsCount ? ` (${course.sectionsCount})` : ''}
+            </Button>
+          )}
+          {canEdit && (
+            <Button onClick={handleCreateModule}>
+              <Plus className="h-4 w-4 mr-2" />
+              Agregar Módulo
+            </Button>
+          )}
+        </div>
       </div>
 
+      {/* Template info / Section guidance */}
+      {canEdit && (!course.sectionsCount || course.sectionsCount === 0) && (
+        <div className="flex items-center justify-between p-4 bg-amber-50 border border-amber-200 rounded-lg">
+          <div className="flex items-center gap-3">
+            <Layers className="h-5 w-5 text-amber-600 flex-shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-amber-800">Paso siguiente: Crear una sección</p>
+              <p className="text-xs text-amber-600">
+                Las secciones permiten inscribir estudiantes y configurar fechas de entrega.
+              </p>
+            </div>
+          </div>
+          <Button size="sm" onClick={() => navigate(`/my-sections/course/${courseId}/new`)}>
+            Crear sección
+          </Button>
+        </div>
+      )}
+      {canEdit && course.sectionsCount > 0 && (
+        <div className="flex items-center gap-2 text-sm text-gray-500">
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-700">
+            Template
+          </span>
+          <span>Los estudiantes y fechas se configuran en las secciones</span>
+        </div>
+      )}
+
       {/* Course Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card>
           <CardContent className="p-4 flex items-center">
-            <BookOpen className="h-8 w-8 text-indigo-600 mr-3" />
+            <BookOpen className="h-8 w-8 text-red-600 mr-3" />
             <div>
               <p className="text-2xl font-bold">{modules.length}</p>
               <p className="text-sm text-gray-600">Módulos</p>
@@ -660,7 +729,7 @@ export default function CourseDetailPage() {
         </Card>
         <Card>
           <CardContent className="p-4 flex items-center">
-            <FileText className="h-8 w-8 text-blue-600 mr-3" />
+            <FileText className="h-8 w-8 text-red-600 mr-3" />
             <div>
               <p className="text-2xl font-bold">{getTotalLessons()}</p>
               <p className="text-sm text-gray-600">Lecciones</p>
@@ -669,7 +738,7 @@ export default function CourseDetailPage() {
         </Card>
         <Card>
           <CardContent className="p-4 flex items-center">
-            <Clock className="h-8 w-8 text-green-600 mr-3" />
+            <Clock className="h-8 w-8 text-red-600 mr-3" />
             <div>
               <p className="text-2xl font-bold">{getTotalDuration()}</p>
               <p className="text-sm text-gray-600">Minutos</p>
@@ -678,7 +747,7 @@ export default function CourseDetailPage() {
         </Card>
         <Card>
           <CardContent className="p-4 flex items-center">
-            <Users className="h-8 w-8 text-purple-600 mr-3" />
+            <Users className="h-8 w-8 text-red-600 mr-3" />
             <div>
               <p className="text-2xl font-bold">{course.studentsCount}</p>
               <p className="text-sm text-gray-600">Estudiantes</p>
@@ -686,6 +755,27 @@ export default function CourseDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Student Progress */}
+      {user?.role === 'student' && enrollment && (
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="font-semibold text-gray-900">Tu progreso</h3>
+              <span className="text-sm font-medium text-gray-600">
+                {completedLessons.size} / {getTotalLessons()} lecciones completadas
+              </span>
+            </div>
+            <div className="w-full h-3 bg-gray-200 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-red-500 transition-all duration-300 rounded-full"
+                style={{ width: `${enrollment.progress || 0}%` }}
+              />
+            </div>
+            <p className="text-sm text-gray-500 mt-1">{enrollment.progress || 0}% completado</p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Modules List with Drag & Drop */}
       <div className="space-y-4">
@@ -713,7 +803,7 @@ export default function CourseDetailPage() {
               const mod = modules.find(m => m.id === activeId);
               if (!mod) return null;
               return (
-                <Card className="shadow-lg border-indigo-300">
+                <Card className="shadow-lg border-red-300">
                   <div className="flex items-center space-x-3 p-4 bg-gray-50">
                     <GripVertical className="h-5 w-5 text-gray-400" />
                     <h3 className="font-medium">{mod.title}</h3>
@@ -741,15 +831,28 @@ export default function CourseDetailPage() {
                 onLessonReorder={handleLessonReorder}
                 getLessonIcon={getLessonIcon}
                 courseId={courseId!}
+                completedLessons={completedLessons}
+                onShowProgress={canEdit ? (lesson) => setProgressLesson({ id: lesson.id, title: lesson.title, type: lesson.type }) : undefined}
               />
             ))}
           </SortableList>
         )}
       </div>
 
+      {/* Student Progress Modal */}
+      {progressLesson && (
+        <LessonStudentProgress
+          lessonId={progressLesson.id}
+          lessonTitle={progressLesson.title}
+          lessonType={progressLesson.type}
+          courseId={courseId!}
+          onClose={() => setProgressLesson(null)}
+        />
+      )}
+
       {/* Enhanced Module Modal */}
       {showModuleModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3">
           <div className="bg-white rounded-lg p-6 w-full max-w-xl max-h-[90vh] overflow-y-auto">
             <h2 className="text-xl font-semibold mb-4">
               {selectedModule ? 'Editar Módulo' : 'Nuevo Módulo'}
@@ -785,7 +888,7 @@ export default function CourseDetailPage() {
                     <button
                       type="button"
                       onClick={() => imageInputRef.current?.click()}
-                      className="h-20 w-32 border-2 border-dashed border-gray-300 rounded flex flex-col items-center justify-center text-gray-400 hover:border-indigo-400 hover:text-indigo-500 transition-colors"
+                      className="h-20 w-32 border-2 border-dashed border-gray-300 rounded flex flex-col items-center justify-center text-gray-400 hover:border-red-400 hover:text-red-500 transition-colors"
                       disabled={uploadingImage}
                     >
                       {uploadingImage ? (
@@ -839,7 +942,7 @@ export default function CourseDetailPage() {
                 {moduleForm.objectives.length > 0 && (
                   <div className="flex flex-wrap gap-2 mt-2">
                     {moduleForm.objectives.map((obj, i) => (
-                      <span key={i} className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-sm bg-indigo-100 text-indigo-700">
+                      <span key={i} className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-sm bg-red-100 text-red-700">
                         {obj}
                         <button
                           type="button"

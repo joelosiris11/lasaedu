@@ -10,7 +10,7 @@ const typeColors: Record<string, string> = {
   success: 'bg-green-100 text-green-600',
   error: 'bg-red-100 text-red-600',
   warning: 'bg-yellow-100 text-yellow-600',
-  info: 'bg-blue-100 text-blue-600',
+  info: 'bg-red-100 text-red-600',
   course: 'bg-purple-100 text-purple-600',
   grade: 'bg-indigo-100 text-indigo-600',
   message: 'bg-cyan-100 text-cyan-600',
@@ -53,10 +53,10 @@ function NotificationItem({
       className={`
         p-3 border-b border-gray-100 hover:bg-gray-50 cursor-pointer
         flex items-start gap-3 transition-colors
-        ${!notification.read ? 'bg-blue-50/50' : ''}
+        ${!notification.read ? 'bg-red-50/50' : ''}
       `}
     >
-      <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${!notification.read ? 'bg-blue-500' : 'bg-transparent'}`} />
+      <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${!notification.read ? 'bg-red-500' : 'bg-transparent'}`} />
 
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
@@ -84,7 +84,7 @@ function NotificationItem({
             e.stopPropagation();
             onMarkAsRead(notification.id);
           }}
-          className="p-1 text-gray-400 hover:text-blue-500 transition-colors"
+          className="p-1 text-gray-400 hover:text-red-500 transition-colors"
           title="Marcar como leída"
         >
           <CheckCheck className="h-4 w-4" />
@@ -175,7 +175,7 @@ export function NotificationCenter() {
             <div className="flex items-center gap-2">
               <h3 className="font-semibold text-gray-800">Notificaciones</h3>
               {unreadCount > 0 && (
-                <span className="px-2 py-0.5 bg-blue-100 text-blue-600 text-xs rounded-full">
+                <span className="px-2 py-0.5 bg-red-100 text-red-600 text-xs rounded-full">
                   {unreadCount} sin leer
                 </span>
               )}
@@ -183,7 +183,7 @@ export function NotificationCenter() {
             {unreadCount > 0 && (
               <button
                 onClick={handleMarkAllAsRead}
-                className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                className="text-xs text-red-600 hover:text-red-800 flex items-center gap-1"
               >
                 <CheckCheck className="h-3 w-3" />
                 Marcar todo
@@ -195,7 +195,7 @@ export function NotificationCenter() {
           <div className="max-h-80 overflow-y-auto">
             {isLoading && !initialized ? (
               <div className="p-8 text-center text-gray-500">
-                <div className="animate-spin h-6 w-6 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-2" />
+                <div className="animate-spin h-6 w-6 border-2 border-red-500 border-t-transparent rounded-full mx-auto mb-2" />
                 Cargando notificaciones...
               </div>
             ) : notifications.length === 0 ? (
@@ -219,7 +219,7 @@ export function NotificationCenter() {
           <div className="p-3 border-t border-gray-200">
             <button
               onClick={handleViewAll}
-              className="w-full text-sm text-blue-600 hover:text-blue-800 font-medium"
+              className="w-full text-sm text-red-600 hover:text-red-800 font-medium"
             >
               Ver todas las notificaciones
             </button>
