@@ -1,5 +1,4 @@
-import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
-import { storage } from '@app/config/firebase';
+import { auth } from '@app/config/firebase';
 import { validateFile, type FileValidationOptions } from '@shared/utils/fileValidation';
 
 export interface UploadProgress {
@@ -16,15 +15,17 @@ export interface UploadResult {
   metadata?: any;
 }
 
+const FILE_SERVER_URL = import.meta.env.VITE_FILE_SERVER_URL || 'http://localhost:3001';
+
 class FileUploadService {
-  private getStoragePath(type: string, courseId?: string, lessonId?: string): string {
-    const basePath = 'uploads';
-    if (courseId && lessonId) {
-      return `${basePath}/courses/${courseId}/lessons/${lessonId}/${type}`;
-    } else if (courseId) {
-      return `${basePath}/courses/${courseId}/${type}`;
-    }
-    return `${basePath}/${type}`;
+  private async getAuthToken(): Promise<string> {
+    try {
+      const user = auth.currentUser;
+      if (user) {
+        return await user.getIdToken();
+      }
+    } catch { /* ignore */ }
+    return '';
   }
 
   private generateUniqueFilename(originalName: string): string {
@@ -37,41 +38,69 @@ class FileUploadService {
 
   private validateFile(file: File, type: 'image' | 'video' | 'audio' | 'document'): void {
     const maxSizes = {
-      image: 10 * 1024 * 1024, // 10MB
-      video: 500 * 1024 * 1024, // 500MB
-      audio: 50 * 1024 * 1024, // 50MB
-      document: 25 * 1024 * 1024 // 25MB
-    };
-
-    const allowedTypes = {
-      image: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
-      video: ['video/mp4', 'video/webm', 'video/quicktime'],
-      audio: ['audio/mp3', 'audio/wav', 'audio/ogg', 'audio/m4a'],
-      document: [
-        'application/pdf',
-        'application/msword',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'application/vnd.oasis.opendocument.text',
-        'application/vnd.oasis.opendocument.spreadsheet',
-        'application/vnd.oasis.opendocument.presentation',
-        'application/zip',
-        'application/x-zip-compressed',
-        'application/x-rar-compressed',
-        'application/vnd.rar',
-        'text/csv',
-        'text/plain',
-      ]
+      image: 10 * 1024 * 1024,
+      video: 500 * 1024 * 1024,
+      audio: 50 * 1024 * 1024,
+      document: 25 * 1024 * 1024
     };
 
     if (file.size > maxSizes[type]) {
       throw new Error(`El archivo es demasiado grande. Máximo permitido: ${Math.round(maxSizes[type] / (1024 * 1024))}MB`);
     }
+  }
 
-    if (!allowedTypes[type].includes(file.type)) {
-      throw new Error(`Tipo de archivo no permitido. Tipos soportados: ${allowedTypes[type].join(', ')}`);
-    }
+  private async uploadToServer(
+    file: File,
+    storagePath: string,
+    onProgress?: (progress: UploadProgress) => void
+  ): Promise<UploadResult> {
+    const token = await this.getAuthToken();
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const xhr = new XMLHttpRequest();
+
+    const result = await new Promise<UploadResult>((resolve, reject) => {
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable && onProgress) {
+          onProgress({
+            percent: Math.round((e.loaded / e.total) * 100),
+            bytesTransferred: e.loaded,
+            totalBytes: e.total,
+          });
+        }
+      });
+
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            resolve({
+              url: data.url,
+              filename: data.filename,
+              size: data.size || file.size,
+              contentType: data.contentType || file.type,
+              metadata: data,
+            });
+          } catch {
+            reject(new Error('Invalid response from file server'));
+          }
+        } else {
+          reject(new Error(`Upload failed: ${xhr.status} ${xhr.statusText}`));
+        }
+      });
+
+      xhr.addEventListener('error', () => reject(new Error('Network error during upload')));
+      xhr.addEventListener('abort', () => reject(new Error('Upload cancelled')));
+
+      xhr.open('POST', `${FILE_SERVER_URL}/upload/${storagePath}`);
+      if (token) {
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      }
+      xhr.send(formData);
+    });
+
+    return result;
   }
 
   async uploadFile(
@@ -81,90 +110,32 @@ class FileUploadService {
     lessonId?: string,
     onProgress?: (progress: UploadProgress) => void
   ): Promise<UploadResult> {
-    try {
-      this.validateFile(file, type);
+    this.validateFile(file, type);
+    const storagePath = courseId && lessonId
+      ? `courses/${courseId}/lessons/${lessonId}/${type}`
+      : courseId
+      ? `courses/${courseId}/${type}`
+      : `general/${type}`;
 
-      const filename = this.generateUniqueFilename(file.name);
-      const storagePath = this.getStoragePath(type, courseId, lessonId);
-      const storageRef = ref(storage, `${storagePath}/${filename}`);
-
-      // Create custom metadata
-      const metadata = {
-        contentType: file.type,
-        customMetadata: {
-          originalName: file.name,
-          uploadedAt: new Date().toISOString(),
-          fileType: type,
-          ...(courseId && { courseId }),
-          ...(lessonId && { lessonId })
-        }
-      };
-
-      // Upload with progress tracking (simplified for now)
-      const snapshot = await uploadBytes(storageRef, file, metadata);
-      
-      if (onProgress) {
-        onProgress({
-          percent: 100,
-          bytesTransferred: file.size,
-          totalBytes: file.size
-        });
-      }
-
-      const downloadURL = await getDownloadURL(snapshot.ref);
-
-      return {
-        url: downloadURL,
-        filename,
-        size: file.size,
-        contentType: file.type,
-        metadata: snapshot.metadata
-      };
-    } catch (error) {
-      console.error('Error uploading file:', error);
-      throw error;
-    }
+    return this.uploadToServer(file, storagePath, onProgress);
   }
 
-  async uploadImage(
-    file: File,
-    courseId?: string,
-    lessonId?: string,
-    onProgress?: (progress: UploadProgress) => void
-  ): Promise<UploadResult> {
+  async uploadImage(file: File, courseId?: string, lessonId?: string, onProgress?: (progress: UploadProgress) => void): Promise<UploadResult> {
     return this.uploadFile(file, 'image', courseId, lessonId, onProgress);
   }
 
-  async uploadVideo(
-    file: File,
-    courseId?: string,
-    lessonId?: string,
-    onProgress?: (progress: UploadProgress) => void
-  ): Promise<UploadResult> {
+  async uploadVideo(file: File, courseId?: string, lessonId?: string, onProgress?: (progress: UploadProgress) => void): Promise<UploadResult> {
     return this.uploadFile(file, 'video', courseId, lessonId, onProgress);
   }
 
-  async uploadAudio(
-    file: File,
-    courseId?: string,
-    lessonId?: string,
-    onProgress?: (progress: UploadProgress) => void
-  ): Promise<UploadResult> {
+  async uploadAudio(file: File, courseId?: string, lessonId?: string, onProgress?: (progress: UploadProgress) => void): Promise<UploadResult> {
     return this.uploadFile(file, 'audio', courseId, lessonId, onProgress);
   }
 
-  async uploadDocument(
-    file: File,
-    courseId?: string,
-    lessonId?: string,
-    onProgress?: (progress: UploadProgress) => void
-  ): Promise<UploadResult> {
+  async uploadDocument(file: File, courseId?: string, lessonId?: string, onProgress?: (progress: UploadProgress) => void): Promise<UploadResult> {
     return this.uploadFile(file, 'document', courseId, lessonId, onProgress);
   }
 
-  /**
-   * Upload an attachment file (resource/reference) with magic bytes validation.
-   */
   async uploadAttachment(
     file: File,
     courseId: string,
@@ -172,44 +143,13 @@ class FileUploadService {
     onProgress?: (progress: UploadProgress) => void,
     validationOptions?: FileValidationOptions
   ): Promise<UploadResult> {
-    // Validate with magic bytes
-    const result = await validateFile(file, validationOptions);
-    if (!result.valid) {
-      throw new Error(result.error);
+    if (validationOptions) {
+      const result = await validateFile(file, validationOptions);
+      if (!result.valid) throw new Error(result.error);
     }
-
-    const filename = this.generateUniqueFilename(file.name);
-    const storagePath = `uploads/courses/${courseId}/lessons/${lessonId}/attachments`;
-    const storageRef = ref(storage, `${storagePath}/${filename}`);
-
-    const metadata = {
-      contentType: file.type,
-      customMetadata: {
-        originalName: file.name,
-        uploadedAt: new Date().toISOString(),
-        courseId,
-        lessonId,
-      },
-    };
-
-    const snapshot = await uploadBytes(storageRef, file, metadata);
-    if (onProgress) {
-      onProgress({ percent: 100, bytesTransferred: file.size, totalBytes: file.size });
-    }
-
-    const downloadURL = await getDownloadURL(snapshot.ref);
-    return {
-      url: downloadURL,
-      filename,
-      size: file.size,
-      contentType: file.type,
-      metadata: snapshot.metadata,
-    };
+    return this.uploadToServer(file, `courses/${courseId}/lessons/${lessonId}/attachments`, onProgress);
   }
 
-  /**
-   * Upload a student submission file with magic bytes validation.
-   */
   async uploadSubmission(
     file: File,
     courseId: string,
@@ -218,45 +158,21 @@ class FileUploadService {
     onProgress?: (progress: UploadProgress) => void,
     validationOptions?: FileValidationOptions
   ): Promise<UploadResult> {
-    const result = await validateFile(file, validationOptions);
-    if (!result.valid) {
-      throw new Error(result.error);
+    if (validationOptions) {
+      const result = await validateFile(file, validationOptions);
+      if (!result.valid) throw new Error(result.error);
     }
-
-    const filename = this.generateUniqueFilename(file.name);
-    const storagePath = `uploads/courses/${courseId}/lessons/${lessonId}/submissions/${studentId}`;
-    const storageRef = ref(storage, `${storagePath}/${filename}`);
-
-    const metadata = {
-      contentType: file.type,
-      customMetadata: {
-        originalName: file.name,
-        uploadedAt: new Date().toISOString(),
-        courseId,
-        lessonId,
-        studentId,
-      },
-    };
-
-    const snapshot = await uploadBytes(storageRef, file, metadata);
-    if (onProgress) {
-      onProgress({ percent: 100, bytesTransferred: file.size, totalBytes: file.size });
-    }
-
-    const downloadURL = await getDownloadURL(snapshot.ref);
-    return {
-      url: downloadURL,
-      filename,
-      size: file.size,
-      contentType: file.type,
-      metadata: snapshot.metadata,
-    };
+    return this.uploadToServer(file, `courses/${courseId}/lessons/${lessonId}/submissions/${studentId}`, onProgress);
   }
 
   async deleteFile(url: string): Promise<void> {
     try {
-      const storageRef = ref(storage, url);
-      await deleteObject(storageRef);
+      const token = await this.getAuthToken();
+      const fileUrl = url.replace(`${FILE_SERVER_URL}/files/`, '');
+      await fetch(`${FILE_SERVER_URL}/files/${fileUrl}`, {
+        method: 'DELETE',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
     } catch (error) {
       console.error('Error deleting file:', error);
       throw error;
@@ -265,98 +181,41 @@ class FileUploadService {
 
   getFileTypeFromUrl(url: string): 'image' | 'video' | 'audio' | 'document' | 'unknown' {
     const extension = url.split('.').pop()?.toLowerCase();
-    
-    if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(extension || '')) {
-      return 'image';
-    }
-    if (['mp4', 'webm', 'mov'].includes(extension || '')) {
-      return 'video';
-    }
-    if (['mp3', 'wav', 'ogg', 'm4a'].includes(extension || '')) {
-      return 'audio';
-    }
-    if (['pdf', 'doc', 'docx'].includes(extension || '')) {
-      return 'document';
-    }
-    
+    if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(extension || '')) return 'image';
+    if (['mp4', 'webm', 'mov'].includes(extension || '')) return 'video';
+    if (['mp3', 'wav', 'ogg', 'm4a'].includes(extension || '')) return 'audio';
+    if (['pdf', 'doc', 'docx'].includes(extension || '')) return 'document';
     return 'unknown';
   }
 
   formatFileSize(bytes: number): string {
     if (bytes === 0) return '0 Bytes';
-    
     const k = 1024;
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   }
 
-  async compressImage(file: File, maxWidth: number = 1920, maxHeight: number = 1080, quality: number = 0.8): Promise<File> {
+  async compressImage(file: File, maxWidth = 1920, maxHeight = 1080, quality = 0.8): Promise<File> {
     return new Promise((resolve, reject) => {
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
       const img = new Image();
-
       img.onload = () => {
-        // Calculate new dimensions
         let { width, height } = img;
-        
-        if (width > maxWidth) {
-          height = (height * maxWidth) / width;
-          width = maxWidth;
-        }
-        
-        if (height > maxHeight) {
-          width = (width * maxHeight) / height;
-          height = maxHeight;
-        }
-
+        if (width > maxWidth) { height = (height * maxWidth) / width; width = maxWidth; }
+        if (height > maxHeight) { width = (width * maxHeight) / height; height = maxHeight; }
         canvas.width = width;
         canvas.height = height;
-
-        // Draw and compress
         ctx?.drawImage(img, 0, 0, width, height);
-        
         canvas.toBlob(
-          (blob) => {
-            if (blob) {
-              const compressedFile = new File([blob], file.name, {
-                type: 'image/jpeg',
-                lastModified: Date.now()
-              });
-              resolve(compressedFile);
-            } else {
-              reject(new Error('Failed to compress image'));
-            }
-          },
+          (blob) => blob ? resolve(new File([blob], file.name, { type: 'image/jpeg', lastModified: Date.now() })) : reject(new Error('Failed to compress')),
           'image/jpeg',
           quality
         );
       };
-
       img.onerror = () => reject(new Error('Failed to load image'));
       img.src = URL.createObjectURL(file);
-    });
-  }
-
-  async getMediaDuration(file: File): Promise<number> {
-    return new Promise((resolve, reject) => {
-      const media = file.type.startsWith('video/') 
-        ? document.createElement('video')
-        : document.createElement('audio');
-
-      media.addEventListener('loadedmetadata', () => {
-        resolve(media.duration);
-        URL.revokeObjectURL(media.src);
-      });
-
-      media.addEventListener('error', () => {
-        reject(new Error('Failed to load media'));
-        URL.revokeObjectURL(media.src);
-      });
-
-      media.src = URL.createObjectURL(file);
     });
   }
 }
