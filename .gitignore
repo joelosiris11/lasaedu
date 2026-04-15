@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# User uploaded files
+server/uploads/
+
 # Environment variables
 .env
 .env.local
