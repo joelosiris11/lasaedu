@@ -9,6 +9,6 @@ COPY . .
 
 RUN mkdir -p /uploads
 
-EXPOSE 3001
+EXPOSE 3010
 
 CMD ["node", "index.js"]
