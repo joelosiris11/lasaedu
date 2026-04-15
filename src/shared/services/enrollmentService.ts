@@ -1,6 +1,8 @@
 import { database } from '@app/config/firebase';
 import { ref, set, get, update, remove, query, orderByChild, equalTo } from 'firebase/database';
 import type { Course, Enrollment } from '@shared/types';
+import { logStudent } from './auditLogService';
+import { firebaseDB } from './firebaseDataService';
 
 export interface EnrollmentService {
   create: (enrollment: Enrollment) => Promise<void>;
@@ -99,10 +101,51 @@ export class FirebaseEnrollmentService implements EnrollmentService {
 
   async update(id: string, enrollment: Partial<Enrollment>): Promise<void> {
     try {
+      const before = await this.getById(id);
       await update(ref(database, `enrollments/${id}`), {
         ...enrollment,
         lastUpdated: Date.now()
       });
+
+      // Detect transition into a completed state
+      const wasCompleted = before?.status === 'completed' || (before?.progress ?? 0) >= 100;
+      const becomesCompleted =
+        enrollment.status === 'completed' ||
+        (typeof enrollment.progress === 'number' && enrollment.progress >= 100);
+
+      if (!wasCompleted && becomesCompleted && before) {
+        try {
+          let instructorId: string | undefined;
+          let courseName: string | undefined;
+          const sectionId = (before as any).sectionId as string | undefined;
+          if (sectionId) {
+            const section = await firebaseDB.getSectionById(sectionId);
+            instructorId = section?.instructorId;
+          }
+          if (!instructorId && before.courseId) {
+            const course = await firebaseDB.getCourseById(before.courseId);
+            instructorId = course?.instructorId;
+            courseName = course?.title;
+          } else if (before.courseId) {
+            const course = await firebaseDB.getCourseById(before.courseId);
+            courseName = course?.title;
+          }
+          const dbUser = await firebaseDB.getUserById(before.userId);
+          await logStudent({
+            activityType: 'course_completed',
+            resourceType: 'course',
+            resourceId: before.courseId,
+            resourceName: courseName,
+            courseId: before.courseId,
+            sectionId,
+            instructorId,
+            studentId: before.userId,
+            studentName: dbUser?.name,
+          });
+        } catch (err) {
+          console.error('[auditLog] course_completed log failed:', err);
+        }
+      }
     } catch (error) {
       console.error('Error updating enrollment:', error);
       throw new Error('Failed to update enrollment');
