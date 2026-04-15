@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useBlocker } from 'react-router-dom';
 import { useAuthStore } from '@app/store/authStore';
 import { evaluationService, extensionService } from '@shared/services/dataService';
 import { assessmentService } from '@shared/services/assessmentService';
@@ -12,7 +12,8 @@ import {
   AlertCircle,
   CheckCircle,
   Send,
-  Lock
+  Lock,
+  X
 } from 'lucide-react';
 import { Card, CardContent } from '@shared/components/ui/Card';
 import { Button } from '@shared/components/ui/Button';
@@ -97,7 +98,7 @@ export default function TakeEvaluationPage() {
   // Timer effect
   useEffect(() => {
     if (timeRemaining === null || timeRemaining <= 0 || submitted) return;
-    
+
     const timer = setInterval(() => {
       setTimeRemaining(prev => {
         if (prev === null || prev <= 1) {
@@ -108,9 +109,40 @@ export default function TakeEvaluationPage() {
         return prev - 1;
       });
     }, 1000);
-    
+
     return () => clearInterval(timer);
   }, [timeRemaining, submitted]);
+
+  // Attempt is active when evaluation loaded but not yet submitted and no result shown
+  const isAttemptActive = !!evaluation && !submitted && !result && !accessBlocked;
+
+  // beforeunload guard (browser tab close / refresh) while attempt is active
+  useEffect(() => {
+    if (!isAttemptActive) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isAttemptActive]);
+
+  // In-app navigation guard via useBlocker (react-router v6.4+/v7)
+  const blocker = useBlocker(({ currentLocation, nextLocation }) =>
+    isAttemptActive && currentLocation.pathname !== nextLocation.pathname
+  );
+  useEffect(() => {
+    if (blocker.state === 'blocked') {
+      const confirmLeave = window.confirm('¿Seguro que quieres salir? Perderás tu progreso del intento actual.');
+      if (confirmLeave) blocker.proceed();
+      else blocker.reset();
+    }
+  }, [blocker]);
+
+  const handleExitClick = () => {
+    const confirmLeave = window.confirm('¿Seguro que quieres salir? Perderás tu progreso del intento actual.');
+    if (confirmLeave) navigate(-1);
+  };
 
   // Transform modern QuestionOption[] to simple string[] for legacy UI compatibility
   const transformModernQuestion = (q: ModernQuestion): Question => {
@@ -574,23 +606,32 @@ export default function TakeEvaluationPage() {
   const answeredCount = answers.filter(a => a.answer !== null).length;
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">{evaluation.title}</h1>
-          <p className="text-gray-600">{evaluation.courseName}</p>
-        </div>
-        {timeRemaining !== null && (
-          <div className={`flex items-center px-4 py-2 rounded-lg ${
-            timeRemaining < 60 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700'
-          }`}>
-            <Clock className="h-5 w-5 mr-2" />
-            <span className="font-mono font-bold">{formatTime(timeRemaining)}</span>
+    <div className="fixed inset-0 z-[100] bg-white overflow-auto w-screen h-screen">
+      <div className="h-full overflow-y-auto">
+        {/* Sticky header */}
+        <div className="sticky top-0 z-10 bg-white border-b border-gray-200">
+          <div className="max-w-4xl mx-auto px-4 sm:px-8 py-3 flex items-center justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <h1 className="text-sm sm:text-base font-semibold text-gray-900 truncate">{evaluation.title}</h1>
+              <p className="text-xs text-gray-500">
+                Pregunta {currentQuestionIndex + 1} / {evaluation.questions.length} · {answeredCount} respondidas
+              </p>
+            </div>
+            {timeRemaining !== null && (
+              <div className={`flex items-center gap-1.5 text-sm font-mono font-bold px-3 py-1 rounded-full flex-shrink-0 ${
+                timeRemaining < 60 ? 'bg-red-100 text-red-700 animate-pulse' : 'bg-gray-100 text-gray-700'
+              }`}>
+                <Clock className="h-3.5 w-3.5" />
+                {formatTime(timeRemaining)}
+              </div>
+            )}
+            <Button variant="outline" size="sm" onClick={handleExitClick} className="flex-shrink-0">
+              <X className="h-4 w-4 sm:mr-1" /><span className="hidden sm:inline">Salir</span>
+            </Button>
           </div>
-        )}
-      </div>
+        </div>
 
+        <div className="px-4 py-6 sm:px-8 sm:py-10 max-w-4xl mx-auto space-y-6">
       {/* Progress Bar */}
       <Card>
         <CardContent className="p-4">
@@ -758,9 +799,12 @@ export default function TakeEvaluationPage() {
         )}
       </div>
 
+        </div>
+      </div>
+
       {/* Confirmation Modal */}
       {confirming && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[110]">
           <Card className="w-full max-w-md">
             <CardContent className="p-6">
               <AlertCircle className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
@@ -772,14 +816,14 @@ export default function TakeEvaluationPage() {
                 ¿Deseas enviar de todas formas?
               </p>
               <div className="flex space-x-3">
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   className="flex-1"
                   onClick={() => setConfirming(false)}
                 >
                   Revisar
                 </Button>
-                <Button 
+                <Button
                   className="flex-1"
                   onClick={() => handleSubmit(true)}
                 >

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useBlocker, useNavigate } from 'react-router-dom';
 import type { DBLesson, DBSectionLessonOverride } from '@shared/services/dataService';
 import { firebaseDB } from '@shared/services/firebaseDataService';
 import type { DBEvaluationAttempt } from '@shared/services/firebaseDataService';
@@ -17,6 +18,7 @@ import {
   ChevronRight,
   Send,
   Eye,
+  X,
 } from 'lucide-react';
 
 // --- Helpers ---
@@ -118,6 +120,37 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
       setLoadingAttempts(false);
     })();
   }, [userId, lesson.id]);
+
+  const navigate = useNavigate();
+  const isAttemptActive = phase === 'active' && !readOnly;
+
+  // beforeunload guard (browser tab close / refresh) while attempt is active
+  useEffect(() => {
+    if (!isAttemptActive) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isAttemptActive]);
+
+  // In-app navigation guard via useBlocker (react-router v6.4+/v7)
+  const blocker = useBlocker(({ currentLocation, nextLocation }) =>
+    isAttemptActive && currentLocation.pathname !== nextLocation.pathname
+  );
+  useEffect(() => {
+    if (blocker.state === 'blocked') {
+      const confirmLeave = window.confirm('¿Seguro que quieres salir? Perderás tu progreso del intento actual.');
+      if (confirmLeave) blocker.proceed();
+      else blocker.reset();
+    }
+  }, [blocker]);
+
+  const handleExitClick = () => {
+    const confirmLeave = window.confirm('¿Seguro que quieres salir? Perderás tu progreso del intento actual.');
+    if (confirmLeave) navigate(-1);
+  };
 
   // Timer
   useEffect(() => {
@@ -653,66 +686,78 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
     const isLast = currentIndex === displayQuestions.length - 1;
 
     return (
-      <div className="flex flex-col">
-        <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-gray-200">
-          <span className="text-sm text-gray-600">{answeredCount}/{displayQuestions.length} respondidas</span>
-          {timeLeft !== null && (
-            <div className={`flex items-center gap-1.5 text-sm font-mono font-bold px-3 py-1 rounded-full ${isTimerCritical ? 'bg-red-100 text-red-700 animate-pulse' : 'bg-gray-200 text-gray-700'}`}>
-              <Clock className="h-3.5 w-3.5" />{formatTime(timeLeft)}
+      <div className="fixed inset-0 z-[100] bg-white overflow-auto w-screen h-screen">
+        <div className="h-full overflow-y-auto">
+          {/* Sticky header */}
+          <div className="sticky top-0 z-10 bg-white border-b border-gray-200">
+            <div className="max-w-4xl mx-auto px-4 sm:px-8 py-3 flex items-center justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <h2 className="text-sm sm:text-base font-semibold text-gray-900 truncate">{lesson.title || 'Quiz'}</h2>
+                <p className="text-xs text-gray-500">{currentIndex + 1} / {displayQuestions.length} preguntas · {answeredCount} respondidas</p>
+              </div>
+              {timeLeft !== null && (
+                <div className={`flex items-center gap-1.5 text-sm font-mono font-bold px-3 py-1 rounded-full flex-shrink-0 ${isTimerCritical ? 'bg-red-100 text-red-700 animate-pulse' : 'bg-gray-100 text-gray-700'}`}>
+                  <Clock className="h-3.5 w-3.5" />{formatTime(timeLeft)}
+                </div>
+              )}
+              <Button variant="outline" size="sm" onClick={handleExitClick} className="flex-shrink-0">
+                <X className="h-4 w-4 sm:mr-1" /><span className="hidden sm:inline">Salir</span>
+              </Button>
             </div>
-          )}
-        </div>
-
-        <div className="px-4 py-3 border-b border-gray-100 overflow-x-auto">
-          <div className="flex gap-1.5 min-w-0 flex-wrap">
-            {displayQuestions.map((q, idx) => {
-              const answered = isAnswered(q.id);
-              const isCurrent = idx === currentIndex;
-              return (
-                <button key={q.id} onClick={() => setCurrentIndex(idx)}
-                  className={`w-8 h-8 rounded text-xs font-medium flex-shrink-0 transition-all ${
-                    isCurrent
-                      ? 'bg-red-600 text-white ring-2 ring-red-300'
-                      : answered
-                        ? 'bg-green-100 text-green-700 border border-green-300'
-                        : 'bg-white text-red-400 border-2 border-dashed border-red-300 hover:bg-red-50'
-                  }`}>
-                  {idx + 1}
-                </button>
-              );
-            })}
           </div>
-          <div className="flex items-center gap-4 mt-2 text-[10px] text-gray-400">
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-100 border border-green-300 inline-block" /> Respondida</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-white border-2 border-dashed border-red-300 inline-block" /> Sin responder</span>
-          </div>
-        </div>
 
-        <div className="flex-1 p-4 md:p-6">
-          <div className="max-w-2xl mx-auto">
-            <div className="flex items-start justify-between mb-4">
-              <h3 className="font-medium text-gray-900 text-base md:text-lg">
-                <span className="text-red-600 mr-2">{currentIndex + 1}.</span>{currentQ.question}
-              </h3>
-              <span className="text-xs text-gray-500 flex-shrink-0 ml-3 mt-1">{currentQ.points} pts</span>
+          {/* Content */}
+          <div className="px-4 py-6 sm:px-8 sm:py-10 max-w-4xl mx-auto">
+            <div className="mb-6 overflow-x-auto">
+              <div className="flex gap-1.5 min-w-0 flex-wrap">
+                {displayQuestions.map((q, idx) => {
+                  const answered = isAnswered(q.id);
+                  const isCurrent = idx === currentIndex;
+                  return (
+                    <button key={q.id} onClick={() => setCurrentIndex(idx)}
+                      className={`w-8 h-8 rounded text-xs font-medium flex-shrink-0 transition-all ${
+                        isCurrent
+                          ? 'bg-red-600 text-white ring-2 ring-red-300'
+                          : answered
+                            ? 'bg-green-100 text-green-700 border border-green-300'
+                            : 'bg-white text-red-400 border-2 border-dashed border-red-300 hover:bg-red-50'
+                      }`}>
+                      {idx + 1}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="flex items-center gap-4 mt-2 text-[10px] text-gray-400">
+                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-100 border border-green-300 inline-block" /> Respondida</span>
+                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-white border-2 border-dashed border-red-300 inline-block" /> Sin responder</span>
+              </div>
             </div>
-            <QuestionInput key={currentQ.id} question={currentQ} answer={answers[currentQ.id]} onChange={(val) => setAnswer(currentQ.id, val)} shuffleOptions={quizContent.settings.shuffleOptions} />
-          </div>
-        </div>
 
-        <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 bg-white">
-          <Button variant="outline" size="sm" onClick={() => setCurrentIndex((i) => Math.max(0, i - 1))} disabled={currentIndex === 0}>
-            <ChevronLeft className="h-4 w-4 mr-1" /><span className="hidden sm:inline">Anterior</span>
-          </Button>
-          {isLast ? (
-            <Button size="sm" onClick={handleSubmit} className="bg-red-600 hover:bg-red-700">
-              <Send className="h-4 w-4 mr-1" />Entregar
-            </Button>
-          ) : (
-            <Button variant="outline" size="sm" onClick={() => setCurrentIndex((i) => i + 1)}>
-              <span className="hidden sm:inline">Siguiente</span><ChevronRight className="h-4 w-4 ml-1" />
-            </Button>
-          )}
+            <div className="mb-8">
+              <div className="flex items-start justify-between mb-4">
+                <h3 className="font-medium text-gray-900 text-base md:text-lg">
+                  <span className="text-red-600 mr-2">{currentIndex + 1}.</span>{currentQ.question}
+                </h3>
+                <span className="text-xs text-gray-500 flex-shrink-0 ml-3 mt-1">{currentQ.points} pts</span>
+              </div>
+              <QuestionInput key={currentQ.id} question={currentQ} answer={answers[currentQ.id]} onChange={(val) => setAnswer(currentQ.id, val)} shuffleOptions={quizContent.settings.shuffleOptions} />
+            </div>
+
+            <div className="flex items-center justify-between pt-4 border-t border-gray-200">
+              <Button variant="outline" size="sm" onClick={() => setCurrentIndex((i) => Math.max(0, i - 1))} disabled={currentIndex === 0}>
+                <ChevronLeft className="h-4 w-4 mr-1" /><span className="hidden sm:inline">Anterior</span>
+              </Button>
+              {isLast ? (
+                <Button size="sm" onClick={handleSubmit} className="bg-red-600 hover:bg-red-700">
+                  <Send className="h-4 w-4 mr-1" />Entregar
+                </Button>
+              ) : (
+                <Button variant="outline" size="sm" onClick={() => setCurrentIndex((i) => i + 1)}>
+                  <span className="hidden sm:inline">Siguiente</span><ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     );
