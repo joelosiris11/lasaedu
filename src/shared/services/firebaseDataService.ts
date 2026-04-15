@@ -517,6 +517,8 @@ export interface DBSection {
   courseCategory: string;
   courseLevel: string;
   courseImage?: string;
+  // Optional per-section banner override. If unset, falls back to courseImage.
+  image?: string;
   studentsCount: number;
   status: 'activa' | 'finalizada' | 'archivada' | 'borrador';
   createdAt: number;

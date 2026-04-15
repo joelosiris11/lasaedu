@@ -7,6 +7,8 @@
 
 import { firebaseDB } from './firebaseDataService';
 import { enrollmentService } from './enrollmentService';
+import { logAudit, logStudent, diff } from './auditLogService';
+import { useAuthStore } from '@app/store/authStore';
 import type {
   DBUser,
   DBCourse,
@@ -316,11 +318,44 @@ export const userService = {
   getAll: () => firebaseDB.getUsers(),
   getById: (id: string) => firebaseDB.getUserById(id),
   getByEmail: (email: string) => firebaseDB.getUserByEmail(email),
-  create: (data: Omit<DBUser, 'id'>) => firebaseDB.createUser(data),
-  update: (id: string, data: Partial<DBUser>) => firebaseDB.updateUser(id, data),
-  delete: (id: string) => firebaseDB.delete('users', id),
-  
-  subscribe: (callback: (users: DBUser[]) => void) => 
+  create: async (data: Omit<DBUser, 'id'>) => {
+    const result = await firebaseDB.createUser(data);
+    await logAudit({
+      action: 'create',
+      resourceType: 'user',
+      resourceId: result.id,
+      resourceName: result.name,
+      metadata: { email: result.email, role: result.role },
+    });
+    return result;
+  },
+  update: async (id: string, data: Partial<DBUser>) => {
+    const before = await firebaseDB.getUserById(id);
+    const result = await firebaseDB.updateUser(id, data);
+    const changes = diff(before as unknown as Record<string, unknown> | undefined, data as Record<string, unknown>);
+    await logAudit({
+      action: 'update',
+      resourceType: 'user',
+      resourceId: id,
+      resourceName: result?.name ?? before?.name ?? id,
+      changes,
+    });
+    return result;
+  },
+  delete: async (id: string) => {
+    const before = await firebaseDB.getUserById(id);
+    const result = await firebaseDB.delete('users', id);
+    await logAudit({
+      action: 'delete',
+      resourceType: 'user',
+      resourceId: id,
+      resourceName: before?.name ?? id,
+      metadata: before ? { email: before.email, role: before.role } : undefined,
+    });
+    return result;
+  },
+
+  subscribe: (callback: (users: DBUser[]) => void) =>
     firebaseDB.subscribe<DBUser>('users', callback),
 };
 
@@ -333,11 +368,45 @@ export const courseService = {
   getById: (id: string) => firebaseDB.getCourseById(id),
   getByInstructor: (instructorId: string) => firebaseDB.getCoursesByInstructor(instructorId),
   getByStatus: (status: string) => firebaseDB.getCoursesByStatus(status),
-  create: (data: Omit<DBCourse, 'id'>) => firebaseDB.createCourse(data),
-  update: (id: string, data: Partial<DBCourse>) => firebaseDB.updateCourse(id, data),
-  delete: (id: string) => firebaseDB.delete('courses', id),
-  
-  subscribe: (callback: (courses: DBCourse[]) => void) => 
+  create: async (data: Omit<DBCourse, 'id'>) => {
+    const result = await firebaseDB.createCourse(data);
+    await logAudit({
+      action: 'create',
+      resourceType: 'course',
+      resourceId: result.id,
+      resourceName: result.title,
+      courseId: result.id,
+    });
+    return result;
+  },
+  update: async (id: string, data: Partial<DBCourse>) => {
+    const before = await firebaseDB.getCourseById(id);
+    const result = await firebaseDB.updateCourse(id, data);
+    const changes = diff(before as unknown as Record<string, unknown> | undefined, data as Record<string, unknown>);
+    await logAudit({
+      action: 'update',
+      resourceType: 'course',
+      resourceId: id,
+      resourceName: result?.title ?? before?.title ?? id,
+      courseId: id,
+      changes,
+    });
+    return result;
+  },
+  delete: async (id: string) => {
+    const before = await firebaseDB.getCourseById(id);
+    const result = await firebaseDB.delete('courses', id);
+    await logAudit({
+      action: 'delete',
+      resourceType: 'course',
+      resourceId: id,
+      resourceName: before?.title ?? id,
+      courseId: id,
+    });
+    return result;
+  },
+
+  subscribe: (callback: (courses: DBCourse[]) => void) =>
     firebaseDB.subscribe<DBCourse>('courses', callback),
 };
 
@@ -350,9 +419,46 @@ export const sectionService = {
   getById: (id: string) => firebaseDB.getSectionById(id),
   getByCourse: (courseId: string) => firebaseDB.getSectionsByCourse(courseId),
   getByInstructor: (instructorId: string) => firebaseDB.getSectionsByInstructor(instructorId),
-  create: (data: Omit<DBSection, 'id'>) => firebaseDB.createSection(data),
-  update: (id: string, data: Partial<DBSection>) => firebaseDB.updateSection(id, data),
-  delete: (id: string) => firebaseDB.deleteSection(id),
+  create: async (data: Omit<DBSection, 'id'>) => {
+    const result = await firebaseDB.createSection(data);
+    await logAudit({
+      action: 'create',
+      resourceType: 'section',
+      resourceId: result.id,
+      resourceName: result.title,
+      courseId: result.courseId,
+      sectionId: result.id,
+    });
+    return result;
+  },
+  update: async (id: string, data: Partial<DBSection>) => {
+    const before = await firebaseDB.getSectionById(id);
+    const result = await firebaseDB.updateSection(id, data);
+    const changes = diff(before as unknown as Record<string, unknown> | undefined, data as Record<string, unknown>);
+    await logAudit({
+      action: 'update',
+      resourceType: 'section',
+      resourceId: id,
+      resourceName: result?.title ?? before?.title ?? id,
+      courseId: (result?.courseId ?? before?.courseId),
+      sectionId: id,
+      changes,
+    });
+    return result;
+  },
+  delete: async (id: string) => {
+    const before = await firebaseDB.getSectionById(id);
+    const result = await firebaseDB.deleteSection(id);
+    await logAudit({
+      action: 'delete',
+      resourceType: 'section',
+      resourceId: id,
+      resourceName: before?.title ?? id,
+      courseId: before?.courseId,
+      sectionId: id,
+    });
+    return result;
+  },
 
   getLessonOverrides: (sectionId: string) => firebaseDB.getSectionLessonOverrides(sectionId),
   saveLessonOverrides: (sectionId: string, overrides: (Omit<DBSectionLessonOverride, 'id'> & { id?: string })[]) =>
@@ -374,11 +480,45 @@ export const moduleService = {
   getAll: () => firebaseDB.getAll<DBModule>('modules'),
   getById: (id: string) => firebaseDB.getById<DBModule>('modules', id),
   getByCourse: (courseId: string) => firebaseDB.getModulesByCourse(courseId),
-  create: (data: Omit<DBModule, 'id'>) => firebaseDB.createModule(data),
-  update: (id: string, data: Partial<DBModule>) => firebaseDB.updateModule(id, data),
-  delete: (id: string) => firebaseDB.delete('modules', id),
-  
-  subscribe: (callback: (modules: DBModule[]) => void) => 
+  create: async (data: Omit<DBModule, 'id'>) => {
+    const result = await firebaseDB.createModule(data);
+    await logAudit({
+      action: 'create',
+      resourceType: 'module',
+      resourceId: result.id,
+      resourceName: result.title,
+      courseId: result.courseId,
+    });
+    return result;
+  },
+  update: async (id: string, data: Partial<DBModule>) => {
+    const before = await firebaseDB.getById<DBModule>('modules', id);
+    const result = await firebaseDB.updateModule(id, data);
+    const changes = diff(before as unknown as Record<string, unknown> | undefined, data as Record<string, unknown>);
+    await logAudit({
+      action: 'update',
+      resourceType: 'module',
+      resourceId: id,
+      resourceName: result?.title ?? before?.title ?? id,
+      courseId: result?.courseId ?? before?.courseId,
+      changes,
+    });
+    return result;
+  },
+  delete: async (id: string) => {
+    const before = await firebaseDB.getById<DBModule>('modules', id);
+    const result = await firebaseDB.delete('modules', id);
+    await logAudit({
+      action: 'delete',
+      resourceType: 'module',
+      resourceId: id,
+      resourceName: before?.title ?? id,
+      courseId: before?.courseId,
+    });
+    return result;
+  },
+
+  subscribe: (callback: (modules: DBModule[]) => void) =>
     firebaseDB.subscribe<DBModule>('modules', callback),
 };
 
@@ -391,11 +531,45 @@ export const lessonService = {
   getById: (id: string) => firebaseDB.getById<DBLesson>('lessons', id),
   getByModule: (moduleId: string) => firebaseDB.getLessonsByModule(moduleId),
   getByCourse: (courseId: string) => firebaseDB.getLessonsByCourse(courseId),
-  create: (data: Omit<DBLesson, 'id'>) => firebaseDB.createLesson(data),
-  update: (id: string, data: Partial<DBLesson>) => firebaseDB.updateLesson(id, data),
-  delete: (id: string) => firebaseDB.delete('lessons', id),
-  
-  subscribe: (callback: (lessons: DBLesson[]) => void) => 
+  create: async (data: Omit<DBLesson, 'id'>) => {
+    const result = await firebaseDB.createLesson(data);
+    await logAudit({
+      action: 'create',
+      resourceType: 'lesson',
+      resourceId: result.id,
+      resourceName: result.title,
+      courseId: result.courseId,
+    });
+    return result;
+  },
+  update: async (id: string, data: Partial<DBLesson>) => {
+    const before = await firebaseDB.getById<DBLesson>('lessons', id);
+    const result = await firebaseDB.updateLesson(id, data);
+    const changes = diff(before as unknown as Record<string, unknown> | undefined, data as Record<string, unknown>);
+    await logAudit({
+      action: 'update',
+      resourceType: 'lesson',
+      resourceId: id,
+      resourceName: result?.title ?? before?.title ?? id,
+      courseId: result?.courseId ?? before?.courseId,
+      changes,
+    });
+    return result;
+  },
+  delete: async (id: string) => {
+    const before = await firebaseDB.getById<DBLesson>('lessons', id);
+    const result = await firebaseDB.delete('lessons', id);
+    await logAudit({
+      action: 'delete',
+      resourceType: 'lesson',
+      resourceId: id,
+      resourceName: before?.title ?? id,
+      courseId: before?.courseId,
+    });
+    return result;
+  },
+
+  subscribe: (callback: (lessons: DBLesson[]) => void) =>
     firebaseDB.subscribe<DBLesson>('lessons', callback),
 };
 
@@ -649,13 +823,132 @@ export const forumService = {
 // TASK SUBMISSION SERVICE
 // ============================================
 
+async function resolveInstructorForSubmission(sub: Pick<DBTaskSubmission, 'sectionId' | 'courseId'>): Promise<string | undefined> {
+  try {
+    if (sub.sectionId) {
+      const section = await firebaseDB.getSectionById(sub.sectionId);
+      if (section?.instructorId) return section.instructorId;
+    }
+    if (sub.courseId) {
+      const course = await firebaseDB.getCourseById(sub.courseId);
+      return course?.instructorId;
+    }
+  } catch (err) {
+    console.error('[auditLog] failed to resolve instructor for submission:', err);
+  }
+  return undefined;
+}
+
 export const taskSubmissionService = {
   getAll: () => firebaseDB.getTaskSubmissions(),
   getById: (id: string) => firebaseDB.getById<DBTaskSubmission>('taskSubmissions', id),
   getByLesson: (lessonId: string) => firebaseDB.getTaskSubmissionsByLesson(lessonId),
   getByStudent: (studentId: string) => firebaseDB.getTaskSubmissionsByStudent(studentId),
-  create: (data: Omit<DBTaskSubmission, 'id'>) => firebaseDB.createTaskSubmission(data),
-  update: (id: string, data: Partial<DBTaskSubmission>) => firebaseDB.updateTaskSubmission(id, data),
+  create: async (data: Omit<DBTaskSubmission, 'id'>) => {
+    const result = await firebaseDB.createTaskSubmission(data);
+    const instructorId = await resolveInstructorForSubmission(result);
+    let lessonName: string | undefined;
+    try {
+      const lesson = await firebaseDB.getById<DBLesson>('lessons', result.lessonId);
+      lessonName = lesson?.title;
+    } catch (_err) {
+      // ignore
+    }
+    await logStudent({
+      activityType: 'submission_created',
+      resourceType: 'submission',
+      resourceId: result.id,
+      resourceName: lessonName,
+      courseId: result.courseId,
+      sectionId: result.sectionId,
+      instructorId,
+      studentId: result.studentId,
+      studentName: result.studentName,
+      metadata: {
+        lessonId: result.lessonId,
+        filesCount: result.files?.length ?? 0,
+        submissionType: result.submissionType,
+      },
+    });
+    return result;
+  },
+  update: async (id: string, data: Partial<DBTaskSubmission>) => {
+    const before = await firebaseDB.getById<DBTaskSubmission>('taskSubmissions', id);
+    const result = await firebaseDB.updateTaskSubmission(id, data);
+    try {
+      const actor = useAuthStore.getState().user;
+      if (actor?.role === 'student' && before) {
+        const instructorId = await resolveInstructorForSubmission(before);
+        let activity: 'submission_resubmitted' | 'submission_deleted' | null = null;
+        const patch = data as any;
+        if (patch.status === 'deleted') {
+          activity = 'submission_deleted';
+        } else {
+          const filesChanged = 'files' in patch &&
+            JSON.stringify((before as any).files) !== JSON.stringify(patch.files);
+          const commentChanged = 'comment' in patch && (before as any).comment !== patch.comment;
+          if (filesChanged || commentChanged) {
+            activity = 'submission_resubmitted';
+          }
+        }
+        if (activity) {
+          await logStudent({
+            activityType: activity,
+            resourceType: 'submission',
+            resourceId: id,
+            courseId: before.courseId,
+            sectionId: before.sectionId,
+            instructorId,
+            studentId: before.studentId,
+            studentName: before.studentName,
+            metadata: { lessonId: before.lessonId },
+          });
+        }
+      }
+    } catch (err) {
+      console.error('[auditLog] submission update log failed:', err);
+    }
+
+    // Cuando una entrega transiciona a 'graded' con nota >= 70% del máximo,
+    // se cuenta la lección como completada en el enrollment del estudiante.
+    try {
+      const patch = data as Partial<DBTaskSubmission>;
+      const transitionedToGraded =
+        patch.status === 'graded' && before?.status !== 'graded';
+      const grade = patch.grade ?? before?.grade;
+      if (transitionedToGraded && before && grade && grade.maxScore > 0) {
+        const percentage = (grade.score / grade.maxScore) * 100;
+        if (percentage >= 70) {
+          const enrollment = await firebaseDB.getEnrollment(
+            before.studentId,
+            before.courseId
+          );
+          if (enrollment) {
+            const prevCompleted = enrollment.completedLessons || [];
+            if (!prevCompleted.includes(before.lessonId)) {
+              const newCompleted = [...prevCompleted, before.lessonId];
+              const allLessons = await firebaseDB.getLessonsByCourse(before.courseId);
+              const totalLessons = allLessons.length || 1;
+              const progress = Math.min(
+                100,
+                Math.round((newCompleted.length / totalLessons) * 100)
+              );
+              await firebaseDB.updateEnrollment(enrollment.id, {
+                completedLessons: newCompleted,
+                progress,
+                status: progress >= 100 ? 'completed' : enrollment.status,
+                updatedAt: Date.now(),
+              });
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[grading] failed to update enrollment completion:', err);
+    }
+
+    return result;
+  },
 };
 
 // ============================================

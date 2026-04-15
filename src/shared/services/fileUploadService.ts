@@ -15,7 +15,7 @@ export interface UploadResult {
   metadata?: any;
 }
 
-const FILE_SERVER_URL = import.meta.env.VITE_FILE_SERVER_URL || 'http://localhost:3001';
+const FILE_SERVER_URL = import.meta.env.VITE_FILE_SERVER_URL || 'http://localhost:3010';
 
 class FileUploadService {
   private async getAuthToken(): Promise<string> {
