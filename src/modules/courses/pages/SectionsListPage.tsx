@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { Card, CardContent } from '@shared/components/ui/Card';
 import { Button } from '@shared/components/ui/Button';
+import SectionWizardModal from '@modules/courses/components/SectionWizardModal';
 
 const statusColors: Record<DBSection['status'], string> = {
   activa: 'bg-green-100 text-green-800',
@@ -64,6 +65,18 @@ export default function SectionsListPage() {
   const [course, setCourse] = useState<DBCourse | null>(null);
   const [sections, setSections] = useState<DBSection[]>([]);
   const [loading, setLoading] = useState(true);
+  const [wizardCreate, setWizardCreate] = useState(false);
+  const [wizardEditId, setWizardEditId] = useState<string | null>(null);
+
+  const reloadSections = async () => {
+    if (!courseId) return;
+    try {
+      const s = await sectionService.getByCourse(courseId);
+      setSections(s.sort((a, b) => b.createdAt - a.createdAt));
+    } catch (err) {
+      console.error('Error reloading sections:', err);
+    }
+  };
 
   useEffect(() => {
     if (!courseId) return;
@@ -120,7 +133,7 @@ export default function SectionsListPage() {
           </div>
         </div>
         {canEdit && (
-          <Button onClick={() => navigate(`/my-sections/course/${courseId}/new`)} className="flex items-center gap-2">
+          <Button onClick={() => setWizardCreate(true)} className="flex items-center gap-2">
             <Plus className="h-4 w-4" />
             Nueva Sección
           </Button>
@@ -204,7 +217,7 @@ export default function SectionsListPage() {
               Crea secciones para inscribir estudiantes con fechas diferentes.
             </p>
             {canEdit && (
-              <Button onClick={() => navigate(`/my-sections/course/${courseId}/new`)}>
+              <Button onClick={() => setWizardCreate(true)}>
                 <Plus className="h-4 w-4 mr-2" />
                 Crear primera sección
               </Button>
@@ -259,7 +272,7 @@ export default function SectionsListPage() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => navigate(`/my-sections/${section.id}/edit`)}
+                          onClick={() => setWizardEditId(section.id)}
                           title="Editar"
                         >
                           <Edit3 className="h-4 w-4" />
@@ -292,6 +305,19 @@ export default function SectionsListPage() {
           })}
         </div>
       )}
+
+      <SectionWizardModal
+        open={wizardCreate}
+        courseId={courseId}
+        onClose={() => setWizardCreate(false)}
+        onSaved={reloadSections}
+      />
+      <SectionWizardModal
+        open={!!wizardEditId}
+        sectionId={wizardEditId ?? undefined}
+        onClose={() => setWizardEditId(null)}
+        onSaved={reloadSections}
+      />
     </div>
   );
 }

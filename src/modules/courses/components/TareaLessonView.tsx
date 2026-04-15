@@ -50,7 +50,7 @@ interface TareaLessonViewProps {
   userId: string;
   userName: string;
   userRole: 'student' | 'teacher' | 'admin' | 'support';
-  onComplete?: () => void;
+  onComplete?: () => void; // @deprecated — la lección sólo se completa al calificarse
   sectionOverride?: DBSectionLessonOverride | null;
 }
 
@@ -88,7 +88,7 @@ export default function TareaLessonView({
   userId,
   userName,
   userRole,
-  onComplete,
+  onComplete: _onComplete,
   sectionOverride,
 }: TareaLessonViewProps) {
   const [tareaContent, setTareaContent] = useState<TareaLessonContent | null>(null);
@@ -210,7 +210,8 @@ export default function TareaLessonView({
       setMySubmission(submission);
       setSubmissionFiles([]);
       setComment('');
-      onComplete?.();
+      // NOTE: no se llama onComplete() aquí. Una tarea sólo se considera completada
+      // cuando el profesor la califica con nota >= 70% (ver taskSubmissionService.update).
     } catch (err) {
       console.error('Error submitting tarea:', err);
     } finally {

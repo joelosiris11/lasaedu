@@ -1,11 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@app/store/authStore';
-import { courseService, moduleService, lessonService, legacyEnrollmentService, type DBModule, type DBLesson, type DBCourse, type DBEnrollment } from '@shared/services/dataService';
+import { courseService, moduleService, lessonService, legacyEnrollmentService, sectionService, type DBModule, type DBLesson, type DBCourse, type DBEnrollment, type DBSection } from '@shared/services/dataService';
 import { fileUploadService } from '@shared/services/fileUploadService';
 import {
   BookOpen,
-  ArrowLeft,
   Plus,
   Edit3,
   Trash2,
@@ -32,11 +31,12 @@ import { Card, CardContent } from '@shared/components/ui/Card';
 import { Button } from '@shared/components/ui/Button';
 import { Input } from '@shared/components/ui/Input';
 import { Label } from '@shared/components/ui/Label';
+import { CoursePattern } from '@shared/components/ui/CoursePattern';
 import { SortableList, arrayMove } from '@shared/components/dnd';
 import { RichTextEditor } from '@shared/components/editor';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import LessonStudentProgress from '../components/LessonStudentProgress';
+import SectionWizardModal from '@modules/courses/components/SectionWizardModal';
 
 // Tipos locales extendidos para la UI
 interface CourseModuleWithLessons extends DBModule {
@@ -62,7 +62,6 @@ function SortableModuleCard({
   getLessonIcon,
   courseId,
   completedLessons,
-  onShowProgress,
 }: {
   module: CourseModuleWithLessons;
   moduleIndex: number;
@@ -78,7 +77,6 @@ function SortableModuleCard({
   getLessonIcon: (type: string) => React.ReactNode;
   courseId: string;
   completedLessons?: Set<string>;
-  onShowProgress?: (lesson: DBLesson) => void;
 }) {
   const {
     attributes,
@@ -151,33 +149,50 @@ function SortableModuleCard({
           </div>
         </div>
 
-        {canEdit && (
-          <div className="flex items-center space-x-2" onClick={e => e.stopPropagation()}>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={onAddLesson}
-              title="Agregar lección"
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={onEdit}
-            >
-              <Edit3 className="h-4 w-4" />
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="text-red-600 hover:bg-red-50"
-              onClick={onDelete}
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </div>
-        )}
+        <div className="flex items-center space-x-2" onClick={e => e.stopPropagation()}>
+          {/* Vista de estudiante — opens the first lesson of this module. */}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              const first = module.lessons[0];
+              if (first) navigate(`/courses/${courseId}/lesson/${first.id}`);
+            }}
+            disabled={module.lessons.length === 0}
+            title="Vista de estudiante"
+          >
+            <Play className="h-4 w-4" />
+          </Button>
+          {canEdit && (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onAddLesson}
+                title="Agregar lección"
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onEdit}
+                title="Editar módulo"
+              >
+                <Edit3 className="h-4 w-4" />
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-red-600 hover:bg-red-50"
+                onClick={onDelete}
+                title="Eliminar módulo"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
       {isExpanded && (
@@ -224,7 +239,6 @@ function SortableModuleCard({
                   onEdit={() => onEditLesson(lesson)}
                   onDelete={() => onDeleteLesson(lesson.id)}
                   isCompleted={completedLessons?.has(lesson.id)}
-                  onShowProgress={onShowProgress ? () => onShowProgress(lesson) : undefined}
                 />
               ))}
             </SortableList>
@@ -244,7 +258,6 @@ function SortableLessonRow({
   onEdit,
   onDelete,
   isCompleted,
-  onShowProgress,
 }: {
   lesson: DBLesson;
   lessonIndex: number;
@@ -254,7 +267,6 @@ function SortableLessonRow({
   onEdit: () => void;
   onDelete: () => void;
   isCompleted?: boolean;
-  onShowProgress?: () => void;
 }) {
   const {
     attributes,
@@ -353,7 +365,8 @@ export default function CourseDetailPage() {
   // Modal states
   const [showModuleModal, setShowModuleModal] = useState(false);
   const [selectedModule, setSelectedModule] = useState<CourseModuleWithLessons | null>(null);
-  const [progressLesson, setProgressLesson] = useState<{id: string; title: string; type: string} | null>(null);
+  const [courseSections, setCourseSections] = useState<DBSection[]>([]);
+  const [sectionWizardOpen, setSectionWizardOpen] = useState(false);
 
   // Module form states (enhanced)
   const [moduleForm, setModuleForm] = useState({
@@ -403,6 +416,20 @@ export default function CourseDetailPage() {
 
       if (modulesWithLessons.length > 0) {
         setExpandedModules(new Set([modulesWithLessons[0].id]));
+      }
+
+      // Load sections of this course — teachers/admins navigate to them from here
+      if (isInstructor) {
+        try {
+          const allSections = await sectionService.getByCourse(courseId);
+          const visible =
+            user?.role === 'admin'
+              ? allSections
+              : allSections.filter((s) => s.instructorId === user?.id);
+          setCourseSections(visible.sort((a, b) => b.startDate - a.startDate));
+        } catch (err) {
+          console.error('Error loading sections for course:', err);
+        }
       }
 
       // Load enrollment for students
@@ -661,63 +688,77 @@ export default function CourseDetailPage() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div className="flex items-center space-x-4">
-          <Button variant="outline" onClick={() => navigate('/courses')}>
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Volver
-          </Button>
-          <div>
-            <h1 className="text-xl md:text-2xl font-bold text-gray-900">{course.title}</h1>
-            <p className="text-gray-600">{course.description}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {canEdit && (
-            <Button variant="outline" onClick={() => navigate('/my-sections')}>
-              <Layers className="h-4 w-4 mr-2" />
-              Secciones{course.sectionsCount ? ` (${course.sectionsCount})` : ''}
-            </Button>
+    <div className="max-w-5xl mx-auto space-y-4 sm:space-y-6">
+      {/* Course hero card: banner + info */}
+      <Card className="overflow-hidden">
+        {/* Banner */}
+        <div
+          className="relative h-40 sm:h-48 bg-cover bg-center overflow-hidden"
+          style={course.image ? { backgroundImage: `url(${course.image})` } : undefined}
+        >
+          {!course.image && (
+            <CoursePattern
+              courseKey={course.id}
+              className="absolute inset-0 w-full h-full"
+            />
           )}
-          {canEdit && (
-            <Button onClick={handleCreateModule}>
-              <Plus className="h-4 w-4 mr-2" />
-              Agregar Módulo
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {/* Template info / Section guidance */}
-      {canEdit && (!course.sectionsCount || course.sectionsCount === 0) && (
-        <div className="flex items-center justify-between p-4 bg-amber-50 border border-amber-200 rounded-lg">
-          <div className="flex items-center gap-3">
-            <Layers className="h-5 w-5 text-amber-600 flex-shrink-0" />
-            <div>
-              <p className="text-sm font-medium text-amber-800">Paso siguiente: Crear una sección</p>
-              <p className="text-xs text-amber-600">
-                Las secciones permiten inscribir estudiantes y configurar fechas de entrega.
-              </p>
+          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+          <div className="absolute inset-0 p-5 sm:p-6 flex flex-col justify-end">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-white/90 uppercase tracking-wider">
+                Curso · Plantilla
+              </span>
             </div>
+            <h1 className="text-xl sm:text-2xl font-bold text-white leading-tight line-clamp-2">
+              {course.title}
+            </h1>
           </div>
-          <Button size="sm" onClick={() => navigate(`/my-sections/course/${courseId}/new`)}>
-            Crear sección
-          </Button>
         </div>
-      )}
-      {canEdit && course.sectionsCount > 0 && (
-        <div className="flex items-center gap-2 text-sm text-gray-500">
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-700">
-            Template
-          </span>
-          <span>Los estudiantes y fechas se configuran en las secciones</span>
+
+        {/* Info body */}
+        <div className="p-5 sm:p-6 space-y-4">
+          {course.description && (
+            <p className="text-sm text-gray-700 leading-relaxed">{course.description}</p>
+          )}
+
+          <div className="flex flex-wrap items-center gap-2">
+            {canEdit && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSectionWizardOpen(true)}
+              >
+                <Layers className="h-4 w-4 mr-2" />
+                Nueva sección
+              </Button>
+            )}
+            {canEdit && (
+              <Button size="sm" onClick={handleCreateModule}>
+                <Plus className="h-4 w-4 mr-2" />
+                Agregar módulo
+              </Button>
+            )}
+          </div>
+
+          {canEdit && (!course.sectionsCount || course.sectionsCount === 0) && (
+            <div className="flex items-center justify-between p-3 bg-red-50 border border-red-100 rounded-lg">
+              <div className="flex items-center gap-2.5">
+                <Layers className="h-4 w-4 text-red-600 shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-red-800">Paso siguiente: crear una sección</p>
+                  <p className="text-xs text-red-600">
+                    Los estudiantes se inscriben en secciones, no en el curso.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </Card>
 
       {/* Course Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {/* Content stats — course is a template, so no student/progress counts */}
+      <div className="grid grid-cols-3 gap-4">
         <Card>
           <CardContent className="p-4 flex items-center">
             <BookOpen className="h-8 w-8 text-red-600 mr-3" />
@@ -745,15 +786,6 @@ export default function CourseDetailPage() {
             </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="p-4 flex items-center">
-            <Users className="h-8 w-8 text-red-600 mr-3" />
-            <div>
-              <p className="text-2xl font-bold">{course.studentsCount}</p>
-              <p className="text-sm text-gray-600">Estudiantes</p>
-            </div>
-          </CardContent>
-        </Card>
       </div>
 
       {/* Student Progress */}
@@ -773,6 +805,81 @@ export default function CourseDetailPage() {
               />
             </div>
             <p className="text-sm text-gray-500 mt-1">{enrollment.progress || 0}% completado</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Sections — for teacher/admin. The course is a template;
+          all student-level views (progress, grading, attempts) live here. */}
+      {isInstructor && (
+        <Card>
+          <CardContent className="p-5">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Layers className="h-5 w-5 text-red-600" />
+                <h2 className="text-lg font-semibold text-gray-900">Secciones</h2>
+                <span className="px-2 py-0.5 rounded-full bg-red-50 text-red-700 text-xs font-semibold">
+                  {courseSections.length}
+                </span>
+              </div>
+              <Button
+                size="sm"
+                onClick={() => setSectionWizardOpen(true)}
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                Nueva sección
+              </Button>
+            </div>
+
+            {courseSections.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-sm text-gray-500">
+                  No hay secciones para este curso todavía.
+                </p>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-100 -mx-5">
+                {courseSections.map((section) => (
+                  <button
+                    key={section.id}
+                    onClick={() => navigate(`/sections/${section.id}`)}
+                    className="w-full flex items-center justify-between px-5 py-3 hover:bg-red-50/40 transition-colors text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-[-2px]"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-2 h-2 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
+                      <div className="min-w-0">
+                        <p className="font-medium text-gray-900 truncate">{section.title}</p>
+                        <p className="text-xs text-gray-500 truncate">
+                          {section.instructorName} ·{' '}
+                          {new Date(section.startDate).toLocaleDateString('es-ES', {
+                            day: 'numeric', month: 'short', year: 'numeric',
+                          })}
+                          {' — '}
+                          {new Date(section.endDate).toLocaleDateString('es-ES', {
+                            day: 'numeric', month: 'short', year: 'numeric',
+                          })}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span
+                        className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                          section.status === 'activa'
+                            ? 'bg-red-50 text-red-700'
+                            : 'bg-gray-100 text-gray-600'
+                        }`}
+                      >
+                        {section.status}
+                      </span>
+                      <span className="inline-flex items-center gap-1 text-sm text-gray-600">
+                        <Users className="h-3.5 w-3.5" />
+                        {section.studentsCount ?? 0}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -832,23 +939,11 @@ export default function CourseDetailPage() {
                 getLessonIcon={getLessonIcon}
                 courseId={courseId!}
                 completedLessons={completedLessons}
-                onShowProgress={canEdit ? (lesson) => setProgressLesson({ id: lesson.id, title: lesson.title, type: lesson.type }) : undefined}
               />
             ))}
           </SortableList>
         )}
       </div>
-
-      {/* Student Progress Modal */}
-      {progressLesson && (
-        <LessonStudentProgress
-          lessonId={progressLesson.id}
-          lessonTitle={progressLesson.title}
-          lessonType={progressLesson.type}
-          courseId={courseId!}
-          onClose={() => setProgressLesson(null)}
-        />
-      )}
 
       {/* Enhanced Module Modal */}
       {showModuleModal && (
@@ -994,6 +1089,25 @@ export default function CourseDetailPage() {
           </div>
         </div>
       )}
+
+      <SectionWizardModal
+        open={sectionWizardOpen}
+        courseId={courseId}
+        onClose={() => setSectionWizardOpen(false)}
+        onSaved={async () => {
+          if (!courseId) return;
+          try {
+            const allSections = await sectionService.getByCourse(courseId);
+            const visible =
+              user?.role === 'admin'
+                ? allSections
+                : allSections.filter((s) => s.instructorId === user?.id);
+            setCourseSections(visible.sort((a, b) => b.startDate - a.startDate));
+          } catch (err) {
+            console.error('Error reloading sections:', err);
+          }
+        }}
+      />
     </div>
   );
 }

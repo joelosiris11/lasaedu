@@ -10,11 +10,11 @@ import {
   type DBCourse,
   type DBModule,
   type DBLesson,
-  type DBSectionLessonOverride,
+  type DBEnrollment,
 } from '@shared/services/dataService';
+import { firebaseDB } from '@shared/services/firebaseDataService';
 import { resolveDeadlines } from '@shared/utils/deadlines';
 import {
-  ArrowLeft,
   BookOpen,
   Video,
   FileText,
@@ -23,14 +23,13 @@ import {
   MessageSquare,
   Clock,
   Calendar,
-  CheckCircle,
-  Circle,
+  Check,
   Loader2,
   ChevronDown,
   ChevronRight,
 } from 'lucide-react';
-import { Card, CardContent } from '@shared/components/ui/Card';
-import { Button } from '@shared/components/ui/Button';
+import { Card } from '@shared/components/ui/Card';
+import { CoursePattern } from '@shared/components/ui/CoursePattern';
 import DeadlineBadge from '@shared/components/ui/DeadlineBadge';
 
 interface ModuleWithLessons extends DBModule {
@@ -38,15 +37,37 @@ interface ModuleWithLessons extends DBModule {
 }
 
 function getLessonIcon(type: string) {
+  // All red shades — brand rule.
+  const cls = 'h-4 w-4 text-red-500';
   switch (type) {
-    case 'video': return <Video className="h-4 w-4 text-blue-500" />;
-    case 'texto': return <FileText className="h-4 w-4 text-green-500" />;
-    case 'quiz': return <HelpCircle className="h-4 w-4 text-purple-500" />;
-    case 'tarea': return <File className="h-4 w-4 text-orange-500" />;
-    case 'recurso': return <BookOpen className="h-4 w-4 text-gray-500" />;
-    case 'foro': return <MessageSquare className="h-4 w-4 text-cyan-500" />;
+    case 'video': return <Video className={cls} />;
+    case 'texto': return <FileText className={cls} />;
+    case 'quiz': return <HelpCircle className={cls} />;
+    case 'tarea': return <File className={cls} />;
+    case 'recurso': return <BookOpen className={cls} />;
+    case 'foro': return <MessageSquare className={cls} />;
     default: return <FileText className="h-4 w-4 text-gray-400" />;
   }
+}
+
+// Completion circle: filled with red check when done, hollow gray ring otherwise.
+function CompletionCircle({ done }: { done: boolean }) {
+  if (done) {
+    return (
+      <span
+        aria-label="Completado"
+        className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-red-600 text-white shrink-0"
+      >
+        <Check className="h-3 w-3" strokeWidth={3} />
+      </span>
+    );
+  }
+  return (
+    <span
+      aria-label="Pendiente"
+      className="inline-block w-5 h-5 rounded-full border-2 border-gray-300 shrink-0"
+    />
+  );
 }
 
 export default function SectionDetailPage() {
@@ -59,6 +80,9 @@ export default function SectionDetailPage() {
   const [modules, setModules] = useState<ModuleWithLessons[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedModules, setExpandedModules] = useState<Set<string>>(new Set());
+  const [completedLessonIds, setCompletedLessonIds] = useState<Set<string>>(new Set());
+
+  const isStudent = user?.role === 'student';
 
   useEffect(() => {
     if (!sectionId) return;
@@ -69,12 +93,23 @@ export default function SectionDetailPage() {
         if (!sec) return;
         setSection(sec);
 
-        const [c, mods, overrides] = await Promise.all([
+        const [c, mods, overrides, enrollments] = await Promise.all([
           courseService.getById(sec.courseId),
           moduleService.getByCourse(sec.courseId),
           sectionService.getLessonOverrides(sectionId),
+          user?.id ? firebaseDB.getEnrollmentsByUser(user.id) : Promise.resolve([] as DBEnrollment[]),
         ]);
         setCourse(c);
+
+        // Student completion tracking — find the enrollment for THIS section
+        if (isStudent) {
+          const sectionEnrollment = enrollments.find(
+            e => e.sectionId === sectionId || e.courseId === sec.courseId
+          );
+          if (sectionEnrollment?.completedLessons) {
+            setCompletedLessonIds(new Set(sectionEnrollment.completedLessons));
+          }
+        }
 
         const overrideMap = new Map(overrides.map(o => [o.lessonId, o]));
 
@@ -124,86 +159,183 @@ export default function SectionDetailPage() {
     return <div className="text-center py-12 text-gray-500">Sección no encontrada</div>;
   }
 
+  // Per-section override wins; fall back to course image; fall back to pattern.
+  const bannerImage = section.image || course?.image || section.courseImage;
+  const totalLessons = modules.reduce((sum, m) => sum + m.lessons.length, 0);
+  const doneLessons = modules.reduce(
+    (sum, m) => sum + m.lessons.filter(l => completedLessonIds.has(l.id)).length,
+    0
+  );
+  const progressPct = totalLessons > 0 ? Math.round((doneLessons / totalLessons) * 100) : 0;
+
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex items-center space-x-4">
-        <Button variant="ghost" onClick={() => navigate('/courses')}>
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Volver
-        </Button>
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">{section.title}</h1>
-          <p className="text-sm text-gray-500">{section.courseTitle}</p>
+    <div className="max-w-4xl mx-auto px-4 sm:px-0 space-y-4 sm:space-y-6">
+      {/* Course hero card: banner + meta */}
+      <Card className="overflow-hidden">
+        {/* Banner */}
+        <div
+          className="relative h-40 sm:h-48 bg-cover bg-center overflow-hidden"
+          style={bannerImage ? { backgroundImage: `url(${bannerImage})` } : undefined}
+        >
+          {!bannerImage && (
+            <CoursePattern
+              courseKey={section.courseId}
+              className="absolute inset-0 w-full h-full"
+            />
+          )}
+          {/* Gradient overlay for text legibility */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+
+          {/* Overlay content */}
+          <div className="absolute inset-0 p-5 sm:p-6 flex flex-col justify-end">
+            <p className="text-xs font-medium text-white/80 uppercase tracking-wider mb-1">
+              {section.courseTitle}
+            </p>
+            <h1 className="text-xl sm:text-2xl font-bold text-white leading-tight line-clamp-2">
+              {section.title}
+            </h1>
+          </div>
         </div>
-      </div>
 
-      {/* Section info */}
-      <div className="flex flex-wrap gap-4 text-sm text-gray-600">
-        <span className="flex items-center gap-1">
-          <Calendar className="h-4 w-4" />
-          {new Date(section.startDate).toLocaleDateString('es-ES')} - {new Date(section.endDate).toLocaleDateString('es-ES')}
-        </span>
-        <span className="flex items-center gap-1">
-          <Clock className="h-4 w-4" />
-          {section.status === 'activa' ? 'En curso' : section.status}
-        </span>
-      </div>
+        {/* Info body */}
+        <div className="p-5 sm:p-6 space-y-4">
+          {section.description && (
+            <p className="text-sm text-gray-700 leading-relaxed">
+              {section.description}
+            </p>
+          )}
 
-      {section.description && (
-        <p className="text-gray-600">{section.description}</p>
-      )}
+          <div className="flex flex-wrap gap-4 text-sm">
+            <span className="inline-flex items-center gap-1.5 text-gray-600">
+              <Calendar className="h-4 w-4 text-red-500 shrink-0" />
+              {new Date(section.startDate).toLocaleDateString('es-ES', {
+                day: 'numeric', month: 'short', year: 'numeric',
+              })}
+              {' — '}
+              {new Date(section.endDate).toLocaleDateString('es-ES', {
+                day: 'numeric', month: 'short', year: 'numeric',
+              })}
+            </span>
+            <span className="inline-flex items-center gap-1.5 text-gray-600">
+              <Clock className="h-4 w-4 text-red-500 shrink-0" />
+              {section.status === 'activa' ? 'En curso' : section.status}
+            </span>
+          </div>
+
+          {/* Student progress row */}
+          {isStudent && totalLessons > 0 && (
+            <div className="pt-2">
+              <div className="flex justify-between text-xs mb-1.5">
+                <span className="text-gray-500">Progreso del curso</span>
+                <span className="font-semibold text-gray-700">
+                  {doneLessons}/{totalLessons} · {progressPct}%
+                </span>
+              </div>
+              <div className="w-full bg-gray-100 rounded-full h-2">
+                <div
+                  className="h-2 rounded-full bg-red-500 transition-all"
+                  style={{ width: `${progressPct}%` }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      </Card>
 
       {/* Modules & Lessons */}
       <div className="space-y-3">
         {modules.map((mod, modIdx) => {
           const isExpanded = expandedModules.has(mod.id);
+          const totalLessons = mod.lessons.length;
+          const doneLessons = mod.lessons.filter(l => completedLessonIds.has(l.id)).length;
+          const moduleComplete = totalLessons > 0 && doneLessons === totalLessons;
+
           return (
             <Card key={mod.id}>
               <div
                 className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50"
                 onClick={() => toggleModule(mod.id)}
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 min-w-0">
                   {isExpanded ? (
-                    <ChevronDown className="h-5 w-5 text-gray-500" />
+                    <ChevronDown className="h-5 w-5 text-gray-500 shrink-0" />
                   ) : (
-                    <ChevronRight className="h-5 w-5 text-gray-500" />
+                    <ChevronRight className="h-5 w-5 text-gray-500 shrink-0" />
                   )}
-                  <div>
-                    <h3 className="font-medium">Módulo {modIdx + 1}: {mod.title}</h3>
-                    <p className="text-sm text-gray-500">{mod.lessons.length} lecciones</p>
+                  <div className="min-w-0">
+                    <h3 className="font-medium text-gray-900 truncate">
+                      Módulo {modIdx + 1}: {mod.title}
+                    </h3>
+                    {/* Student view: progress dots instead of "N lecciones" */}
+                    {isStudent ? (
+                      totalLessons > 0 && (
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <div className="flex gap-0.5">
+                            {mod.lessons.map((l) => (
+                              <span
+                                key={l.id}
+                                className={`w-1.5 h-1.5 rounded-full ${
+                                  completedLessonIds.has(l.id) ? 'bg-red-500' : 'bg-gray-200'
+                                }`}
+                              />
+                            ))}
+                          </div>
+                          <span className="text-xs text-gray-400">
+                            {moduleComplete
+                              ? 'Completo'
+                              : `${doneLessons}/${totalLessons}`}
+                          </span>
+                        </div>
+                      )
+                    ) : (
+                      <p className="text-sm text-gray-500">{totalLessons} lecciones</p>
+                    )}
                   </div>
                 </div>
+
+                {/* Right side: completion check for students */}
+                {isStudent && <CompletionCircle done={moduleComplete} />}
               </div>
 
               {isExpanded && (
                 <div className="border-t">
-                  {mod.lessons.map((lesson, lessonIdx) => (
-                    <div
-                      key={lesson.id}
-                      className="flex items-center justify-between p-4 border-b last:border-b-0 hover:bg-gray-50 cursor-pointer"
-                      onClick={() => navigate(`/sections/${sectionId}/lesson/${lesson.id}`)}
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="text-gray-400 text-sm w-6">{lessonIdx + 1}.</span>
-                        {getLessonIcon(lesson.type)}
-                        <div>
-                          <p className="font-medium text-gray-900">{lesson.title}</p>
-                          <p className="text-xs text-gray-500">{lesson.duration} min</p>
+                  {mod.lessons.map((lesson, lessonIdx) => {
+                    const isDone = completedLessonIds.has(lesson.id);
+                    return (
+                      <div
+                        key={lesson.id}
+                        className="flex items-center justify-between p-4 border-b last:border-b-0 hover:bg-gray-50 cursor-pointer"
+                        onClick={() => navigate(`/sections/${sectionId}/lesson/${lesson.id}`)}
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className="text-gray-400 text-sm w-6 shrink-0">
+                            {lessonIdx + 1}.
+                          </span>
+                          {getLessonIcon(lesson.type)}
+                          <div className="min-w-0">
+                            <p className={`font-medium truncate ${isDone ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
+                              {lesson.title}
+                            </p>
+                            <p className="text-xs text-gray-500">{lesson.duration} min</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {/* Non-student: keep deadline badge as before */}
+                          {!isStudent &&
+                            (lesson.type === 'tarea' || lesson.type === 'quiz') &&
+                            lesson.resolved && (
+                              <DeadlineBadge
+                                dueDate={lesson.resolved.dueDate}
+                                lateSubmissionDeadline={lesson.resolved.lateSubmissionDeadline}
+                                availableFrom={lesson.resolved.availableFrom}
+                              />
+                            )}
+                          {/* Student: completion circle instead of submission/deadline badge */}
+                          {isStudent && <CompletionCircle done={isDone} />}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        {(lesson.type === 'tarea' || lesson.type === 'quiz') && lesson.resolved && (
-                          <DeadlineBadge
-                            dueDate={lesson.resolved.dueDate}
-                            lateSubmissionDeadline={lesson.resolved.lateSubmissionDeadline}
-                            availableFrom={lesson.resolved.availableFrom}
-                          />
-                        )}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </Card>

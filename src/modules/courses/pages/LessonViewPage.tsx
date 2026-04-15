@@ -206,13 +206,29 @@ export default function LessonViewPage() {
 
       setModules(modulesWithLessons);
 
-      // Cargar inscripción del usuario
+      // Cargar inscripción del usuario desde Firestore (source of truth;
+      // dashboard + MySections leen de aquí)
       if (user?.id) {
-        const userEnrollments = await enrollmentService.getAll();
-        const userEnrollment = userEnrollments.find((e: any) => e.userId === user.id && e.courseId === resolvedCourseId) as DBEnrollment;
+        const userEnrollments = await firebaseDB.getEnrollmentsByUser(user.id);
+        const userEnrollment = userEnrollments.find(
+          (e: DBEnrollment) => e.courseId === resolvedCourseId
+        );
         if (userEnrollment) {
           setEnrollment(userEnrollment);
           setCompletedLessons(new Set(userEnrollment.completedLessons || []));
+
+          // Touch lastAccessedAt en Firestore para que el dashboard refleje
+          // "último acceso" cada vez que el estudiante abre una lección.
+          if (user.role === 'student' && lessonId) {
+            firebaseDB
+              .updateEnrollment(userEnrollment.id, {
+                lastAccessedAt: new Date().toISOString(),
+                lastLessonId: lessonId,
+              })
+              .catch((err: unknown) => {
+                console.error('lastAccessedAt update failed:', err);
+              });
+          }
         }
       }
 
@@ -353,6 +369,7 @@ export default function LessonViewPage() {
       await enrollmentService.update(enrollment.id, {
         completedLessons: newCompletedLessons,
         progress: newProgress,
+        status: newProgress >= 100 ? 'completed' : 'active',
         lastLessonId: currentLesson.id,
         lastAccessedAt: new Date().toISOString(),
         lastUpdated: Date.now()
