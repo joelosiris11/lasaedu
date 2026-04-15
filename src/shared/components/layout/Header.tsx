@@ -19,6 +19,8 @@ const pageMeta: Record<string, { title: string; subtitle: string }> = {
   '/forums': { title: 'Foros', subtitle: 'Participa en las discusiones' },
   '/support': { title: 'Soporte', subtitle: 'Centro de ayuda y soporte técnico' },
   '/settings': { title: 'Configuración', subtitle: 'Ajustes de tu cuenta y preferencias' },
+  '/audit-logs': { title: 'Trazabilidad', subtitle: 'Acciones del sistema y cambios en cursos' },
+  '/student-activity': { title: 'Actividad de Estudiantes', subtitle: 'Entregas y completaciones' },
 };
 
 function getPageMeta(pathname: string) {

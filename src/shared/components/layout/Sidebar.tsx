@@ -18,6 +18,8 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Layers,
+  History,
+  Activity,
 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import type { UserRole } from '@shared/types';
@@ -57,11 +59,12 @@ const sidebarSections: SidebarSection[] = [
     label: 'Docencia',
     roles: ['teacher'],
     items: [
-      { icon: BookOpen, label: 'Mis Cursos', path: '/courses', roles: ['teacher'] },
+      { icon: BookOpen, label: 'Cursos', path: '/courses', roles: ['teacher'] },
       { icon: Layers, label: 'Secciones', path: '/my-sections', roles: ['teacher'] },
       { icon: UserPlus, label: 'Inscripciones', path: '/enrollments', roles: ['teacher'] },
       { icon: ClipboardList, label: 'Calificaciones', path: '/grades', roles: ['teacher'] },
       { icon: Award, label: 'Certificados', path: '/certificates', roles: ['teacher'] },
+      { icon: Activity, label: 'Actividad Estudiantes', path: '/student-activity', roles: ['teacher'] },
     ],
   },
   // Admin: "Gestión" section - no duplicates, no reportes
@@ -74,6 +77,8 @@ const sidebarSections: SidebarSection[] = [
       { icon: BookOpen, label: 'Cursos', path: '/courses', roles: ['admin'] },
       { icon: ClipboardList, label: 'Calificaciones', path: '/grades', roles: ['admin'] },
       { icon: Award, label: 'Certificados', path: '/certificates', roles: ['admin'] },
+      { icon: History, label: 'Trazabilidad', path: '/audit-logs', roles: ['admin'] },
+      { icon: Activity, label: 'Actividad Estudiantes', path: '/student-activity', roles: ['admin'] },
     ],
   },
   {

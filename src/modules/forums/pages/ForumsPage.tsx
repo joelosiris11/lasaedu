@@ -1,11 +1,16 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useAuthStore } from '@app/store/authStore';
-import { courseService, forumService } from '@shared/services/dataService';
-import { 
-  MessageSquare, 
-  Plus, 
-  Search, 
-  Send, 
+import {
+  courseService,
+  forumService,
+  sectionService,
+  legacyEnrollmentService,
+} from '@shared/services/dataService';
+import {
+  MessageSquare,
+  Plus,
+  Search,
+  Send,
   ThumbsUp,
   MessageCircle,
   Pin,
@@ -13,7 +18,8 @@ import {
   BookOpen,
   User,
   Clock,
-  CheckCircle
+  CheckCircle,
+  Inbox,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@shared/components/ui/Card';
 import { Button } from '@shared/components/ui/Button';
@@ -100,15 +106,43 @@ export default function ForumsPage() {
   }, []);
 
   const loadData = async () => {
+    if (!user) return;
     setLoading(true);
     try {
-      // Load courses
-      const coursesData = await courseService.getAll();
-      setCourses(coursesData.map(c => ({ id: c.id, title: c.title })));
+      // 1. Determine which courses belong to this user's "mis clases"
+      const allCourses = await courseService.getAll();
+      let userCourseIds: string[] = [];
 
-      // Load forum posts
-      const postsData = await forumService.getPosts() || [];
-      setPosts(postsData as unknown as ForumPost[]);
+      if (user.role === 'admin') {
+        // Admin sees all courses / all posts
+        userCourseIds = allCourses.map(c => c.id);
+      } else if (user.role === 'teacher') {
+        // Teacher: sections they instruct → their courseIds
+        const teacherSections = await sectionService.getByInstructor(user.id);
+        userCourseIds = Array.from(new Set(teacherSections.map(s => s.courseId)));
+        // Also include courses they own directly (courseService.instructorId)
+        allCourses.forEach(c => {
+          if (c.instructorId === user.id && !userCourseIds.includes(c.id)) {
+            userCourseIds.push(c.id);
+          }
+        });
+      } else {
+        // Student: enrolled sections → courseIds
+        const enrollments = await legacyEnrollmentService.getByUser(user.id);
+        userCourseIds = Array.from(new Set(enrollments.map(e => e.courseId)));
+      }
+
+      const myCourses = allCourses
+        .filter(c => userCourseIds.includes(c.id))
+        .map(c => ({ id: c.id, title: c.title }));
+      setCourses(myCourses);
+
+      // 2. Load posts and filter to user's courses only
+      const postsData = (await forumService.getPosts()) || [];
+      const filtered = (postsData as unknown as ForumPost[]).filter(
+        p => userCourseIds.includes(p.courseId)
+      );
+      setPosts(filtered);
     } catch (error) {
       console.error('Error loading forum data:', error);
     } finally {
@@ -353,10 +387,68 @@ export default function ForumsPage() {
     );
   };
 
+  // Post count per course — drives the "Mis clases" sidebar counts
+  const postCountsByCourse = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const p of posts) counts[p.courseId] = (counts[p.courseId] || 0) + 1;
+    return counts;
+  }, [posts]);
+
   return (
     <div className="flex h-[calc(100vh-180px)] gap-6">
+      {/* Mis Clases sidebar — only shown when no post is selected to save space */}
+      {!selectedPost && courses.length > 0 && (
+        <div className="w-64 shrink-0 flex flex-col">
+          <Card className="flex-1 flex flex-col overflow-hidden">
+            <CardHeader className="border-b bg-gray-50 flex-shrink-0 py-3">
+              <CardTitle className="flex items-center text-sm">
+                <BookOpen className="h-4 w-4 mr-2 text-red-600" />
+                Mis clases
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex-1 overflow-y-auto p-2">
+              <button
+                onClick={() => setFilterCourse('all')}
+                className={`w-full text-left px-3 py-2 rounded-lg text-sm mb-1 transition-colors flex items-center justify-between ${
+                  filterCourse === 'all'
+                    ? 'bg-red-50 text-red-700 font-medium'
+                    : 'hover:bg-gray-50 text-gray-700'
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <Inbox className="h-4 w-4" />
+                  Todas
+                </span>
+                <span className="text-xs text-gray-400">{posts.length}</span>
+              </button>
+              {courses.map(course => {
+                const count = postCountsByCourse[course.id] || 0;
+                const active = filterCourse === course.id;
+                return (
+                  <button
+                    key={course.id}
+                    onClick={() => setFilterCourse(course.id)}
+                    className={`w-full text-left px-3 py-2 rounded-lg text-sm mb-1 transition-colors flex items-center justify-between gap-2 ${
+                      active
+                        ? 'bg-red-50 text-red-700 font-medium'
+                        : 'hover:bg-gray-50 text-gray-700'
+                    }`}
+                    title={course.title}
+                  >
+                    <span className="truncate">{course.title}</span>
+                    <span className={`text-xs shrink-0 ${active ? 'text-red-700' : 'text-gray-400'}`}>
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {/* Posts List */}
-      <div className={`${selectedPost ? 'w-1/3' : 'w-full'} flex flex-col`}>
+      <div className={`${selectedPost ? 'w-1/3' : 'flex-1'} flex flex-col min-w-0`}>
         <Card className="flex-1 flex flex-col overflow-hidden">
           <CardHeader className="border-b bg-gray-50 flex-shrink-0">
             <div className="flex items-center justify-between">
@@ -448,10 +540,10 @@ export default function ForumsPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           {post.isPinned && (
-                            <Pin className="h-3 w-3 text-orange-500" />
+                            <Pin className="h-3 w-3 text-red-600" />
                           )}
                           {post.isResolved && (
-                            <CheckCircle className="h-4 w-4 text-green-500" />
+                            <CheckCircle className="h-4 w-4 text-red-700" />
                           )}
                           <h3 className="font-medium text-gray-900 truncate">{post.title}</h3>
                         </div>
@@ -508,13 +600,13 @@ export default function ForumsPage() {
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-2">
                     {selectedPost.isPinned && (
-                      <span className="text-xs px-2 py-0.5 bg-orange-100 text-orange-800 rounded-full flex items-center">
+                      <span className="text-xs px-2 py-0.5 bg-red-50 text-red-700 rounded-full flex items-center">
                         <Pin className="h-3 w-3 mr-1" />
                         Fijado
                       </span>
                     )}
                     {selectedPost.isResolved && (
-                      <span className="text-xs px-2 py-0.5 bg-green-100 text-green-800 rounded-full flex items-center">
+                      <span className="text-xs px-2 py-0.5 bg-red-600 text-white rounded-full flex items-center">
                         <CheckCircle className="h-3 w-3 mr-1" />
                         Resuelto
                       </span>
@@ -540,7 +632,7 @@ export default function ForumsPage() {
                       variant="ghost" 
                       size="sm"
                       onClick={() => handlePinPost(selectedPost)}
-                      className={selectedPost.isPinned ? 'text-orange-600' : ''}
+                      className={selectedPost.isPinned ? 'text-red-600' : ''}
                     >
                       <Pin className="h-4 w-4" />
                     </Button>
@@ -616,13 +708,13 @@ export default function ForumsPage() {
                     <div 
                       key={reply.id} 
                       className={`p-4 rounded-lg ${
-                        reply.isAnswer 
-                          ? 'bg-green-50 border-2 border-green-200' 
+                        reply.isAnswer
+                          ? 'bg-red-50 border-2 border-red-200'
                           : 'bg-gray-50'
                       }`}
                     >
                       {reply.isAnswer && (
-                        <div className="flex items-center text-green-700 text-sm font-medium mb-2">
+                        <div className="flex items-center text-red-700 text-sm font-medium mb-2">
                           <CheckCircle className="h-4 w-4 mr-1" />
                           Respuesta aceptada
                         </div>
@@ -658,7 +750,7 @@ export default function ForumsPage() {
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => handleMarkAsAnswer(reply)}
-                                className="text-green-600 hover:text-green-700"
+                                className="text-red-600 hover:text-red-700"
                               >
                                 <CheckCircle className="h-3 w-3 mr-1" />
                                 Marcar como respuesta

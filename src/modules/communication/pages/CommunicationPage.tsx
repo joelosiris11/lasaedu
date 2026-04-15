@@ -1,19 +1,20 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAuthStore } from '@app/store/authStore';
-import { conversationService, messageService } from '@shared/services/dataService';
-import type { DBConversation, DBMessage } from '@shared/services/firebaseDataService';
-import { 
-  MessageSquare, 
-  Plus, 
-  Search, 
-  Send, 
-  Paperclip, 
+import { conversationService, messageService, userService } from '@shared/services/dataService';
+import type { DBConversation, DBMessage, DBUser } from '@shared/services/firebaseDataService';
+import {
+  MessageSquare,
+  Plus,
+  Search,
+  Send,
+  Paperclip,
   Users,
   Hash,
   MoreVertical,
   Phone,
   Video,
-  UserPlus
+  UserPlus,
+  X,
 } from 'lucide-react';
 import { Button } from '@shared/components/ui/Button';
 import { Input } from '@shared/components/ui/Input';
@@ -52,6 +53,7 @@ const CommunicationPage = () => {
   const [selectedChannel, setSelectedChannel] = useState<Channel | null>(null);
   const [newMessage, setNewMessage] = useState('');
   const [showCreateChannel, setShowCreateChannel] = useState(false);
+  const [showNewDM, setShowNewDM] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
 
@@ -214,6 +216,67 @@ const CommunicationPage = () => {
     }
   };
 
+  // Open or create a 1-to-1 direct conversation with another user
+  const handleOpenDMWith = async (other: DBUser) => {
+    if (!user) return;
+    try {
+      // Look for an existing direct conversation that contains both users
+      const all = await conversationService.getAll();
+      const existing = all.find(c =>
+        c.type === 'direct' &&
+        Array.isArray(c.participants) &&
+        c.participants.length === 2 &&
+        c.participants.includes(user.id) &&
+        c.participants.includes(other.id)
+      );
+
+      let channel: Channel;
+      if (existing) {
+        channel = {
+          id: existing.id,
+          name: other.name,
+          description: other.email || '',
+          type: 'private',
+          members: existing.participants || [],
+          isPrivate: true,
+          createdBy: existing.createdBy,
+          createdAt: new Date(existing.createdAt).toISOString(),
+          unreadCount: existing.unreadCount?.[user.id] || 0,
+        };
+        // Ensure it's in the sidebar list
+        if (!channels.find(c => c.id === existing.id)) {
+          setChannels(prev => [channel, ...prev]);
+        }
+      } else {
+        const newConv = await conversationService.create({
+          type: 'direct',
+          name: other.name,
+          participants: [user.id, other.id],
+          unreadCount: {},
+          createdBy: user.id,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        } as any);
+        channel = {
+          id: newConv.id,
+          name: other.name,
+          description: other.email || '',
+          type: 'private',
+          members: [user.id, other.id],
+          isPrivate: true,
+          createdBy: user.id,
+          createdAt: new Date().toISOString(),
+          unreadCount: 0,
+        };
+        setChannels(prev => [channel, ...prev]);
+      }
+      setSelectedChannel(channel);
+      setShowNewDM(false);
+    } catch (err) {
+      console.error('Error opening DM:', err);
+    }
+  };
+
   const filteredChannels = channels.filter(channel =>
     channel.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -246,16 +309,31 @@ const CommunicationPage = () => {
       {/* Sidebar - Lista de Canales */}
       <div className="w-80 border-r bg-gray-50 flex flex-col">
         <div className="p-4 border-b bg-white">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">Comunicación</h2>
-            <Button size="sm" onClick={() => setShowCreateChannel(true)}>
-              <Plus className="h-4 w-4" />
-            </Button>
+          <div className="flex items-center justify-between mb-4 gap-2">
+            <h2 className="text-sm font-semibold text-gray-700">Conversaciones</h2>
+            <div className="flex items-center gap-1">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setShowNewDM(true)}
+                title="Nuevo mensaje directo"
+              >
+                <UserPlus className="h-4 w-4 mr-1" />
+                <span className="hidden sm:inline text-xs">Persona</span>
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => setShowCreateChannel(true)}
+                title="Nuevo canal"
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
             <Input
-              placeholder="Buscar canales..."
+              placeholder="Buscar conversaciones..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10"
@@ -487,6 +565,112 @@ const CommunicationPage = () => {
           onClose={() => setShowCreateChannel(false)}
         />
       )}
+
+      {/* Modal: Nuevo mensaje directo (buscador de personas) */}
+      {showNewDM && user && (
+        <NewDMModal
+          currentUserId={user.id}
+          onPick={handleOpenDMWith}
+          onClose={() => setShowNewDM(false)}
+        />
+      )}
+    </div>
+  );
+};
+
+// ─── Nuevo mensaje directo: buscador de personas ────────────────────────────
+const NewDMModal = ({
+  currentUserId,
+  onPick,
+  onClose,
+}: {
+  currentUserId: string;
+  onPick: (u: DBUser) => void;
+  onClose: () => void;
+}) => {
+  const [query, setQuery] = useState('');
+  const [users, setUsers] = useState<DBUser[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const all = await userService.getAll();
+        setUsers(all.filter(u => u.id !== currentUserId));
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [currentUserId]);
+
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return users.slice(0, 50);
+    return users
+      .filter(u =>
+        u.name.toLowerCase().includes(needle) ||
+        (u.email || '').toLowerCase().includes(needle)
+      )
+      .slice(0, 50);
+  }, [users, query]);
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-lg max-w-md w-full max-h-[80vh] flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between p-4 border-b">
+          <h2 className="text-base font-semibold">Nuevo mensaje</h2>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+
+        <div className="p-4 border-b">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Input
+              autoFocus
+              placeholder="Buscar por nombre o email..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+          {loading ? (
+            <div className="p-8 text-center text-sm text-gray-500">Cargando usuarios...</div>
+          ) : filtered.length === 0 ? (
+            <div className="p-8 text-center">
+              <Users className="h-10 w-10 text-gray-300 mx-auto mb-2" />
+              <p className="text-sm text-gray-500">
+                {query ? 'No se encontró nadie con esos datos' : 'No hay otros usuarios'}
+              </p>
+            </div>
+          ) : (
+            <ul className="divide-y">
+              {filtered.map(u => (
+                <li key={u.id}>
+                  <button
+                    onClick={() => onPick(u)}
+                    className="w-full flex items-center gap-3 p-3 hover:bg-red-50 transition-colors text-left"
+                  >
+                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-red-500 to-red-700 text-white flex items-center justify-center font-medium shrink-0">
+                      {u.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-gray-900 truncate">{u.name}</div>
+                      <div className="text-xs text-gray-500 truncate">
+                        {u.email} · <span className="capitalize">{u.role}</span>
+                      </div>
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
     </div>
   );
 };
