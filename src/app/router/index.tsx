@@ -15,7 +15,6 @@ import {
   CommunicationPage
 } from '@/pages';
 import CourseDetailPage from '@modules/courses/pages/CourseDetailPage';
-import CourseWizardPage from '@modules/courses/pages/CourseWizardPage';
 import LessonViewPage from '@modules/courses/pages/LessonViewPage';
 import LessonBuilderPage from '@modules/courses/pages/LessonBuilderPage';
 import EvaluationBuilderPage from '@modules/evaluations/pages/EvaluationBuilderPage';
@@ -31,10 +30,12 @@ import UserManagementPage from '@modules/users/pages/UserManagementPage';
 import ForumsPage from '@modules/forums/pages/ForumsPage';
 import DataInitPage from '@modules/auth/pages/DataInitPage';
 
+// Audit pages
+import AuditLogsPage from '@modules/audit/pages/AuditLogsPage';
+import StudentActivityPage from '@modules/audit/pages/StudentActivityPage';
+
 // Section pages
 import MySectionsPage from '@modules/courses/pages/MySectionsPage';
-import SectionsListPage from '@modules/courses/pages/SectionsListPage';
-import SectionWizardPage from '@modules/courses/pages/SectionWizardPage';
 import SectionDatesPage from '@modules/courses/pages/SectionDatesPage';
 import SectionDetailPage from '@modules/courses/pages/SectionDetailPage';
 import SectionGradesPage from '@modules/courses/pages/SectionGradesPage';
@@ -133,14 +134,6 @@ export const router = createBrowserRouter([
         )
       },
       {
-        path: 'courses/new',
-        element: (
-          <ProtectedRoute allowedRoles={['admin', 'teacher']}>
-            <CourseWizardPage />
-          </ProtectedRoute>
-        )
-      },
-      {
         path: 'courses/:courseId',
         element: (
           <ProtectedRoute allowedRoles={['admin', 'teacher', 'student']}>
@@ -178,22 +171,6 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute allowedRoles={['admin', 'teacher', 'student']}>
             <MySectionsPage />
-          </ProtectedRoute>
-        )
-      },
-      {
-        path: 'my-sections/course/:courseId/new',
-        element: (
-          <ProtectedRoute allowedRoles={['admin', 'teacher']}>
-            <SectionWizardPage />
-          </ProtectedRoute>
-        )
-      },
-      {
-        path: 'my-sections/:sectionId/edit',
-        element: (
-          <ProtectedRoute allowedRoles={['admin', 'teacher']}>
-            <SectionWizardPage />
           </ProtectedRoute>
         )
       },
@@ -306,6 +283,22 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute allowedRoles={['admin', 'teacher', 'student', 'support']}>
             <SettingsPage />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: 'audit-logs',
+        element: (
+          <ProtectedRoute allowedRoles={['admin']}>
+            <AuditLogsPage />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: 'student-activity',
+        element: (
+          <ProtectedRoute allowedRoles={['admin', 'teacher']}>
+            <StudentActivityPage />
           </ProtectedRoute>
         )
       },
