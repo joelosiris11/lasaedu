@@ -168,6 +168,9 @@ export default function LessonBuilderPage() {
             // Check if content is video type
             } else if (mappedType === 'video' && parsedContent && parsedContent.videoUrl !== undefined) {
               setVideoContent(parsedContent as VideoLessonContent);
+            // Fallback: video URL stored at top level (legacy) or content didn't match
+            } else if (mappedType === 'video' && lessonData.videoUrl) {
+              setVideoContent({ videoUrl: lessonData.videoUrl, videoSource: '', textContent: typeof parsedContent === 'string' ? '' : (parsedContent?.textContent || '') });
             // Check if content is resource type
             } else if (mappedType === 'recurso' && parsedContent && parsedContent.textContent !== undefined) {
               setResourceContent(parsedContent as ResourceLessonContent);
@@ -308,6 +311,7 @@ export default function LessonBuilderPage() {
         description: description.trim() || undefined,
         type: lessonType,
         content: contentToSave,
+        ...(lessonType === 'video' ? { videoUrl: videoContent.videoUrl } : {}),
         settings,
         moduleId,
         courseId,
