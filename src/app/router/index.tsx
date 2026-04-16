@@ -26,7 +26,6 @@ import SettingsPage from '@modules/settings/pages/SettingsPage';
 
 // Import new critical pages
 import EnrollmentManagementPage from '@modules/enrollments/pages/EnrollmentManagementPage';
-import UserManagementPage from '@modules/users/pages/UserManagementPage';
 import ForumsPage from '@modules/forums/pages/ForumsPage';
 import DataInitPage from '@modules/auth/pages/DataInitPage';
 
@@ -72,6 +71,7 @@ const DashboardRedirect = () => {
 
   switch (user.role) {
     case 'admin':
+    case 'supervisor':
       return <AdminDashboard />;
     case 'teacher':
       return <TeacherDashboard />;
@@ -120,7 +120,7 @@ export const router = createBrowserRouter([
       {
         path: 'users',
         element: (
-          <ProtectedRoute allowedRoles={['admin']}>
+          <ProtectedRoute allowedRoles={['admin', 'supervisor']}>
             <UsersPage />
           </ProtectedRoute>
         )
@@ -128,7 +128,7 @@ export const router = createBrowserRouter([
       {
         path: 'courses',
         element: (
-          <ProtectedRoute allowedRoles={['admin', 'teacher']}>
+          <ProtectedRoute allowedRoles={['admin', 'supervisor', 'teacher']}>
             <CoursesPage />
           </ProtectedRoute>
         )
@@ -136,7 +136,7 @@ export const router = createBrowserRouter([
       {
         path: 'courses/:courseId',
         element: (
-          <ProtectedRoute allowedRoles={['admin', 'teacher', 'student']}>
+          <ProtectedRoute allowedRoles={['admin', 'supervisor', 'teacher', 'student']}>
             <CourseDetailPage />
           </ProtectedRoute>
         )
@@ -144,7 +144,7 @@ export const router = createBrowserRouter([
       {
         path: 'courses/:courseId/lesson/:lessonId',
         element: (
-          <ProtectedRoute allowedRoles={['admin', 'teacher', 'student']}>
+          <ProtectedRoute allowedRoles={['admin', 'supervisor', 'teacher', 'student']}>
             <LessonViewPage />
           </ProtectedRoute>
         )
@@ -152,7 +152,7 @@ export const router = createBrowserRouter([
       {
         path: 'courses/:courseId/modules/:moduleId/lessons/new',
         element: (
-          <ProtectedRoute allowedRoles={['admin', 'teacher']}>
+          <ProtectedRoute allowedRoles={['admin', 'supervisor', 'teacher']}>
             <LessonBuilderPage />
           </ProtectedRoute>
         )
@@ -160,7 +160,7 @@ export const router = createBrowserRouter([
       {
         path: 'courses/:courseId/modules/:moduleId/lessons/:lessonId/edit',
         element: (
-          <ProtectedRoute allowedRoles={['admin', 'teacher']}>
+          <ProtectedRoute allowedRoles={['admin', 'supervisor', 'teacher']}>
             <LessonBuilderPage />
           </ProtectedRoute>
         )
@@ -169,7 +169,7 @@ export const router = createBrowserRouter([
       {
         path: 'my-sections',
         element: (
-          <ProtectedRoute allowedRoles={['admin', 'teacher', 'student']}>
+          <ProtectedRoute allowedRoles={['admin', 'supervisor', 'teacher', 'student']}>
             <MySectionsPage />
           </ProtectedRoute>
         )
@@ -177,7 +177,7 @@ export const router = createBrowserRouter([
       {
         path: 'sections/:sectionId/dates',
         element: (
-          <ProtectedRoute allowedRoles={['admin', 'teacher']}>
+          <ProtectedRoute allowedRoles={['admin', 'supervisor', 'teacher']}>
             <SectionDatesPage />
           </ProtectedRoute>
         )
@@ -185,7 +185,7 @@ export const router = createBrowserRouter([
       {
         path: 'sections/:sectionId/grades',
         element: (
-          <ProtectedRoute allowedRoles={['admin', 'teacher']}>
+          <ProtectedRoute allowedRoles={['admin', 'supervisor', 'teacher']}>
             <SectionGradesPage />
           </ProtectedRoute>
         )
@@ -193,7 +193,7 @@ export const router = createBrowserRouter([
       {
         path: 'sections/:sectionId',
         element: (
-          <ProtectedRoute allowedRoles={['admin', 'teacher', 'student']}>
+          <ProtectedRoute allowedRoles={['admin', 'supervisor', 'teacher', 'student']}>
             <SectionDetailPage />
           </ProtectedRoute>
         )
@@ -201,7 +201,7 @@ export const router = createBrowserRouter([
       {
         path: 'sections/:sectionId/lesson/:lessonId',
         element: (
-          <ProtectedRoute allowedRoles={['admin', 'teacher', 'student']}>
+          <ProtectedRoute allowedRoles={['admin', 'supervisor', 'teacher', 'student']}>
             <LessonViewPage />
           </ProtectedRoute>
         )
@@ -209,7 +209,7 @@ export const router = createBrowserRouter([
       {
         path: 'evaluations/:evaluationId/edit',
         element: (
-          <ProtectedRoute allowedRoles={['admin', 'teacher']}>
+          <ProtectedRoute allowedRoles={['admin', 'supervisor', 'teacher']}>
             <EvaluationBuilderPage />
           </ProtectedRoute>
         )
@@ -225,7 +225,7 @@ export const router = createBrowserRouter([
       {
         path: 'communication',
         element: (
-          <ProtectedRoute allowedRoles={['admin', 'teacher', 'student']}>
+          <ProtectedRoute allowedRoles={['admin', 'supervisor', 'teacher', 'student']}>
             <CommunicationPage />
           </ProtectedRoute>
         )
@@ -233,7 +233,7 @@ export const router = createBrowserRouter([
       {
         path: 'forums',
         element: (
-          <ProtectedRoute allowedRoles={['admin', 'teacher', 'student']}>
+          <ProtectedRoute allowedRoles={['admin', 'supervisor', 'teacher', 'student']}>
             <ForumsPage />
           </ProtectedRoute>
         )
@@ -241,7 +241,7 @@ export const router = createBrowserRouter([
       {
         path: 'grades',
         element: (
-          <ProtectedRoute allowedRoles={['admin', 'teacher', 'student']}>
+          <ProtectedRoute allowedRoles={['admin', 'supervisor', 'teacher', 'student']}>
             <GradesPage />
           </ProtectedRoute>
         )
@@ -249,7 +249,7 @@ export const router = createBrowserRouter([
       {
         path: 'certificates',
         element: (
-          <ProtectedRoute allowedRoles={['admin', 'teacher', 'student']}>
+          <ProtectedRoute allowedRoles={['admin', 'supervisor', 'teacher', 'student']}>
             <CertificatesPage />
           </ProtectedRoute>
         )
@@ -257,7 +257,7 @@ export const router = createBrowserRouter([
       {
         path: 'support',
         element: (
-          <ProtectedRoute allowedRoles={['admin', 'support', 'teacher', 'student']}>
+          <ProtectedRoute allowedRoles={['admin', 'supervisor', 'support', 'teacher', 'student']}>
             <SupportPage />
           </ProtectedRoute>
         )
@@ -265,23 +265,19 @@ export const router = createBrowserRouter([
       {
         path: 'enrollments',
         element: (
-          <ProtectedRoute allowedRoles={['admin', 'teacher']}>
+          <ProtectedRoute allowedRoles={['admin', 'supervisor', 'teacher']}>
             <EnrollmentManagementPage />
           </ProtectedRoute>
         )
       },
       {
         path: 'user-management',
-        element: (
-          <ProtectedRoute allowedRoles={['admin']}>
-            <UserManagementPage />
-          </ProtectedRoute>
-        )
+        element: <Navigate to="/users" replace />
       },
       {
         path: 'settings',
         element: (
-          <ProtectedRoute allowedRoles={['admin', 'teacher', 'student', 'support']}>
+          <ProtectedRoute allowedRoles={['admin', 'supervisor', 'teacher', 'student', 'support']}>
             <SettingsPage />
           </ProtectedRoute>
         )
@@ -289,7 +285,7 @@ export const router = createBrowserRouter([
       {
         path: 'audit-logs',
         element: (
-          <ProtectedRoute allowedRoles={['admin']}>
+          <ProtectedRoute allowedRoles={['admin', 'supervisor']}>
             <AuditLogsPage />
           </ProtectedRoute>
         )
@@ -297,7 +293,7 @@ export const router = createBrowserRouter([
       {
         path: 'student-activity',
         element: (
-          <ProtectedRoute allowedRoles={['admin', 'teacher']}>
+          <ProtectedRoute allowedRoles={['admin', 'supervisor', 'teacher']}>
             <StudentActivityPage />
           </ProtectedRoute>
         )

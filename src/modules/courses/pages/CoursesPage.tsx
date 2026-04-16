@@ -77,11 +77,15 @@ const LEVEL_STYLES: Record<DBCourse['level'], string> = {
 function CourseGridCard({
   course,
   onView,
+  onEdit,
   onNewSection,
+  readOnly,
 }: {
   course: DBCourse;
   onView: () => void;
+  onEdit: () => void;
   onNewSection: () => void;
+  readOnly?: boolean;
 }) {
   const statusStyle = STATUS_STYLES[course.status];
   const statusLabel = STATUS_LABELS[course.status];
@@ -147,14 +151,26 @@ function CourseGridCard({
             <Eye className="h-3.5 w-3.5 mr-1" />
             Ver
           </Button>
-          <button
-            onClick={onNewSection}
-            title="Nueva sección"
-            aria-label="Nueva sección"
-            className="inline-flex items-center justify-center h-8 w-8 rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 shrink-0"
-          >
-            <Plus className="h-4 w-4" />
-          </button>
+          {!readOnly && (
+            <>
+              <button
+                onClick={onEdit}
+                title="Editar curso"
+                aria-label="Editar curso"
+                className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-gray-200 hover:border-gray-300 text-gray-600 hover:text-gray-900 bg-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 shrink-0"
+              >
+                <Edit3 className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={onNewSection}
+                title="Nueva sección"
+                aria-label="Nueva sección"
+                className="inline-flex items-center justify-center h-8 w-8 rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 shrink-0"
+              >
+                <Plus className="h-4 w-4" />
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -166,6 +182,7 @@ function CourseGridCard({
 const CoursesPage = () => {
   const navigate = useNavigate();
   const { user } = useAuthStore();
+  const isSupervisor = user?.role === 'supervisor';
   const [courses, setCourses] = useState<DBCourse[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -189,7 +206,7 @@ const CoursesPage = () => {
     loadCourses();
   }, []);
 
-  // Role-scoped base list
+  // Role-scoped base list (admin & supervisor see all, teacher sees own)
   const ownCourses = courses.filter(course =>
     user?.role === 'teacher' ? course.instructorId === user.id : true
   );
@@ -278,17 +295,19 @@ const CoursesPage = () => {
           </div>
 
           {/* Nuevo Curso — pushed right */}
-          <div className="ml-auto">
-            <Button
-              size="sm"
-              onClick={() => setCourseWizardOpen(true)}
-              className="bg-red-600 hover:bg-red-700 text-white text-xs border-0"
-            >
-              <Plus className="h-3.5 w-3.5 mr-1.5" />
-              <span className="hidden sm:inline">Nuevo Curso</span>
-              <span className="sm:hidden">Nuevo</span>
-            </Button>
-          </div>
+          {!isSupervisor && (
+            <div className="ml-auto">
+              <Button
+                size="sm"
+                onClick={() => setCourseWizardOpen(true)}
+                className="bg-red-600 hover:bg-red-700 text-white text-xs border-0"
+              >
+                <Plus className="h-3.5 w-3.5 mr-1.5" />
+                <span className="hidden sm:inline">Nuevo Curso</span>
+                <span className="sm:hidden">Nuevo</span>
+              </Button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -323,7 +342,7 @@ const CoursesPage = () => {
                 ? 'Prueba con otro término o cambia el filtro de estado.'
                 : 'Crea tu primer curso para empezar a organizar secciones y lecciones.'}
             </p>
-            {!searchTerm && statusFilter === 'all' && (
+            {!searchTerm && statusFilter === 'all' && !isSupervisor && (
               <Button
                 size="sm"
                 onClick={() => setCourseWizardOpen(true)}
@@ -339,7 +358,9 @@ const CoursesPage = () => {
             <CourseGridCard
               key={course.id}
               course={course}
-              onView={() => navigate(`/courses/${course.id}`)}
+              readOnly={isSupervisor}
+              onView={() => navigate(`/courses/${course.id}?preview=true`)}
+              onEdit={() => navigate(`/courses/${course.id}`)}
               onNewSection={() => setSectionWizardCourseId(course.id)}
             />
           ))

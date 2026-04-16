@@ -796,6 +796,7 @@ export default function GradesPage() {
 
   const isTeacher = user?.role === 'teacher';
   const isAdmin = user?.role === 'admin';
+  const isSupervisor = user?.role === 'supervisor';
   const isStudent = user?.role === 'student';
 
   useEffect(() => {
@@ -822,7 +823,7 @@ export default function GradesPage() {
       const allCourses = await courseService.getAll();
 
       let filteredCourses: Course[];
-      if (isAdmin) {
+      if (isAdmin || isSupervisor) {
         filteredCourses = allCourses.map(c => ({ id: c.id, title: c.title, instructorId: c.instructorId || '' }));
       } else if (isTeacher) {
         filteredCourses = allCourses

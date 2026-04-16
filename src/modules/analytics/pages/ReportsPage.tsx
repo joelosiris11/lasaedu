@@ -75,7 +75,7 @@ export default function ReportsPage() {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const exportMenuRef = useRef<HTMLDivElement>(null);
 
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = user?.role === 'admin' || user?.role === 'supervisor';
 
   useEffect(() => {
     loadReportData();

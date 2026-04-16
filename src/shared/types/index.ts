@@ -18,12 +18,14 @@ export interface User {
   lastActive: number;
 }
 
-export type UserRole = 'student' | 'teacher' | 'admin' | 'support';
+export type UserRole = 'student' | 'teacher' | 'admin' | 'support' | 'supervisor';
 
 export interface UserProfile {
   avatar?: string;
   bio?: string;
   phone?: string;
+  address?: string;
+  birthDate?: string;
 }
 
 export interface UserPreferences {

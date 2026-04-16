@@ -54,7 +54,7 @@ export default function SupportPage() {
     priority: 'media' as Ticket['priority']
   });
 
-  const isSupport = user?.role === 'support' || user?.role === 'admin';
+  const isSupport = user?.role === 'support' || user?.role === 'admin' || user?.role === 'supervisor';
 
   useEffect(() => {
     loadTickets();

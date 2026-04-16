@@ -139,6 +139,7 @@ interface StudentDetailModalProps {
   allCourses: DBCourse[];
   currentUserId: string;
   isTeacher: boolean;
+  readOnly?: boolean;
   onEnrollmentCancelled: (enrollmentId: string) => void;
   onEnrollmentCreated: (enrollment: DBEnrollment) => void;
   onCertificateIssued: (cert: DBCertificate, enrollmentId: string) => void;
@@ -152,6 +153,7 @@ function StudentDetailModal({
   allCourses,
   currentUserId,
   isTeacher,
+  readOnly,
   onEnrollmentCancelled,
   onEnrollmentCreated,
   onCertificateIssued,
@@ -374,13 +376,15 @@ function StudentDetailModal({
                 ? 'Este estudiante no tiene inscripciones.'
                 : `${enrollments.length} inscripción${enrollments.length !== 1 ? 'es' : ''}`}
             </p>
-            <button
-              onClick={() => setShowAddEnrollment(v => !v)}
-              className="flex items-center gap-1.5 text-xs font-medium text-red-600 hover:text-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 rounded"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Inscribir en otra sección
-            </button>
+            {!readOnly && (
+              <button
+                onClick={() => setShowAddEnrollment(v => !v)}
+                className="flex items-center gap-1.5 text-xs font-medium text-red-600 hover:text-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 rounded"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Inscribir en otra sección
+              </button>
+            )}
           </div>
 
           {showAddEnrollment && (
@@ -457,7 +461,7 @@ function StudentDetailModal({
                         >
                           {STATUS_LABELS[e.status]}
                         </span>
-                        {isCompleted ? (
+                        {!readOnly && (isCompleted ? (
                           <span
                             title="No se puede desinscribir: curso completado"
                             className="p-1.5 text-gray-300 cursor-not-allowed"
@@ -479,7 +483,7 @@ function StudentDetailModal({
                               <X className="h-3.5 w-3.5" />
                             )}
                           </button>
-                        )}
+                        ))}
                       </div>
                     </div>
                     {/* Progress bar */}
@@ -514,7 +518,7 @@ function StudentDetailModal({
       {tab === 'certificates' && (
         <div className="space-y-3">
           {/* Emit certificate prompts */}
-          {completedWithoutCert.length > 0 && (
+          {completedWithoutCert.length > 0 && !readOnly && (
             <div className="border border-red-100 bg-red-50 rounded-lg px-4 py-3 space-y-2">
               <div className="flex items-center gap-2">
                 <AlertCircle className="h-4 w-4 text-red-500 shrink-0" />
@@ -651,223 +655,153 @@ function StudentDetailModal({
   );
 }
 
-// ─── Enroll Student Modal ─────────────────────────────────────────────────────
+// ─── Bulk Enroll Modal ───────────────────────────────────────────────────────
 
-interface EnrollStudentModalProps {
-  open: boolean;
-  onClose: () => void;
-  students: DBUser[];
-  allSections: DBSection[];
-  allEnrollments: DBEnrollment[];
-  onEnrolled: (enrollment: DBEnrollment) => void;
-}
-
-function EnrollStudentModal({
+function BulkEnrollModal({
   open,
   onClose,
-  students,
+  selectedStudents,
   allSections,
   allEnrollments,
   onEnrolled,
-}: EnrollStudentModalProps) {
-  const [studentId, setStudentId] = useState('');
+}: {
+  open: boolean;
+  onClose: () => void;
+  selectedStudents: DBUser[];
+  allSections: DBSection[];
+  allEnrollments: DBEnrollment[];
+  onEnrolled: (enrollments: DBEnrollment[]) => void;
+}) {
   const [sectionId, setSectionId] = useState('');
-  const [studentSearch, setStudentSearch] = useState('');
   const [enrolling, setEnrolling] = useState(false);
+  const [progress, setProgress] = useState({ done: 0, skipped: 0, total: 0 });
 
   useEffect(() => {
-    if (open) {
-      setStudentId('');
-      setSectionId('');
-      setStudentSearch('');
-    }
+    if (open) { setSectionId(''); setProgress({ done: 0, skipped: 0, total: 0 }); }
   }, [open]);
-
-  const filteredStudents = useMemo(() => {
-    const q = studentSearch.toLowerCase();
-    if (!q) return students;
-    return students.filter(
-      s =>
-        s.name.toLowerCase().includes(q) ||
-        s.email.toLowerCase().includes(q)
-    );
-  }, [students, studentSearch]);
 
   const activeSections = allSections.filter(s => s.status === 'activa');
 
-  // Check duplicate: student already enrolled (non-cancelled) in the chosen section
-  const isDuplicate = useMemo(() => {
-    if (!studentId || !sectionId) return false;
-    return allEnrollments.some(
-      e =>
-        e.userId === studentId &&
-        e.sectionId === sectionId &&
-        e.status !== 'cancelled'
+  // Students already enrolled (non-cancelled) in the chosen section
+  const alreadyEnrolled = useMemo(() => {
+    if (!sectionId) return new Set<string>();
+    return new Set(
+      allEnrollments
+        .filter(e => e.sectionId === sectionId && e.status !== 'cancelled')
+        .map(e => e.userId)
     );
-  }, [studentId, sectionId, allEnrollments]);
+  }, [sectionId, allEnrollments]);
 
-  const handleEnroll = async () => {
-    if (!studentId || !sectionId || isDuplicate) return;
+  const toEnroll = selectedStudents.filter(s => !alreadyEnrolled.has(s.id));
+  const skipCount = selectedStudents.length - toEnroll.length;
+
+  const handleBulkEnroll = async () => {
+    if (!sectionId || toEnroll.length === 0) return;
     const section = allSections.find(s => s.id === sectionId);
     if (!section) return;
-    setEnrolling(true);
-    try {
-      const now = Date.now();
-      const newEnrollment = await dataService.enrollments.create({
-        userId: studentId,
-        courseId: section.courseId,
-        sectionId: section.id,
-        status: 'active' as const,
-        enrolledAt: new Date().toISOString(),
-        progress: 0,
-        completedLessons: [],
-        completedModules: [],
-        totalTimeSpent: 0,
-        createdAt: now,
-        updatedAt: now,
-      });
-      onEnrolled({
-        ...newEnrollment,
-        userId: studentId,
-        courseId: section.courseId,
-        sectionId: section.id,
-        status: 'active',
-        enrolledAt: new Date().toISOString(),
-        progress: 0,
-        completedLessons: [],
-        completedModules: [],
-        totalTimeSpent: 0,
-        createdAt: now,
-        updatedAt: now,
-      });
-      onClose();
-    } catch {
-      alert('Error al inscribir al estudiante. Intenta de nuevo.');
-    } finally {
-      setEnrolling(false);
-    }
-  };
 
-  const canSubmit =
-    !!studentId && !!sectionId && !isDuplicate && !enrolling;
+    setEnrolling(true);
+    setProgress({ done: 0, skipped: skipCount, total: toEnroll.length });
+    const created: DBEnrollment[] = [];
+
+    for (const student of toEnroll) {
+      try {
+        const now = Date.now();
+        const enrollment = await dataService.enrollments.create({
+          userId: student.id,
+          courseId: section.courseId,
+          sectionId: section.id,
+          status: 'active' as const,
+          enrolledAt: new Date().toISOString(),
+          progress: 0,
+          completedLessons: [],
+          completedModules: [],
+          totalTimeSpent: 0,
+          createdAt: now,
+          updatedAt: now,
+        });
+        created.push({
+          ...enrollment,
+          userId: student.id,
+          courseId: section.courseId,
+          sectionId: section.id,
+          status: 'active',
+          enrolledAt: new Date().toISOString(),
+          progress: 0,
+          completedLessons: [],
+          completedModules: [],
+          totalTimeSpent: 0,
+          createdAt: now,
+          updatedAt: now,
+        });
+      } catch {
+        // skip failed
+      }
+      setProgress(prev => ({ ...prev, done: prev.done + 1 }));
+    }
+
+    onEnrolled(created);
+    onClose();
+    setEnrolling(false);
+  };
 
   return (
     <Modal
       open={open}
       onClose={onClose}
       size="md"
-      title="Inscribir estudiante"
-      subtitle="Crea una inscripción en una sección activa"
+      title="Inscripción masiva"
+      subtitle={`${selectedStudents.length} estudiante${selectedStudents.length !== 1 ? 's' : ''} seleccionado${selectedStudents.length !== 1 ? 's' : ''}`}
       disableBackdropClose={enrolling}
       footer={
         <div className="flex items-center justify-end gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onClose}
-            disabled={enrolling}
-            className="text-xs"
-          >
+          <Button variant="outline" size="sm" onClick={onClose} disabled={enrolling} className="text-xs">
             Cancelar
           </Button>
           <Button
             size="sm"
-            onClick={handleEnroll}
-            disabled={!canSubmit}
+            onClick={handleBulkEnroll}
+            disabled={!sectionId || toEnroll.length === 0 || enrolling}
             className="bg-red-600 hover:bg-red-700 text-white border-0 text-xs"
           >
             {enrolling ? (
-              <>
-                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                Inscribiendo…
-              </>
+              <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Inscribiendo {progress.done}/{progress.total}…</>
             ) : (
-              <>
-                <UserPlus className="h-3.5 w-3.5 mr-1.5" />
-                Inscribir
-              </>
+              <><UserPlus className="h-3.5 w-3.5 mr-1.5" />Inscribir {toEnroll.length} estudiante{toEnroll.length !== 1 ? 's' : ''}</>
             )}
           </Button>
         </div>
       }
     >
       <div className="space-y-4">
-        {/* Student search + select */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">
-            Estudiante
-          </label>
-          <div className="relative mb-2">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
-            <input
-              type="text"
-              value={studentSearch}
-              onChange={e => setStudentSearch(e.target.value)}
-              placeholder="Buscar por nombre o email…"
-              className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-8 pr-3 py-2 text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
-            />
-          </div>
-          <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-[180px] overflow-y-auto">
-            {filteredStudents.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-6">Sin resultados</p>
-            ) : (
-              filteredStudents.map(s => (
-                <label
-                  key={s.id}
-                  className={`flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-colors ${
-                    studentId === s.id ? 'bg-red-50' : 'hover:bg-gray-50'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="student"
-                    value={s.id}
-                    checked={studentId === s.id}
-                    onChange={() => setStudentId(s.id)}
-                    className="text-red-600 focus:ring-red-500 shrink-0"
-                  />
-                  <div
-                    className="w-7 h-7 bg-red-50 rounded-full flex items-center justify-center shrink-0"
-                    aria-hidden="true"
-                  >
-                    <span className="text-xs font-semibold text-red-600">
-                      {avatar(s.name)}
-                    </span>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">{s.name}</p>
-                    <p className="text-xs text-gray-500 truncate">{s.email}</p>
-                  </div>
-                </label>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* Section select */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1.5" htmlFor="enroll-section">
-            Sección
+          <label className="block text-sm font-medium text-gray-700 mb-1.5" htmlFor="bulk-section">
+            Sección destino
           </label>
           <select
-            id="enroll-section"
+            id="bulk-section"
             value={sectionId}
             onChange={e => setSectionId(e.target.value)}
             className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
           >
             <option value="">Selecciona una sección…</option>
             {activeSections.map(s => (
-              <option key={s.id} value={s.id}>
-                {s.courseTitle} — {s.title}
-              </option>
+              <option key={s.id} value={s.id}>{s.courseTitle} — {s.title}</option>
             ))}
           </select>
         </div>
 
-        {isDuplicate && (
-          <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+        {sectionId && skipCount > 0 && (
+          <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
             <AlertCircle className="h-4 w-4 shrink-0" />
-            Este estudiante ya está inscrito en esa sección.
+            {skipCount} estudiante{skipCount !== 1 ? 's' : ''} ya está{skipCount !== 1 ? 'n' : ''} inscrito{skipCount !== 1 ? 's' : ''} en esta sección y se omitirá{skipCount !== 1 ? 'n' : ''}.
+          </div>
+        )}
+
+        {sectionId && toEnroll.length === 0 && (
+          <div className="flex items-center gap-2 text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+            <CheckCircle className="h-4 w-4 shrink-0 text-green-600" />
+            Todos los seleccionados ya están inscritos en esta sección.
           </div>
         )}
       </div>
@@ -880,6 +814,7 @@ function EnrollStudentModal({
 export default function EnrollmentManagementPage() {
   const { user } = useAuthStore();
   const isTeacher = user?.role === 'teacher';
+  const isSupervisor = user?.role === 'supervisor';
 
   const [loading, setLoading] = useState(true);
   const [allUsers, setAllUsers] = useState<DBUser[]>([]);
@@ -892,8 +827,9 @@ export default function EnrollmentManagementPage() {
   const [courseFilter, setCourseFilter] = useState<string>('all');
   const [studentFilter, setStudentFilter] = useState<StudentFilter>('all');
 
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [detailStudent, setDetailStudent] = useState<StudentWithStats | null>(null);
-  const [showEnrollModal, setShowEnrollModal] = useState(false);
+  const [showBulkModal, setShowBulkModal] = useState(false);
 
   // ─── Load ──────────────────────────────────────────────────────────────────
 
@@ -906,32 +842,20 @@ export default function EnrollmentManagementPage() {
           dataService.users.getAll(),
           dataService.enrollments.getAll(),
           dataService.courses.getAll(),
-          dataService.certificates.getAll(),
+          certificateService.getAll(),
         ]);
 
-      let sectionsData: DBSection[];
-      if (isTeacher) {
-        sectionsData = await sectionService.getByInstructor(user.id);
-      } else {
-        sectionsData = await sectionService.getAll();
-      }
+      const allSectionsData = await sectionService.getAll();
+      const sectionsData = isTeacher
+        ? allSectionsData.filter(s => s.instructorId === user.id)
+        : allSectionsData;
 
-      // For teacher: only enrollments in their sections
       const visibleSectionIds = new Set(sectionsData.map(s => s.id));
       const visibleEnrollments = isTeacher
         ? enrollmentsData.filter(e => e.sectionId && visibleSectionIds.has(e.sectionId))
         : enrollmentsData;
 
-      // Relevant student ids
-      const relevantStudentIds = isTeacher
-        ? new Set(visibleEnrollments.map(e => e.userId))
-        : null;
-
-      const students = usersData.filter(u => {
-        if (u.role !== 'student') return false;
-        if (relevantStudentIds) return relevantStudentIds.has(u.id);
-        return true;
-      });
+      const students = usersData.filter(u => u.role === 'student');
 
       setAllUsers(students);
       setAllEnrollments(visibleEnrollments);
@@ -945,21 +869,12 @@ export default function EnrollmentManagementPage() {
     }
   };
 
-  useEffect(() => {
-    loadData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+  useEffect(() => { loadData(); }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Build student stats ───────────────────────────────────────────────────
 
-  const coursesMap = useMemo(
-    () => new Map(allCourses.map(c => [c.id, c])),
-    [allCourses]
-  );
-  const sectionsMap = useMemo(
-    () => new Map(allSections.map(s => [s.id, s])),
-    [allSections]
-  );
+  const coursesMap = useMemo(() => new Map(allCourses.map(c => [c.id, c])), [allCourses]);
+  const sectionsMap = useMemo(() => new Map(allSections.map(s => [s.id, s])), [allSections]);
   const certsMap = useMemo(() => {
     const m = new Map<string, DBCertificate[]>();
     for (const cert of allCertificates) {
@@ -973,34 +888,15 @@ export default function EnrollmentManagementPage() {
     return allUsers.map(u => {
       const userEnrollments = allEnrollments
         .filter(e => e.userId === u.id)
-        .map(e => ({
-          ...e,
-          course: e.courseId ? coursesMap.get(e.courseId) : undefined,
-          section: e.sectionId ? sectionsMap.get(e.sectionId) : undefined,
-        }));
+        .map(e => ({ ...e, course: e.courseId ? coursesMap.get(e.courseId) : undefined, section: e.sectionId ? sectionsMap.get(e.sectionId) : undefined }));
       const certs = certsMap.get(u.id) ?? [];
       const activeCount = userEnrollments.filter(e => e.status === 'active').length;
       const completedCount = userEnrollments.filter(e => e.status === 'completed').length;
-      const grades = userEnrollments
-        .filter(e => e.grade != null)
-        .map(e => e.grade as number);
-      const avgGrade =
-        grades.length > 0
-          ? Math.round(grades.reduce((s, g) => s + g, 0) / grades.length)
-          : null;
-      const accesses = userEnrollments
-        .filter(e => e.lastAccessedAt != null)
-        .map(e => e.lastAccessedAt as number);
+      const grades = userEnrollments.filter(e => e.grade != null).map(e => e.grade as number);
+      const avgGrade = grades.length > 0 ? Math.round(grades.reduce((s, g) => s + g, 0) / grades.length) : null;
+      const accesses = userEnrollments.filter(e => e.lastAccessedAt != null).map(e => e.lastAccessedAt as number);
       const lastAccess = accesses.length > 0 ? Math.max(...accesses) : null;
-      return {
-        user: u,
-        enrollments: userEnrollments,
-        certificates: certs,
-        activeCount,
-        completedCount,
-        avgGrade,
-        lastAccess,
-      };
+      return { user: u, enrollments: userEnrollments, certificates: certs, activeCount, completedCount, avgGrade, lastAccess };
     });
   }, [allUsers, allEnrollments, coursesMap, sectionsMap, certsMap]);
 
@@ -1009,99 +905,70 @@ export default function EnrollmentManagementPage() {
   const filteredStudents = useMemo(() => {
     const q = searchTerm.toLowerCase();
     return studentsWithStats.filter(s => {
-      const matchesSearch =
-        !q ||
-        s.user.name.toLowerCase().includes(q) ||
-        s.user.email.toLowerCase().includes(q);
-
-      const matchesCourse =
-        courseFilter === 'all' ||
-        s.enrollments.some(e => e.courseId === courseFilter);
-
+      const matchesSearch = !q || s.user.name.toLowerCase().includes(q) || s.user.email.toLowerCase().includes(q);
+      const matchesCourse = courseFilter === 'all' || s.enrollments.some(e => e.courseId === courseFilter);
       const matchesFilter = (() => {
         switch (studentFilter) {
-          case 'active':
-            return s.activeCount > 0;
-          case 'completed':
-            return s.completedCount > 0;
-          case 'with_cert':
-            return s.certificates.length > 0;
-          case 'no_enrollment':
-            return s.enrollments.length === 0;
-          default:
-            return true;
+          case 'active': return s.activeCount > 0;
+          case 'completed': return s.completedCount > 0;
+          case 'with_cert': return s.certificates.length > 0;
+          case 'no_enrollment': return s.enrollments.length === 0;
+          default: return true;
         }
       })();
-
       return matchesSearch && matchesCourse && matchesFilter;
     });
   }, [studentsWithStats, searchTerm, courseFilter, studentFilter]);
 
-  // ─── KPI data ──────────────────────────────────────────────────────────────
+  // ─── Selection ─────────────────────────────────────────────────────────────
 
-  const kpis = useMemo(
-    () => ({
-      totalStudents: allUsers.length,
-      activeEnrollments: allEnrollments.filter(e => e.status === 'active').length,
-      completed: allEnrollments.filter(e => e.status === 'completed').length,
-      certificates: allCertificates.length,
-    }),
-    [allUsers, allEnrollments, allCertificates]
-  );
+  const filteredIds = useMemo(() => new Set(filteredStudents.map(s => s.user.id)), [filteredStudents]);
+  const visibleSelected = useMemo(() => new Set([...selectedIds].filter(id => filteredIds.has(id))), [selectedIds, filteredIds]);
+  const allVisibleSelected = filteredStudents.length > 0 && visibleSelected.size === filteredStudents.length;
 
-  // ─── Export CSV ────────────────────────────────────────────────────────────
-
-  const exportCSV = () => {
-    if (filteredStudents.length === 0) return;
-    const rows = filteredStudents.map(s => [
-      s.user.name,
-      s.user.email,
-      String(s.activeCount),
-      String(s.completedCount),
-      s.avgGrade != null ? `${s.avgGrade}%` : '—',
-      String(s.certificates.length),
-      s.lastAccess ? new Date(s.lastAccess).toLocaleDateString('es-ES') : '—',
-    ]);
-    const header = [
-      'Nombre', 'Email', 'Inscripciones activas', 'Completadas',
-      'Promedio', 'Certificados', 'Último acceso',
-    ];
-    const csv = [header, ...rows]
-      .map(row =>
-        row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')
-      )
-      .join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `estudiantes_inscripciones_${new Date().toISOString().split('T')[0]}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  const toggleOne = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
   };
+
+  const toggleAll = () => {
+    if (allVisibleSelected) {
+      // Deselect all visible
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        filteredStudents.forEach(s => next.delete(s.user.id));
+        return next;
+      });
+    } else {
+      // Select all visible
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        filteredStudents.forEach(s => next.add(s.user.id));
+        return next;
+      });
+    }
+  };
+
+  // ─── KPIs ──────────────────────────────────────────────────────────────────
+
+  const kpis = useMemo(() => ({
+    totalStudents: allUsers.length,
+    activeEnrollments: allEnrollments.filter(e => e.status === 'active').length,
+    completed: allEnrollments.filter(e => e.status === 'completed').length,
+    certificates: allCertificates.length,
+  }), [allUsers, allEnrollments, allCertificates]);
 
   // ─── Mutation callbacks ────────────────────────────────────────────────────
 
   const handleEnrollmentCancelled = (enrollmentId: string) => {
-    setAllEnrollments(prev =>
-      prev.map(e =>
-        e.id === enrollmentId ? { ...e, status: 'cancelled', updatedAt: Date.now() } : e
-      )
-    );
+    setAllEnrollments(prev => prev.map(e => e.id === enrollmentId ? { ...e, status: 'cancelled', updatedAt: Date.now() } : e));
     if (detailStudent) {
       setDetailStudent(prev => {
         if (!prev) return null;
-        return {
-          ...prev,
-          enrollments: prev.enrollments.map(e =>
-            e.id === enrollmentId ? { ...e, status: 'cancelled', updatedAt: Date.now() } : e
-          ),
-          activeCount: prev.enrollments.filter(
-            e => e.id !== enrollmentId && e.status === 'active'
-          ).length,
-        };
+        return { ...prev, enrollments: prev.enrollments.map(e => e.id === enrollmentId ? { ...e, status: 'cancelled', updatedAt: Date.now() } : e), activeCount: prev.enrollments.filter(e => e.id !== enrollmentId && e.status === 'active').length };
       });
     }
   };
@@ -1111,59 +978,46 @@ export default function EnrollmentManagementPage() {
     if (detailStudent && enrollment.userId === detailStudent.user.id) {
       const course = coursesMap.get(enrollment.courseId);
       const section = enrollment.sectionId ? sectionsMap.get(enrollment.sectionId) : undefined;
-      const enriched = { ...enrollment, course, section };
       setDetailStudent(prev => {
         if (!prev) return null;
-        const updatedEnrollments = [...prev.enrollments, enriched];
-        return {
-          ...prev,
-          enrollments: updatedEnrollments,
-          activeCount: updatedEnrollments.filter(e => e.status === 'active').length,
-        };
+        const updated = [...prev.enrollments, { ...enrollment, course, section }];
+        return { ...prev, enrollments: updated, activeCount: updated.filter(e => e.status === 'active').length };
       });
     }
+  };
+
+  const handleBulkEnrolled = (enrollments: DBEnrollment[]) => {
+    setAllEnrollments(prev => [...prev, ...enrollments]);
+    setSelectedIds(new Set());
   };
 
   const handleCertificateIssued = (cert: DBCertificate, enrollmentId: string) => {
     setAllCertificates(prev => [...prev, cert]);
-    setAllEnrollments(prev =>
-      prev.map(e =>
-        e.id === enrollmentId ? { ...e, certificateId: cert.id } : e
-      )
-    );
+    setAllEnrollments(prev => prev.map(e => e.id === enrollmentId ? { ...e, certificateId: cert.id } : e));
     if (detailStudent && cert.userId === detailStudent.user.id) {
       setDetailStudent(prev => {
         if (!prev) return null;
-        return {
-          ...prev,
-          certificates: [...prev.certificates, cert],
-          enrollments: prev.enrollments.map(e =>
-            e.id === enrollmentId ? { ...e, certificateId: cert.id } : e
-          ),
-        };
+        return { ...prev, certificates: [...prev.certificates, cert], enrollments: prev.enrollments.map(e => e.id === enrollmentId ? { ...e, certificateId: cert.id } : e) };
       });
     }
   };
 
-  const handleEnrolledFromModal = (enrollment: DBEnrollment) => {
-    handleEnrollmentCreated(enrollment);
-  };
-
-  const openStudentDetail = (s: StudentWithStats) => {
-    setDetailStudent(s);
-  };
-
-  // Courses that have at least one enrollment visible — for filter select
+  // Courses for course filter dropdown
   const coursesWithEnrollments = useMemo(() => {
     const ids = new Set(allEnrollments.map(e => e.courseId));
     return allCourses.filter(c => ids.has(c.id));
   }, [allCourses, allEnrollments]);
 
+  const selectedStudentObjects = useMemo(
+    () => allUsers.filter(u => selectedIds.has(u.id)),
+    [allUsers, selectedIds]
+  );
+
   // ─── Render ────────────────────────────────────────────────────────────────
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64" aria-label="Cargando estudiantes">
+      <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600" />
       </div>
     );
@@ -1171,19 +1025,17 @@ export default function EnrollmentManagementPage() {
 
   return (
     <div className="space-y-4">
-
-      {/* ── KPIs ── */}
+      {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KpiCard label="Total estudiantes"      value={kpis.totalStudents}      icon={Users}       />
-        <KpiCard label="Inscripciones activas"  value={kpis.activeEnrollments}  icon={BookOpen}    />
-        <KpiCard label="Completados"            value={kpis.completed}          icon={CheckCircle} />
-        <KpiCard label="Certificados emitidos"  value={kpis.certificates}       icon={Award}       />
+        <KpiCard label="Total estudiantes" value={kpis.totalStudents} icon={Users} />
+        <KpiCard label="Inscripciones activas" value={kpis.activeEnrollments} icon={BookOpen} />
+        <KpiCard label="Completados" value={kpis.completed} icon={CheckCircle} />
+        <KpiCard label="Certificados emitidos" value={kpis.certificates} icon={Award} />
       </div>
 
-      {/* ── Toolbar ── */}
+      {/* Toolbar */}
       <div className="bg-white border border-gray-200 rounded-xl px-3 py-2.5">
         <div className="flex items-center gap-2 flex-wrap">
-
           {/* Search */}
           <div className="relative min-w-[200px] max-w-xs">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
@@ -1191,28 +1043,22 @@ export default function EnrollmentManagementPage() {
               type="text"
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
-              placeholder="Buscar estudiante por nombre o email…"
+              placeholder="Buscar por nombre o email…"
               className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-8 pr-7 py-1.5 text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
-              aria-label="Buscar estudiante"
             />
             {searchTerm && (
-              <button
-                onClick={() => setSearchTerm('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 rounded"
-                aria-label="Limpiar búsqueda"
-              >
+              <button onClick={() => setSearchTerm('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                 <X className="h-3.5 w-3.5" />
               </button>
             )}
           </div>
 
-          {/* Course filter — only when > 1 course */}
+          {/* Course filter */}
           {coursesWithEnrollments.length > 1 && (
             <select
               value={courseFilter}
               onChange={e => setCourseFilter(e.target.value)}
-              className="px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs text-gray-700 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
-              aria-label="Filtrar por curso"
+              className="px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs text-gray-700 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
             >
               <option value="all">Todos los cursos</option>
               {coursesWithEnrollments.map(c => (
@@ -1223,115 +1069,93 @@ export default function EnrollmentManagementPage() {
 
           {/* Filter chips */}
           <div className="flex items-center gap-1.5 flex-wrap">
-            {FILTER_CHIPS.map(({ key, label }) => {
-              const active = studentFilter === key;
-              return (
-                <button
-                  key={key}
-                  onClick={() => setStudentFilter(key)}
-                  className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 ${
-                    active
-                      ? 'bg-red-600 text-white border-red-600'
-                      : 'bg-white text-gray-700 border-gray-200 hover:border-red-300'
-                  }`}
-                >
-                  {label}
-                </button>
-              );
-            })}
+            {FILTER_CHIPS.map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setStudentFilter(key)}
+                className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                  studentFilter === key
+                    ? 'bg-red-600 text-white border-red-600'
+                    : 'bg-white text-gray-700 border-gray-200 hover:border-red-300'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
 
-          {/* Right actions */}
-          <div className="ml-auto flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={exportCSV}
-              disabled={filteredStudents.length === 0}
-              className="text-xs border-gray-200 text-gray-700 hover:border-red-300 hover:text-red-700"
-            >
-              <Download className="h-3.5 w-3.5 mr-1.5" />
-              <span className="hidden sm:inline">Exportar</span>
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => setShowEnrollModal(true)}
-              className="bg-red-600 hover:bg-red-700 text-white text-xs border-0"
-            >
-              <UserPlus className="h-3.5 w-3.5 mr-1.5" />
-              <span className="hidden sm:inline">Inscribir estudiante</span>
-              <span className="sm:hidden">Inscribir</span>
-            </Button>
-          </div>
+          {/* Bulk action */}
+          {!isSupervisor && (
+            <div className="ml-auto">
+              <Button
+                size="sm"
+                onClick={() => setShowBulkModal(true)}
+                disabled={selectedIds.size === 0}
+                className="bg-red-600 hover:bg-red-700 text-white text-xs border-0 disabled:opacity-40"
+              >
+                <UserPlus className="h-3.5 w-3.5 mr-1.5" />
+                Inscribir{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
+              </Button>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* ── Student list ── */}
+      {/* Student list with checkboxes */}
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
         {filteredStudents.length === 0 ? (
           <div className="text-center py-16 px-4">
-            <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-red-50 mb-4">
-              <Users className="h-7 w-7 text-red-400" />
-            </div>
+            <Users className="h-10 w-10 text-gray-300 mx-auto mb-3" />
             <h3 className="text-base font-semibold text-gray-900 mb-1">
-              {searchTerm || studentFilter !== 'all' || courseFilter !== 'all'
-                ? 'Sin resultados'
-                : 'Sin estudiantes'}
+              {searchTerm || studentFilter !== 'all' ? 'Sin resultados' : 'Sin estudiantes'}
             </h3>
-            <p className="text-sm text-gray-500 mb-6">
-              {searchTerm || studentFilter !== 'all' || courseFilter !== 'all'
+            <p className="text-sm text-gray-500">
+              {searchTerm || studentFilter !== 'all'
                 ? 'Prueba con otro término o cambia los filtros.'
-                : 'Cuando inscribas estudiantes en secciones, aparecerán aquí.'}
+                : 'Los estudiantes aparecerán aquí cuando se creen en el sistema.'}
             </p>
-            {!searchTerm && studentFilter === 'all' && courseFilter === 'all' && (
-              <Button
-                size="sm"
-                onClick={() => setShowEnrollModal(true)}
-                className="bg-red-600 hover:bg-red-700 text-white border-0"
-              >
-                <UserPlus className="h-4 w-4 mr-1.5" />
-                Inscribir estudiante
-              </Button>
-            )}
           </div>
         ) : (
-          <>
-            {/* ── Desktop table ── */}
-            <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-100 bg-gray-50">
-                    <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
-                      Estudiante
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50">
+                  {!isSupervisor && (
+                    <th className="px-4 py-3 w-10">
+                      <input
+                        type="checkbox"
+                        checked={allVisibleSelected}
+                        onChange={toggleAll}
+                        className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+                      />
                     </th>
-                    <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
-                      Inscripciones
-                    </th>
-                    <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
-                      Promedio
-                    </th>
-                    <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
-                      Último acceso
-                    </th>
-                    <th className="px-4 py-3 w-24" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {filteredStudents.map(s => (
-                    <tr
-                      key={s.user.id}
-                      onClick={() => openStudentDetail(s)}
-                      className="hover:bg-gray-50 cursor-pointer transition-colors"
-                    >
+                  )}
+                  <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Estudiante</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide hidden md:table-cell">Inscripciones</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide hidden lg:table-cell">Promedio</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide hidden lg:table-cell">Último acceso</th>
+                  <th className="px-4 py-3 w-20" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {filteredStudents.map(s => {
+                  const checked = selectedIds.has(s.user.id);
+                  return (
+                    <tr key={s.user.id} className={`transition-colors ${checked ? 'bg-red-50/40' : 'hover:bg-gray-50'}`}>
+                      {!isSupervisor && (
+                        <td className="px-4 py-3">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleOne(s.user.id)}
+                            className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+                          />
+                        </td>
+                      )}
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
-                          <div
-                            className="w-10 h-10 bg-red-50 rounded-full flex items-center justify-center shrink-0"
-                            aria-hidden="true"
-                          >
-                            <span className="text-sm font-semibold text-red-600">
-                              {avatar(s.user.name)}
-                            </span>
+                          <div className="w-9 h-9 bg-red-50 rounded-full flex items-center justify-center shrink-0">
+                            <span className="text-sm font-semibold text-red-600">{avatar(s.user.name)}</span>
                           </div>
                           <div className="min-w-0">
                             <p className="font-medium text-gray-900 truncate">{s.user.name}</p>
@@ -1339,7 +1163,7 @@ export default function EnrollmentManagementPage() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 hidden md:table-cell">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           {s.activeCount > 0 && (
                             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border bg-red-50 text-red-700 border-red-100">
@@ -1351,88 +1175,36 @@ export default function EnrollmentManagementPage() {
                               {s.completedCount} completa{s.completedCount !== 1 ? 's' : ''}
                             </span>
                           )}
-                          {s.certificates.length > 0 && (
-                            <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold border bg-gray-50 text-gray-600 border-gray-200">
-                              <Award className="h-2.5 w-2.5" />
-                              {s.certificates.length}
-                            </span>
-                          )}
                           {s.enrollments.length === 0 && (
                             <span className="text-xs text-gray-400">Sin inscripciones</span>
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-3">
-                        <span className="text-sm text-gray-700">
-                          {s.avgGrade != null ? `${s.avgGrade}%` : '—'}
-                        </span>
+                      <td className="px-4 py-3 hidden lg:table-cell text-gray-700">
+                        {s.avgGrade != null ? `${s.avgGrade}%` : '\u2014'}
                       </td>
-                      <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
+                      <td className="px-4 py-3 hidden lg:table-cell text-xs text-gray-500 whitespace-nowrap">
                         {relativeDate(s.lastAccess)}
                       </td>
                       <td className="px-4 py-3">
                         <button
-                          onClick={e => { e.stopPropagation(); openStudentDetail(s); }}
-                          className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-red-600 border border-gray-200 hover:border-red-300 rounded-lg px-2.5 py-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
-                          aria-label={`Ver detalles de ${s.user.name}`}
+                          onClick={() => setDetailStudent(s)}
+                          className="flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-red-600 border border-gray-200 hover:border-red-300 rounded-lg px-2 py-1 transition-colors"
                         >
                           <Eye className="h-3.5 w-3.5" />
-                          Ver detalles
+                          <span className="hidden sm:inline">Ver</span>
                         </button>
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* ── Mobile cards ── */}
-            <div className="md:hidden divide-y divide-gray-100">
-              {filteredStudents.map(s => (
-                <div
-                  key={s.user.id}
-                  onClick={() => openStudentDetail(s)}
-                  className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer transition-colors"
-                >
-                  <div
-                    className="w-10 h-10 bg-red-50 rounded-full flex items-center justify-center shrink-0"
-                    aria-hidden="true"
-                  >
-                    <span className="text-sm font-semibold text-red-600">
-                      {avatar(s.user.name)}
-                    </span>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-900 truncate">{s.user.name}</p>
-                    <p className="text-xs text-gray-500 truncate">{s.user.email}</p>
-                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                      {s.activeCount > 0 && (
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-red-50 text-red-700">
-                          {s.activeCount} activa{s.activeCount !== 1 ? 's' : ''}
-                        </span>
-                      )}
-                      {s.completedCount > 0 && (
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 text-gray-700">
-                          {s.completedCount} completa{s.completedCount !== 1 ? 's' : ''}
-                        </span>
-                      )}
-                      {s.certificates.length > 0 && (
-                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-gray-50 text-gray-600">
-                          <Award className="h-2.5 w-2.5" />
-                          {s.certificates.length}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <Eye className="h-4 w-4 text-gray-300 shrink-0" />
-                </div>
-              ))}
-            </div>
-          </>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
-      {/* ── Student detail modal ── */}
+      {/* Student detail modal */}
       <StudentDetailModal
         open={detailStudent !== null}
         student={detailStudent}
@@ -1446,14 +1218,14 @@ export default function EnrollmentManagementPage() {
         onCertificateIssued={handleCertificateIssued}
       />
 
-      {/* ── Enroll student modal ── */}
-      <EnrollStudentModal
-        open={showEnrollModal}
-        onClose={() => setShowEnrollModal(false)}
-        students={allUsers}
+      {/* Bulk enroll modal */}
+      <BulkEnrollModal
+        open={showBulkModal}
+        onClose={() => setShowBulkModal(false)}
+        selectedStudents={selectedStudentObjects}
         allSections={allSections}
         allEnrollments={allEnrollments}
-        onEnrolled={handleEnrolledFromModal}
+        onEnrolled={handleBulkEnrolled}
       />
     </div>
   );

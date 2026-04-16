@@ -176,13 +176,14 @@ export default function StudentActivityPage() {
   const [searchTerm, setSearchTerm] = useState<string>('');
 
   const isTeacher = user?.role === 'teacher';
+  const isAdminOrSupervisor = user?.role === 'admin' || user?.role === 'supervisor';
 
   useEffect(() => {
     (async () => {
       if (!user) return;
       setLoading(true);
       try {
-        // Teacher: solo sus secciones → restringe logs. Admin: todas las secciones.
+        // Teacher: solo sus secciones → restringe logs. Admin/Supervisor: todas las secciones.
         const teacherSections = isTeacher
           ? await sectionService.getByInstructor(user.id)
           : await sectionService.getAll();

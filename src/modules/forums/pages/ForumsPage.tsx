@@ -113,8 +113,8 @@ export default function ForumsPage() {
       const allCourses = await courseService.getAll();
       let userCourseIds: string[] = [];
 
-      if (user.role === 'admin') {
-        // Admin sees all courses / all posts
+      if (user.role === 'admin' || user.role === 'supervisor') {
+        // Admin/Supervisor sees all courses / all posts
         userCourseIds = allCourses.map(c => c.id);
       } else if (user.role === 'teacher') {
         // Teacher: sections they instruct → their courseIds

@@ -49,20 +49,24 @@ export interface DBUser {
   id: string;
   email: string;
   passwordHash?: string;
+  firstName?: string;
+  lastName?: string;
   name: string;
-  role: 'student' | 'teacher' | 'admin' | 'support';
+  role: 'student' | 'teacher' | 'admin' | 'support' | 'supervisor';
   emailVerified: boolean;
   emailVerificationToken?: string | null;
   passwordResetToken?: string | null;
   passwordResetExpires?: number | null;
   loginAttempts: number;
   lockUntil?: number | null;
+  mustChangePassword?: boolean;
   profile: {
     avatar?: string;
     bio?: string;
     phone?: string;
     location?: string;
     birthDate?: string;
+    address?: string;
   };
   preferences: {
     language: string;

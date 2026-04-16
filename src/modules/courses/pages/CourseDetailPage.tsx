@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '@app/store/authStore';
 import { courseService, moduleService, lessonService, legacyEnrollmentService, sectionService, type DBModule, type DBLesson, type DBCourse, type DBEnrollment, type DBSection } from '@shared/services/dataService';
 import { fileUploadService } from '@shared/services/fileUploadService';
@@ -25,7 +25,8 @@ import {
   MessageSquare,
   CheckCircle,
   Circle,
-  Layers
+  Layers,
+  Eye
 } from 'lucide-react';
 import { Card, CardContent } from '@shared/components/ui/Card';
 import { Button } from '@shared/components/ui/Button';
@@ -353,7 +354,9 @@ function SortableLessonRow({
 export default function CourseDetailPage() {
   const { courseId } = useParams<{ courseId: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuthStore();
+  const isPreview = searchParams.get('preview') === 'true';
 
   const [course, setCourse] = useState<CourseData | null>(null);
   const [modules, setModules] = useState<CourseModuleWithLessons[]>([]);
@@ -381,8 +384,8 @@ export default function CourseDetailPage() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const imageInputRef = useRef<HTMLInputElement>(null);
 
-  const isInstructor = user?.role === 'teacher' || user?.role === 'admin';
-  const canEdit = isInstructor && (course?.instructorId === user?.id || user?.role === 'admin');
+  const isInstructor = user?.role === 'teacher' || user?.role === 'admin' || user?.role === 'supervisor';
+  const canEdit = !isPreview && isInstructor && user?.role !== 'supervisor' && (course?.instructorId === user?.id || user?.role === 'admin');
 
   useEffect(() => {
     loadCourseData();
@@ -423,7 +426,7 @@ export default function CourseDetailPage() {
         try {
           const allSections = await sectionService.getByCourse(courseId);
           const visible =
-            user?.role === 'admin'
+            user?.role === 'admin' || user?.role === 'supervisor'
               ? allSections
               : allSections.filter((s) => s.instructorId === user?.id);
           setCourseSections(visible.sort((a, b) => b.startDate - a.startDate));
@@ -689,6 +692,25 @@ export default function CourseDetailPage() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-4 sm:space-y-6">
+      {/* Preview mode banner */}
+      {isPreview && isInstructor && (
+        <div className="flex items-center justify-between px-4 py-2.5 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex items-center gap-2 text-sm text-blue-800">
+            <Eye className="h-4 w-4" />
+            <span className="font-medium">Vista de estudiante</span>
+            <span className="text-blue-600">— Así ven los estudiantes este curso</span>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setSearchParams({})}
+          >
+            <Edit3 className="h-3.5 w-3.5 mr-1.5" />
+            Editar
+          </Button>
+        </div>
+      )}
+
       {/* Course hero card: banner + info */}
       <Card className="overflow-hidden">
         {/* Banner */}
@@ -706,7 +728,7 @@ export default function CourseDetailPage() {
           <div className="absolute inset-0 p-5 sm:p-6 flex flex-col justify-end">
             <div className="flex items-center gap-2 mb-1">
               <span className="inline-flex items-center gap-1 text-[11px] font-medium text-white/90 uppercase tracking-wider">
-                Curso · Plantilla
+                {isPreview ? 'Vista de estudiante' : 'Curso · Plantilla'}
               </span>
             </div>
             <h1 className="text-xl sm:text-2xl font-bold text-white leading-tight line-clamp-2">
@@ -811,7 +833,7 @@ export default function CourseDetailPage() {
 
       {/* Sections — for teacher/admin. The course is a template;
           all student-level views (progress, grading, attempts) live here. */}
-      {isInstructor && (
+      {isInstructor && !isPreview && (
         <Card>
           <CardContent className="p-5">
             <div className="flex items-center justify-between mb-3">
@@ -1099,7 +1121,7 @@ export default function CourseDetailPage() {
           try {
             const allSections = await sectionService.getByCourse(courseId);
             const visible =
-              user?.role === 'admin'
+              user?.role === 'admin' || user?.role === 'supervisor'
                 ? allSections
                 : allSections.filter((s) => s.instructorId === user?.id);
             setCourseSections(visible.sort((a, b) => b.startDate - a.startDate));

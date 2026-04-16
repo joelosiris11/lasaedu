@@ -83,7 +83,7 @@ export default function LessonViewPage() {
   const [effectiveCourseId, setEffectiveCourseId] = useState<string | undefined>(courseId);
 
   // Teacher panel state
-  const isTeacherOrAdmin = user?.role === 'teacher' || user?.role === 'admin';
+  const isTeacherOrAdmin = user?.role === 'teacher' || user?.role === 'admin' || user?.role === 'supervisor';
   const [showStudentPanel, setShowStudentPanel] = useState(false);
   const [studentData, setStudentData] = useState<StudentLessonData[]>([]);
   const [loadingStudents, setLoadingStudents] = useState(false);

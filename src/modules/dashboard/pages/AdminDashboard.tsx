@@ -31,6 +31,7 @@ import { courseService } from '@shared/services/dataService';
 const AdminDashboard = () => {
   const { user } = useAuthStore();
   const navigate = useNavigate();
+  const isSupervisor = user?.role === 'supervisor';
   const { stats, loading: statsLoading } = useSystemStats();
   const { data: overview, loading: overviewLoading } = useAdminOverview();
   const { snapshots, loading: snapshotsLoading, saveSnapshot, rollback, refetch } = useCourseSnapshots();
@@ -93,6 +94,7 @@ const AdminDashboard = () => {
     student: GraduationCap,
     teacher: BookOpen,
     admin: Shield,
+    supervisor: Shield,
     support: Headphones,
   };
 
@@ -100,6 +102,7 @@ const AdminDashboard = () => {
     student: 'bg-red-500',
     teacher: 'bg-red-500',
     admin: 'bg-red-500',
+    supervisor: 'bg-orange-500',
     support: 'bg-red-500',
   };
 
@@ -107,6 +110,7 @@ const AdminDashboard = () => {
     student: 'Estudiantes',
     teacher: 'Profesores',
     admin: 'Administradores',
+    supervisor: 'Supervisores',
     support: 'Soporte',
   };
 
@@ -437,37 +441,39 @@ const AdminDashboard = () => {
                         <p className="text-xs text-gray-400 mb-2">Sin punto de restauración</p>
                       )}
 
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={() => handleSaveSnapshot(course.id)}
-                          disabled={isSaving || isRolling}
-                          className="flex items-center text-xs px-2 py-2 rounded bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-50 transition-colors"
-                        >
-                          {isSaving ? (
-                            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                          ) : snapshot ? (
-                            <Check className="h-3 w-3 mr-1" />
-                          ) : (
-                            <Save className="h-3 w-3 mr-1" />
-                          )}
-                          {snapshot ? 'Actualizar' : 'Guardar'}
-                        </button>
-
-                        {snapshot && (
+                      {!isSupervisor && (
+                        <div className="flex space-x-2">
                           <button
-                            onClick={() => handleRollback(course.id, course.title)}
+                            onClick={() => handleSaveSnapshot(course.id)}
                             disabled={isSaving || isRolling}
                             className="flex items-center text-xs px-2 py-2 rounded bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-50 transition-colors"
                           >
-                            {isRolling ? (
+                            {isSaving ? (
                               <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                            ) : snapshot ? (
+                              <Check className="h-3 w-3 mr-1" />
                             ) : (
-                              <RotateCcw className="h-3 w-3 mr-1" />
+                              <Save className="h-3 w-3 mr-1" />
                             )}
-                            Restaurar
+                            {snapshot ? 'Actualizar' : 'Guardar'}
                           </button>
-                        )}
-                      </div>
+
+                          {snapshot && (
+                            <button
+                              onClick={() => handleRollback(course.id, course.title)}
+                              disabled={isSaving || isRolling}
+                              className="flex items-center text-xs px-2 py-2 rounded bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-50 transition-colors"
+                            >
+                              {isRolling ? (
+                                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                              ) : (
+                                <RotateCcw className="h-3 w-3 mr-1" />
+                              )}
+                              Restaurar
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -488,7 +494,7 @@ const AdminDashboard = () => {
               {
                 icon: UserCog,
                 label: 'Gestionar Usuarios',
-                path: '/user-management',
+                path: '/users',
                 color: 'text-red-600 bg-red-50',
               },
               {

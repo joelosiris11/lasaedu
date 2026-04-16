@@ -801,11 +801,11 @@ export default function MySectionsPage() {
           setSections(enriched);
         } else {
           const [allSections, enrollments, courses] = await Promise.all([
-            user.role === 'admin'
+            user.role === 'admin' || user.role === 'supervisor'
               ? sectionService.getAll()
               : sectionService.getByInstructor(user.id),
             firebaseDB.getEnrollments(),
-            user.role === 'admin'
+            user.role === 'admin' || user.role === 'supervisor'
               ? courseService.getAll()
               : courseService.getByInstructor(user.id),
           ]);

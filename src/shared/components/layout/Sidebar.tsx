@@ -70,29 +70,30 @@ const sidebarSections: SidebarSection[] = [
   // Admin: "Gestión" section - no duplicates, no reportes
   {
     label: 'Gestión',
-    roles: ['admin'],
+    roles: ['admin', 'supervisor'],
     items: [
-      { icon: UserCog, label: 'Gestión Usuarios', path: '/user-management', roles: ['admin'] },
-      { icon: UserPlus, label: 'Inscripciones', path: '/enrollments', roles: ['admin'] },
-      { icon: BookOpen, label: 'Cursos', path: '/courses', roles: ['admin'] },
-      { icon: ClipboardList, label: 'Calificaciones', path: '/grades', roles: ['admin'] },
-      { icon: Award, label: 'Certificados', path: '/certificates', roles: ['admin'] },
-      { icon: History, label: 'Trazabilidad', path: '/audit-logs', roles: ['admin'] },
-      { icon: Activity, label: 'Actividad Estudiantes', path: '/student-activity', roles: ['admin'] },
+      { icon: UserCog, label: 'Gestión Usuarios', path: '/users', roles: ['admin', 'supervisor'] },
+      { icon: UserPlus, label: 'Inscripciones', path: '/enrollments', roles: ['admin', 'supervisor'] },
+      { icon: BookOpen, label: 'Cursos', path: '/courses', roles: ['admin', 'supervisor'] },
+      { icon: Layers, label: 'Secciones', path: '/my-sections', roles: ['admin', 'supervisor'] },
+      { icon: ClipboardList, label: 'Calificaciones', path: '/grades', roles: ['admin', 'supervisor'] },
+      { icon: Award, label: 'Certificados', path: '/certificates', roles: ['admin', 'supervisor'] },
+      { icon: History, label: 'Actividad Prof.', path: '/audit-logs', roles: ['admin', 'supervisor'] },
+      { icon: Activity, label: 'Actividad Estu.', path: '/student-activity', roles: ['admin', 'supervisor'] },
     ],
   },
   {
     label: 'Comunicación',
-    roles: ['admin', 'teacher', 'student'],
+    roles: ['admin', 'supervisor', 'teacher', 'student'],
     items: [
-      { icon: MessageCircle, label: 'Mensajes', path: '/communication', roles: ['admin', 'teacher', 'student'] },
-      { icon: MessageSquare, label: 'Foros', path: '/forums', roles: ['admin', 'teacher', 'student'] },
+      { icon: MessageCircle, label: 'Mensajes', path: '/communication', roles: ['admin', 'supervisor', 'teacher', 'student'] },
+      { icon: MessageSquare, label: 'Foros', path: '/forums', roles: ['admin', 'supervisor', 'teacher', 'student'] },
     ],
   },
   {
     label: 'Sistema',
     items: [
-      { icon: HelpCircle, label: 'Soporte', path: '/support', roles: ['admin', 'support', 'student', 'teacher'] },
+      { icon: HelpCircle, label: 'Soporte', path: '/support', roles: ['admin', 'supervisor', 'support', 'student', 'teacher'] },
       { icon: Settings, label: 'Configuración', path: '/settings' },
     ],
   },
@@ -125,6 +126,7 @@ export const Sidebar = ({ collapsed, onToggleCollapse }: SidebarProps) => {
 
   const roleLabels: Record<string, string> = {
     admin: 'Administrador',
+    supervisor: 'Supervisor',
     teacher: 'Profesor',
     student: 'Estudiante',
     support: 'Soporte',
@@ -154,7 +156,7 @@ export const Sidebar = ({ collapsed, onToggleCollapse }: SidebarProps) => {
       <aside
         className={`
         fixed top-0 left-0 z-40 h-screen transition-all duration-300
-        ${collapsed ? 'w-16' : 'w-64'}
+        ${collapsed ? 'w-16' : 'w-52'}
         ${isOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0
         bg-white border-r border-gray-200 shadow-lg
       `}
@@ -183,11 +185,11 @@ export const Sidebar = ({ collapsed, onToggleCollapse }: SidebarProps) => {
               </>
             ) : (
               <div className="relative">
-                <div className="flex justify-center pt-3 pb-4 px-3">
+                <div className="flex justify-center pt-1 pb-1 px-1">
                   <img
                     src="/LaAuroraLogo.png"
                     alt="lasa EDU"
-                    className="h-16 md:h-20 w-auto transition-all duration-300"
+                    className="h-32 md:h-36 w-auto transition-all duration-300"
                   />
                 </div>
                 <button
@@ -240,8 +242,8 @@ export const Sidebar = ({ collapsed, onToggleCollapse }: SidebarProps) => {
                           } py-2.5 text-sm font-medium rounded-lg transition-all duration-150
                           ${
                             isActive
-                              ? 'bg-red-50 text-red-700 shadow-sm'
-                              : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                              ? 'bg-red-50 text-red-700 shadow-sm border-l-[3px] border-red-600'
+                              : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 border-l-[3px] border-transparent'
                           }
                         `}
                       >
@@ -251,9 +253,6 @@ export const Sidebar = ({ collapsed, onToggleCollapse }: SidebarProps) => {
                           } ${isActive ? 'text-red-600' : ''}`}
                         />
                         {!collapsed && item.label}
-                        {isActive && !collapsed && (
-                          <div className="ml-auto w-1.5 h-1.5 rounded-full bg-red-600" />
-                        )}
                       </Link>
                     );
                   })}
