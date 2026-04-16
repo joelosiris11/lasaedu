@@ -7,7 +7,6 @@ import {
   Plus,
   Search,
   Edit3,
-  Eye,
   Clock,
   Globe,
   Archive,
@@ -77,13 +76,11 @@ const LEVEL_STYLES: Record<DBCourse['level'], string> = {
 function CourseGridCard({
   course,
   onView,
-  onEdit,
   onNewSection,
   readOnly,
 }: {
   course: DBCourse;
   onView: () => void;
-  onEdit: () => void;
   onNewSection: () => void;
   readOnly?: boolean;
 }) {
@@ -93,7 +90,10 @@ function CourseGridCard({
   const levelLabel = course.level.charAt(0).toUpperCase() + course.level.slice(1);
 
   return (
-    <div className="group flex flex-col rounded-xl border border-gray-200 hover:border-gray-300 overflow-hidden bg-white hover:shadow-md cursor-default transition-all focus-visible:outline-none">
+    <div
+      className="group flex flex-col rounded-xl border border-gray-200 hover:border-gray-300 overflow-hidden bg-white hover:shadow-md cursor-pointer transition-all focus-visible:outline-none"
+      onClick={onView}
+    >
       {/* Banner */}
       <div className="relative h-24 overflow-hidden">
         {course.image ? (
@@ -141,37 +141,18 @@ function CourseGridCard({
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            className="flex-1 text-xs"
-            onClick={onView}
-          >
-            <Eye className="h-3.5 w-3.5 mr-1" />
-            Ver
-          </Button>
-          {!readOnly && (
-            <>
-              <button
-                onClick={onEdit}
-                title="Editar curso"
-                aria-label="Editar curso"
-                className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-gray-200 hover:border-gray-300 text-gray-600 hover:text-gray-900 bg-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 shrink-0"
-              >
-                <Edit3 className="h-3.5 w-3.5" />
-              </button>
-              <button
-                onClick={onNewSection}
-                title="Nueva sección"
-                aria-label="Nueva sección"
-                className="inline-flex items-center justify-center h-8 w-8 rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 shrink-0"
-              >
-                <Plus className="h-4 w-4" />
-              </button>
-            </>
-          )}
-        </div>
+        {!readOnly && (
+          <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+            <button
+              onClick={onNewSection}
+              title="Nueva sección"
+              aria-label="Nueva sección"
+              className="inline-flex items-center justify-center h-8 w-8 rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 shrink-0"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -359,8 +340,7 @@ const CoursesPage = () => {
               key={course.id}
               course={course}
               readOnly={isSupervisor}
-              onView={() => navigate(`/courses/${course.id}?preview=true`)}
-              onEdit={() => navigate(`/courses/${course.id}`)}
+              onView={() => navigate(`/courses/${course.id}`)}
               onNewSection={() => setSectionWizardCourseId(course.id)}
             />
           ))
