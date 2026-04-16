@@ -5,13 +5,14 @@ import { useAuthStore } from '@app/store/authStore';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { ToastContainer } from '@shared/components/ui/Toast';
+import { ChangeCredentialModal } from './ChangeCredentialModal';
 
 interface MainLayoutProps {
   children?: ReactNode;
 }
 
 const MainLayout = ({ children }: MainLayoutProps) => {
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, mustChangePassword } = useAuthStore();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const location = useLocation();
 
@@ -20,16 +21,13 @@ const MainLayout = ({ children }: MainLayoutProps) => {
   }
 
   const isLessonView = /\/courses\/[^/]+\/lesson\//.test(location.pathname);
-
-  // In lesson view: sidebar always collapsed, no header
   const effectiveCollapsed = isLessonView ? true : sidebarCollapsed;
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Sidebar collapsed={effectiveCollapsed} onToggleCollapse={() => !isLessonView && setSidebarCollapsed(!sidebarCollapsed)} />
 
-      {/* Main content area */}
-      <div className={`flex flex-col h-[100dvh] transition-all duration-300 ${effectiveCollapsed ? 'md:ml-16' : 'md:ml-64'}`}>
+      <div className={`flex flex-col h-[100dvh] transition-all duration-300 ${effectiveCollapsed ? 'md:ml-16' : 'md:ml-52'}`}>
         {!isLessonView && <Header />}
         <main className={`flex-1 overflow-y-auto ${isLessonView ? '' : 'p-4 md:p-6'}`}>
           {isLessonView ? (
@@ -42,8 +40,9 @@ const MainLayout = ({ children }: MainLayoutProps) => {
         </main>
       </div>
 
-      {/* Toast notifications */}
       <ToastContainer />
+
+      {mustChangePassword && <ChangeCredentialModal />}
     </div>
   );
 };

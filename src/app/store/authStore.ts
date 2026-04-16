@@ -10,6 +10,7 @@ interface AuthState {
   isLoading: boolean;
   error: string | null;
   initialized: boolean;
+  mustChangePassword: boolean;
 }
 
 interface AuthActions {
@@ -22,6 +23,7 @@ interface AuthActions {
   register: (data: { name: string; email: string; password: string; role: any }) => Promise<void>;
   refreshToken: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
+  dismissChangePassword: () => void;
   clearAuth: () => void;
   initializeAuth: () => () => void;
 }
@@ -39,6 +41,7 @@ export const useAuthStore = create<AuthStore>()(
         isLoading: false,
         error: null,
         initialized: false,
+        mustChangePassword: false,
 
         // Actions
         setUser: (user) => set({ user, isAuthenticated: !!user }),
@@ -52,7 +55,7 @@ export const useAuthStore = create<AuthStore>()(
         login: async (email: string, password: string) => {
           set({ isLoading: true, error: null });
           try {
-            const { user, accessToken, refreshToken } = await authService.login({
+            const { user, accessToken, refreshToken, mustChangePassword } = await authService.login({
               email,
               password
             });
@@ -70,7 +73,7 @@ export const useAuthStore = create<AuthStore>()(
               ipAddress: '127.0.0.1'
             };
 
-            set({ user, session, isAuthenticated: true, isLoading: false });
+            set({ user, session, isAuthenticated: true, isLoading: false, mustChangePassword: !!mustChangePassword });
           } catch (error: any) {
             // Map Firebase Auth error messages to Spanish
             let errorMessage = 'Error al iniciar sesión';
@@ -97,11 +100,10 @@ export const useAuthStore = create<AuthStore>()(
           set({ isLoading: true });
           try {
             await authService.logout();
-            set({ user: null, session: null, isAuthenticated: false, isLoading: false, error: null });
+            set({ user: null, session: null, isAuthenticated: false, isLoading: false, error: null, mustChangePassword: false });
           } catch (error: any) {
             console.error('Logout error:', error);
-            // Force local cleanup anyway
-            set({ user: null, session: null, isAuthenticated: false, isLoading: false, error: null });
+            set({ user: null, session: null, isAuthenticated: false, isLoading: false, error: null, mustChangePassword: false });
           }
         },
 
@@ -176,7 +178,9 @@ export const useAuthStore = create<AuthStore>()(
           }
         },
 
-        clearAuth: () => set({ user: null, session: null, isAuthenticated: false, error: null }),
+        dismissChangePassword: () => set({ mustChangePassword: false }),
+
+        clearAuth: () => set({ user: null, session: null, isAuthenticated: false, error: null, mustChangePassword: false }),
 
         initializeAuth: () => {
           // Subscribe to Firebase Auth state changes

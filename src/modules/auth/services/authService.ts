@@ -4,6 +4,7 @@ import {
   signOut,
   sendPasswordResetEmail,
   onAuthStateChanged,
+  updatePassword as firebaseUpdatePassword,
   type User as FirebaseUser
 } from 'firebase/auth';
 import { auth } from '@app/config/firebase';
@@ -27,7 +28,7 @@ export const authService = {
   /**
    * Login with email and password using Firebase Auth
    */
-  async login(credentials: LoginCredentials): Promise<{ user: User; accessToken: string; refreshToken: string }> {
+  async login(credentials: LoginCredentials): Promise<{ user: User; accessToken: string; refreshToken: string; mustChangePassword?: boolean }> {
     // Sign in with Firebase Auth
     const userCredential = await signInWithEmailAndPassword(
       auth,
@@ -97,7 +98,21 @@ export const authService = {
     storage.setRefreshToken(refreshToken);
     storage.setUser(user);
 
-    return { user, accessToken, refreshToken };
+    return { user, accessToken, refreshToken, mustChangePassword: !!dbUser.mustChangePassword };
+  },
+
+  /**
+   * Change the current user's own credentials (requires recent sign-in)
+   */
+  async changeOwnCredential(newValue: string): Promise<void> {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('No user logged in');
+    await firebaseUpdatePassword(currentUser, newValue);
+    // Clear the flag in DB
+    const dbUser = await firebaseDB.getUserByEmail(currentUser.email!);
+    if (dbUser) {
+      await firebaseDB.updateUser(dbUser.id, { mustChangePassword: false });
+    }
   },
 
   /**
