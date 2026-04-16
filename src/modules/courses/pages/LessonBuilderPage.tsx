@@ -476,6 +476,7 @@ export default function LessonBuilderPage() {
                 </div>
               </div>
 
+              {!lessonId && (
               <div>
                 <Label>Tipo de Lección</Label>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mt-2">
@@ -501,6 +502,7 @@ export default function LessonBuilderPage() {
                   })}
                 </div>
               </div>
+              )}
             </CardContent>
           </Card>
 
@@ -623,42 +625,6 @@ export default function LessonBuilderPage() {
 
               <div className="flex items-center justify-between">
                 <div>
-                  <Label className="font-medium">Permitir Comentarios</Label>
-                  <p className="text-sm text-gray-600">
-                    Los estudiantes pueden hacer preguntas y comentarios
-                  </p>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={settings.allowComments}
-                  onChange={(e) => setSettings(prev => ({ 
-                    ...prev, 
-                    allowComments: e.target.checked 
-                  }))}
-                  className="h-4 w-4 text-blue-600 rounded"
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label className="font-medium">Mostrar Progreso</Label>
-                  <p className="text-sm text-gray-600">
-                    Mostrar barra de progreso durante la lección
-                  </p>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={settings.showProgress}
-                  onChange={(e) => setSettings(prev => ({ 
-                    ...prev, 
-                    showProgress: e.target.checked 
-                  }))}
-                  className="h-4 w-4 text-blue-600 rounded"
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div>
                   <Label className="font-medium">Permitir Descarga</Label>
                   <p className="text-sm text-gray-600">
                     Permitir a los estudiantes descargar el contenido
@@ -676,73 +642,63 @@ export default function LessonBuilderPage() {
               </div>
             </div>
 
-            {/* Time Settings */}
-            <div className="space-y-4">
-              <h3 className="font-medium">Configuración de Tiempo</h3>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="timeLimit">Límite de Tiempo (minutos)</Label>
-                  <Input
-                    id="timeLimit"
-                    type="number"
-                    value={settings.timeLimit || ''}
-                    onChange={(e) => setSettings(prev => ({ 
-                      ...prev, 
-                      timeLimit: e.target.value ? parseInt(e.target.value) : undefined 
-                    }))}
-                    placeholder="Sin límite"
-                    min="1"
-                  />
-                  <p className="text-sm text-gray-600 mt-1">
-                    Dejar vacío para sin límite de tiempo
-                  </p>
-                </div>
-
-                <div>
-                  <Label htmlFor="maxAttempts">Máximo de Intentos</Label>
-                  <Input
-                    id="maxAttempts"
-                    type="number"
-                    value={settings.maxAttempts || ''}
-                    onChange={(e) => setSettings(prev => ({ 
-                      ...prev, 
-                      maxAttempts: e.target.value ? parseInt(e.target.value) : undefined 
-                    }))}
-                    placeholder="Sin límite"
-                    min="1"
-                    className={errors.maxAttempts ? 'border-red-500' : ''}
-                  />
-                  {errors.maxAttempts && (
-                    <p className="text-red-500 text-sm mt-1">{errors.maxAttempts}</p>
-                  )}
-                </div>
-              </div>
-            </div>
-
             {/* Quiz-specific settings */}
             {lessonType === 'quiz' && (
               <div className="space-y-4">
                 <h3 className="font-medium">Configuración de Quiz</h3>
-                
-                <div>
-                  <Label htmlFor="passingScore">Puntuación Mínima (%)</Label>
-                  <Input
-                    id="passingScore"
-                    type="number"
-                    value={settings.passingScore || ''}
-                    onChange={(e) => setSettings(prev => ({ 
-                      ...prev, 
-                      passingScore: e.target.value ? parseInt(e.target.value) : undefined 
-                    }))}
-                    placeholder="70"
-                    min="0"
-                    max="100"
-                    className={errors.passingScore ? 'border-red-500' : ''}
-                  />
-                  {errors.passingScore && (
-                    <p className="text-red-500 text-sm mt-1">{errors.passingScore}</p>
-                  )}
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <Label htmlFor="passingScore">Puntuación Mínima (%)</Label>
+                    <Input
+                      id="passingScore"
+                      type="number"
+                      value={settings.passingScore || ''}
+                      onChange={(e) => setSettings(prev => ({
+                        ...prev,
+                        passingScore: e.target.value ? parseInt(e.target.value) : undefined
+                      }))}
+                      placeholder="70"
+                      min="0"
+                      max="100"
+                      className={errors.passingScore ? 'border-red-500' : ''}
+                    />
+                    {errors.passingScore && (
+                      <p className="text-red-500 text-sm mt-1">{errors.passingScore}</p>
+                    )}
+                  </div>
+                  <div>
+                    <Label htmlFor="timeLimit">Límite de Tiempo (min)</Label>
+                    <Input
+                      id="timeLimit"
+                      type="number"
+                      value={settings.timeLimit || ''}
+                      onChange={(e) => setSettings(prev => ({
+                        ...prev,
+                        timeLimit: e.target.value ? parseInt(e.target.value) : undefined
+                      }))}
+                      placeholder="Sin límite"
+                      min="1"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="maxAttempts">Máximo de Intentos</Label>
+                    <Input
+                      id="maxAttempts"
+                      type="number"
+                      value={settings.maxAttempts || ''}
+                      onChange={(e) => setSettings(prev => ({
+                        ...prev,
+                        maxAttempts: e.target.value ? parseInt(e.target.value) : undefined
+                      }))}
+                      placeholder="Sin límite"
+                      min="1"
+                      className={errors.maxAttempts ? 'border-red-500' : ''}
+                    />
+                    {errors.maxAttempts && (
+                      <p className="text-red-500 text-sm mt-1">{errors.maxAttempts}</p>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
