@@ -82,6 +82,22 @@ const EMPTY_FORM: SectionFormData = {
   bannerImage: '',
 };
 
+function LazyBannerImg({ src }: { src: string }) {
+  const [loaded, setLoaded] = useState(false);
+  return (
+    <>
+      {!loaded && <div className="absolute inset-0 animate-pulse bg-gray-200" />}
+      <img
+        src={src}
+        alt=""
+        loading="lazy"
+        onLoad={() => setLoaded(true)}
+        className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+      />
+    </>
+  );
+}
+
 export default function SectionWizardModal({
   open,
   onClose,
@@ -426,11 +442,6 @@ export default function SectionWizardModal({
         </div>
       }
     >
-      {loading ? (
-        <div className="flex items-center justify-center py-16">
-          <Loader2 className="h-7 w-7 animate-spin text-gray-400" />
-        </div>
-      ) : (
         <>
           {/* Step indicator */}
           <div className="flex items-center justify-center gap-6 sm:gap-10 mb-6">
@@ -531,24 +542,24 @@ export default function SectionWizardModal({
               <div>
                 <Label>Banner de la sección</Label>
                 <div className="grid grid-cols-2 gap-3 mt-1">
+                  {/* Option: use course banner */}
                   <button
                     type="button"
                     onClick={() =>
                       setFormData(prev => ({ ...prev, bannerMode: 'course' }))
                     }
+                    disabled={loading}
                     className={`relative rounded-lg border-2 overflow-hidden text-left transition-all ${
                       formData.bannerMode === 'course'
                         ? 'border-red-500 ring-2 ring-red-200'
                         : 'border-gray-200 hover:border-gray-300'
                     }`}
                   >
-                    <div className="relative h-24 overflow-hidden">
-                      {course?.image ? (
-                        <img
-                          src={course.image}
-                          alt=""
-                          className="absolute inset-0 w-full h-full object-cover"
-                        />
+                    <div className="relative h-24 overflow-hidden bg-gray-100">
+                      {loading ? (
+                        <div className="absolute inset-0 animate-pulse bg-gray-200" />
+                      ) : course?.image ? (
+                        <LazyBannerImg src={course.image} />
                       ) : course ? (
                         <CoursePattern
                           courseKey={course.id}
@@ -569,6 +580,7 @@ export default function SectionWizardModal({
                     )}
                   </button>
 
+                  {/* Option: custom banner */}
                   <button
                     type="button"
                     onClick={() => {
@@ -583,11 +595,7 @@ export default function SectionWizardModal({
                   >
                     <div className="relative h-24 overflow-hidden bg-gray-50 flex items-center justify-center">
                       {formData.bannerImage ? (
-                        <img
-                          src={formData.bannerImage}
-                          alt=""
-                          className="absolute inset-0 w-full h-full object-cover"
-                        />
+                        <LazyBannerImg src={formData.bannerImage} />
                       ) : (
                         <div className="flex flex-col items-center text-gray-400">
                           <ImageIcon className="h-6 w-6 mb-1" />
@@ -741,6 +749,12 @@ export default function SectionWizardModal({
           {/* Step 2: Dates */}
           {currentStep === 2 && (
             <div className="space-y-6">
+              {loading ? (
+                <div className="flex items-center justify-center py-16">
+                  <Loader2 className="h-7 w-7 animate-spin text-gray-400" />
+                </div>
+              ) : (
+              <>
               <p className="text-sm text-gray-500">
                 Configura fechas de apertura y cierre para cada tarea y quiz. Los campos
                 vacíos heredarán las fechas del template del curso.
@@ -929,10 +943,11 @@ export default function SectionWizardModal({
                   )}
                 </>
               )}
+              </>
+              )}
             </div>
           )}
         </>
-      )}
     </Modal>
   );
 }
