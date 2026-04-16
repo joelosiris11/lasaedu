@@ -220,7 +220,7 @@ const SupportDashboard = () => {
                 <MessageSquare className="h-6 w-6 text-red-600 mx-auto mb-2" />
                 <span className="text-sm font-medium">Nuevo Ticket</span>
               </button>
-              <button onClick={() => navigate('/user-management')} className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+              <button onClick={() => navigate('/users')} className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
                 <Users className="h-6 w-6 text-red-600 mx-auto mb-2" />
                 <span className="text-sm font-medium">Buscar Usuario</span>
               </button>

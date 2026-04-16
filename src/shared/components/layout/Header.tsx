@@ -7,8 +7,7 @@ import { NotificationCenter } from './NotificationCenter';
 
 const pageMeta: Record<string, { title: string; subtitle: string }> = {
   '/dashboard': { title: 'Dashboard', subtitle: 'Resumen general de tu actividad' },
-  '/user-management': { title: 'Gestión de Usuarios', subtitle: 'Administra roles y permisos' },
-  '/users': { title: 'Usuarios', subtitle: 'Listado de usuarios del sistema' },
+  '/users': { title: 'Gestión de Usuarios', subtitle: 'Administra usuarios, roles y permisos' },
   '/enrollments': { title: 'Inscripciones', subtitle: 'Gestiona las inscripciones a cursos' },
   '/my-sections': { title: 'Mis Secciones', subtitle: 'Tus secciones inscritas y activas' },
   '/sections': { title: 'Sección', subtitle: 'Detalle de la sección' },
@@ -19,7 +18,7 @@ const pageMeta: Record<string, { title: string; subtitle: string }> = {
   '/forums': { title: 'Foros', subtitle: 'Participa en las discusiones' },
   '/support': { title: 'Soporte', subtitle: 'Centro de ayuda y soporte técnico' },
   '/settings': { title: 'Configuración', subtitle: 'Ajustes de tu cuenta y preferencias' },
-  '/audit-logs': { title: 'Trazabilidad', subtitle: 'Acciones del sistema y cambios en cursos' },
+  '/audit-logs': { title: 'Actividad Prof.', subtitle: 'Acciones del sistema y cambios en cursos' },
   '/student-activity': { title: 'Actividad de Estudiantes', subtitle: 'Entregas y completaciones' },
 };
 
