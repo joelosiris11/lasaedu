@@ -39,6 +39,9 @@ import SectionDatesPage from '@modules/courses/pages/SectionDatesPage';
 import SectionDetailPage from '@modules/courses/pages/SectionDetailPage';
 import SectionGradesPage from '@modules/courses/pages/SectionGradesPage';
 
+// Quiz popup (standalone, no layout)
+import QuizPopupPage from '@modules/courses/pages/QuizPopupPage';
+
 // Componente para página no encontrada
 const NotFoundPage = () => (
   <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50">
@@ -100,6 +103,15 @@ export const router = createBrowserRouter([
   {
     path: '/recovery',
     element: <RecoveryPage />
+  },
+  // Quiz popup — standalone window, no MainLayout
+  {
+    path: '/quiz/:sectionId/:lessonId',
+    element: (
+      <ProtectedRoute allowedRoles={['student']}>
+        <QuizPopupPage />
+      </ProtectedRoute>
+    )
   },
   {
     path: '/',

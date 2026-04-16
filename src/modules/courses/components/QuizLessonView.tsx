@@ -51,6 +51,10 @@ interface QuizLessonViewProps {
   courseId?: string;
   readOnly?: boolean;
   sectionOverride?: DBSectionLessonOverride | null;
+  /** When true, the quiz is rendered inside a popup window — runs inline. */
+  popupMode?: boolean;
+  /** sectionId needed to build the popup URL */
+  sectionId?: string;
 }
 
 interface QuizAnswers { [questionId: string]: any; }
@@ -67,7 +71,7 @@ type QuizPhase = 'start' | 'active' | 'results' | 'review';
 
 // --- Component ---
 
-export default function QuizLessonView({ lesson, onComplete, userId, courseId, readOnly, sectionOverride }: QuizLessonViewProps) {
+export default function QuizLessonView({ lesson, onComplete, userId, courseId, readOnly, sectionOverride, popupMode, sectionId }: QuizLessonViewProps) {
   const [quizContent, setQuizContent] = useState<QuizLessonContent | null>(null);
   const [displayQuestions, setDisplayQuestions] = useState<QuizQuestion[]>([]);
   const [answers, setAnswers] = useState<QuizAnswers>({});
@@ -87,6 +91,36 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
   const [quizStartedAt, setQuizStartedAt] = useState<number | null>(null);
   const [inProgressAttempt, setInProgressAttempt] = useState<DBEvaluationAttempt | null>(null);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const popupRef = useRef<Window | null>(null);
+  const [popupOpen, setPopupOpen] = useState(false);
+
+  // Open quiz in a popup window (used when not in popupMode)
+  const openQuizPopup = () => {
+    if (!sectionId) return;
+    const w = window.screen.availWidth;
+    const h = window.screen.availHeight;
+    const features = `popup=yes,width=${w},height=${h},left=0,top=0,scrollbars=yes`;
+    popupRef.current = window.open(`/quiz/${sectionId}/${lesson.id}`, 'quizPopup', features);
+    if (popupRef.current) setPopupOpen(true);
+  };
+
+  // When the popup closes, refresh the page so the student sees the new attempt
+  useEffect(() => {
+    if (!popupOpen || !popupRef.current) return;
+    const popup = popupRef.current;
+    const interval = setInterval(() => {
+      if (popup.closed) {
+        clearInterval(interval);
+        popupRef.current = null;
+        setPopupOpen(false);
+        window.location.reload();
+      }
+    }, 500);
+    return () => clearInterval(interval);
+  }, [popupOpen]);
+
+  // Whether to use the popup flow: only for students (not readOnly, not already in popup)
+  const shouldUsePopup = !popupMode && !readOnly && !!sectionId;
 
   // Load quiz content
   useEffect(() => {
@@ -121,6 +155,26 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
     })();
   }, [userId, lesson.id]);
 
+  // In popup mode, auto-start the quiz once data is loaded
+  const [autoStarted, setAutoStarted] = useState(false);
+  useEffect(() => {
+    if (!popupMode || autoStarted || !quizContent || loadingAttempts) return;
+    setAutoStarted(true);
+    // If there's an in-progress attempt, resume it; otherwise start fresh
+    if (inProgressAttempt) {
+      // Check if the in-progress attempt timer has expired
+      const startMs = new Date(inProgressAttempt.startedAt).getTime();
+      const timeLimitMin = lesson.settings?.timeLimit || quizContent.settings.timeLimit;
+      const totalSec = timeLimitMin && timeLimitMin > 0 ? timeLimitMin * 60 : null;
+      const elapsed = Math.floor((Date.now() - startMs) / 1000);
+      if (totalSec === null || elapsed < totalSec) {
+        resumeQuiz();
+        return;
+      }
+    }
+    initQuiz();
+  }, [popupMode, autoStarted, quizContent, loadingAttempts, inProgressAttempt]);
+
   const navigate = useNavigate();
   const isAttemptActive = phase === 'active' && !readOnly;
 
@@ -149,7 +203,9 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
 
   const handleExitClick = () => {
     const confirmLeave = window.confirm('¿Seguro que quieres salir? Perderás tu progreso del intento actual.');
-    if (confirmLeave) navigate(-1);
+    if (!confirmLeave) return;
+    if (popupMode) window.close();
+    else navigate(-1);
   };
 
   // Timer
@@ -642,7 +698,7 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
                     {answeredSaved} de {inProgressAttempt.answers.length} respondidas
                     {totalSec !== null && ` · ${formatTime(Math.max(0, totalSec - elapsedSec))} restantes`}
                   </p>
-                  <Button onClick={resumeQuiz} className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-sm">
+                  <Button onClick={shouldUsePopup ? openQuizPopup : resumeQuiz} className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-sm">
                     <RotateCcw className="h-4 w-4 mr-2" />Continuar intento
                   </Button>
                 </div>
@@ -661,7 +717,7 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
               {deadlineStatus === 'not_open' ? 'Quiz no disponible aún' : 'Quiz cerrado'}
             </Button>
           ) : (
-            <Button onClick={initQuiz} className="w-full py-3 bg-red-600 hover:bg-red-700 text-base">
+            <Button onClick={shouldUsePopup ? openQuizPopup : initQuiz} className="w-full py-3 bg-red-600 hover:bg-red-700 text-base">
               {pastAttempts.length > 0 ? (
                 <><RotateCcw className="h-4 w-4 mr-2" />Reintentar Quiz</>
               ) : inProgressAttempt ? (
@@ -794,9 +850,15 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
         </div>
 
         <div className="flex flex-col sm:flex-row gap-2 justify-center">
-          <Button variant="outline" onClick={() => { setPhase('start'); setResult(null); }}>
-            Volver al inicio
-          </Button>
+          {popupMode ? (
+            <Button variant="outline" onClick={() => window.close()}>
+              Cerrar ventana
+            </Button>
+          ) : (
+            <Button variant="outline" onClick={() => { setPhase('start'); setResult(null); }}>
+              Volver al inicio
+            </Button>
+          )}
           {!result.passed && !hasPerfectScore && (
             <Button onClick={initQuiz} className="bg-red-600 hover:bg-red-700">
               <RotateCcw className="h-4 w-4 mr-2" />Reintentar
