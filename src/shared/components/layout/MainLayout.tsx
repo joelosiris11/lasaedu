@@ -20,7 +20,7 @@ const MainLayout = ({ children }: MainLayoutProps) => {
     return <>{children}</>;
   }
 
-  const isLessonView = /\/courses\/[^/]+\/lesson\//.test(location.pathname);
+  const isLessonView = /\/(courses|sections)\/[^/]+\/lesson\//.test(location.pathname);
   const effectiveCollapsed = isLessonView ? true : sidebarCollapsed;
 
   return (
