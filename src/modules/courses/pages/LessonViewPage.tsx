@@ -37,6 +37,9 @@ import {
   Circle,
   X,
   Loader2,
+  Edit3,
+  Calendar,
+  ClipboardList,
 } from 'lucide-react';
 import { Button } from '@shared/components/ui/Button';
 import { Card, CardContent } from '@shared/components/ui/Card';
@@ -90,6 +93,9 @@ export default function LessonViewPage() {
   const [reviewingSubmission, setReviewingSubmission] = useState<DBTaskSubmission | null>(null);
   const [expandedQuizStudent, setExpandedQuizStudent] = useState<string | null>(null);
   const [selectedStudent, setSelectedStudent] = useState<{ id: string; name: string } | null>(null);
+  const [showDeadlineModal, setShowDeadlineModal] = useState(false);
+  const [deadlineForm, setDeadlineForm] = useState({ dueDate: '', lateSubmissionDeadline: '', availableFrom: '', timeLimit: '' });
+  const [savingDeadline, setSavingDeadline] = useState(false);
 
   // Time tracking refs
   const lessonStartTime = useRef<number>(Date.now());
@@ -252,10 +258,15 @@ export default function LessonViewPage() {
     if (!effectiveCourseId || !isTeacherOrAdmin) return;
     setLoadingStudents(true);
     try {
-      const [courseEnrollments, allUsers] = await Promise.all([
+      const [allCourseEnrollments, allUsers] = await Promise.all([
         enrollmentService.getByCourse(effectiveCourseId),
         userService.getAll(),
       ]);
+
+      // Filter to section enrollments when in section context
+      const courseEnrollments = sectionId
+        ? allCourseEnrollments.filter((e: DBEnrollment) => e.sectionId === sectionId)
+        : allCourseEnrollments;
 
       const userMap = new Map<string, DBUser>();
       for (const u of allUsers) userMap.set(u.id, u);
@@ -841,6 +852,7 @@ export default function LessonViewPage() {
             courseId={effectiveCourseId || course?.id}
             readOnly={isTeacherOrAdmin}
             sectionOverride={sectionOverride}
+            sectionId={sectionId}
           />
         ) : currentLesson.type === 'foro' ? (
           <LessonForumView
@@ -933,6 +945,56 @@ export default function LessonViewPage() {
               <span className="hidden sm:inline">Anterior</span>
             </Button>
 
+            {/* Teacher action buttons (section context only) */}
+            {isTeacherOrAdmin && sectionId && (
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => navigate(`/courses/${effectiveCourseId}/modules/${currentLesson.moduleId}/lessons/${currentLesson.id}/edit`)}
+                  title="Editar lección"
+                >
+                  <Edit3 className="h-4 w-4 sm:mr-1.5" />
+                  <span className="hidden sm:inline">Editar</span>
+                </Button>
+                {(currentLesson.type === 'quiz' || currentLesson.type === 'tarea') && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const override = sectionOverride || {};
+                      setDeadlineForm({
+                        dueDate: (override as any).dueDate || currentLesson.settings?.dueDate || '',
+                        lateSubmissionDeadline: (override as any).lateSubmissionDeadline || currentLesson.settings?.lateSubmissionDeadline || '',
+                        availableFrom: (override as any).availableFrom || currentLesson.settings?.availableFrom || '',
+                        timeLimit: currentLesson.settings?.timeLimit?.toString() || '',
+                      });
+                      setShowDeadlineModal(true);
+                    }}
+                    title="Editar fechas"
+                  >
+                    <Calendar className="h-4 w-4 sm:mr-1.5" />
+                    <span className="hidden sm:inline">Fechas</span>
+                  </Button>
+                )}
+                {currentLesson.type === 'tarea' && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const firstSubmission = studentData.find(s => s.submission)?.submission;
+                      if (firstSubmission) setReviewingSubmission(firstSubmission);
+                    }}
+                    disabled={!studentData.some(s => s.submission)}
+                    title="Calificar entregas"
+                  >
+                    <ClipboardList className="h-4 w-4 sm:mr-1.5" />
+                    <span className="hidden sm:inline">Calificar</span>
+                  </Button>
+                )}
+              </div>
+            )}
+
             <Button
               size="sm"
               onClick={goToNextLesson}
@@ -944,8 +1006,8 @@ export default function LessonViewPage() {
           </div>
         </div>
 
-        {/* Desktop student panel (teacher only) */}
-        {isTeacherOrAdmin && (
+        {/* Desktop student panel (section context only) */}
+        {isTeacherOrAdmin && sectionId && (
           <div className="hidden lg:flex w-80 flex-col border-l border-gray-200 bg-white flex-shrink-0">
             {selectedStudent ? (
               <StudentLessonDetail
@@ -971,8 +1033,8 @@ export default function LessonViewPage() {
         )}
       </div>
 
-      {/* Mobile floating button (teacher only) */}
-      {isTeacherOrAdmin && (
+      {/* Mobile floating button (section context only) */}
+      {isTeacherOrAdmin && sectionId && (
         <button
           onClick={() => setShowStudentPanel(true)}
           className="lg:hidden fixed bottom-20 right-4 z-40 flex items-center gap-2 bg-red-600 text-white px-4 py-2.5 rounded-full shadow-lg hover:bg-red-700 transition-colors"
@@ -984,17 +1046,14 @@ export default function LessonViewPage() {
         </button>
       )}
 
-      {/* Mobile student panel slide-up (teacher only) */}
-      {isTeacherOrAdmin && showStudentPanel && (
+      {/* Mobile student panel slide-up (section context only) */}
+      {isTeacherOrAdmin && sectionId && showStudentPanel && (
         <div className="lg:hidden fixed inset-0 z-50">
-          {/* Backdrop */}
           <div
             className="absolute inset-0 bg-black/50"
             onClick={() => setShowStudentPanel(false)}
           />
-          {/* Panel */}
           <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl max-h-[80vh] flex flex-col animate-slide-up">
-            {/* Handle */}
             <div className="flex items-center justify-center py-2">
               <div className="w-10 h-1 bg-gray-300 rounded-full" />
             </div>
@@ -1027,6 +1086,110 @@ export default function LessonViewPage() {
               </>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Deadline editing modal */}
+      {showDeadlineModal && sectionId && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-md mx-4">
+            <CardContent className="p-6 space-y-4">
+              <h2 className="text-lg font-semibold text-gray-900">
+                Fechas — {currentLesson.title}
+              </h2>
+              <p className="text-xs text-gray-500">
+                Estas fechas aplican solo a esta sección. Dejar vacío hereda del template.
+              </p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Disponible desde</label>
+                <input
+                  type="datetime-local"
+                  value={deadlineForm.availableFrom}
+                  onChange={e => setDeadlineForm(prev => ({ ...prev, availableFrom: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  {currentLesson.type === 'quiz' ? 'Fecha de cierre' : 'Due Date (fecha de cierre)'}
+                </label>
+                <input
+                  type="datetime-local"
+                  value={deadlineForm.dueDate}
+                  onChange={e => setDeadlineForm(prev => ({ ...prev, dueDate: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                />
+              </div>
+              {currentLesson.type === 'quiz' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Tiempo límite (minutos)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={deadlineForm.timeLimit}
+                    onChange={e => setDeadlineForm(prev => ({ ...prev, timeLimit: e.target.value }))}
+                    placeholder="Sin límite"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  />
+                </div>
+              )}
+              {currentLesson.type === 'tarea' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Cut-off Date (cierre definitivo)</label>
+                  <input
+                    type="datetime-local"
+                    value={deadlineForm.lateSubmissionDeadline}
+                    min={deadlineForm.dueDate || undefined}
+                    onChange={e => setDeadlineForm(prev => ({ ...prev, lateSubmissionDeadline: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  />
+                </div>
+              )}
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline" onClick={() => setShowDeadlineModal(false)} disabled={savingDeadline}>
+                  Cancelar
+                </Button>
+                <Button
+                  disabled={savingDeadline}
+                  onClick={async () => {
+                    setSavingDeadline(true);
+                    try {
+                      const now = Date.now();
+                      const overrideData: any = {
+                        sectionId,
+                        lessonId: currentLesson.id,
+                        courseId: effectiveCourseId,
+                        createdAt: now,
+                        updatedAt: now,
+                      };
+                      if (sectionOverride?.id) overrideData.id = sectionOverride.id;
+                      if (deadlineForm.availableFrom) overrideData.availableFrom = deadlineForm.availableFrom;
+                      if (deadlineForm.dueDate) overrideData.dueDate = deadlineForm.dueDate;
+                      if (deadlineForm.lateSubmissionDeadline) overrideData.lateSubmissionDeadline = deadlineForm.lateSubmissionDeadline;
+                      await sectionService.saveLessonOverrides(sectionId, [overrideData]);
+                      // Save timeLimit to lesson settings (applies globally, not per-section)
+                      if (currentLesson.type === 'quiz' && deadlineForm.timeLimit) {
+                        await lessonService.update(currentLesson.id, {
+                          settings: { ...currentLesson.settings, timeLimit: parseInt(deadlineForm.timeLimit) },
+                        });
+                      }
+                      // Reload override
+                      const overrides = await sectionService.getLessonOverrides(sectionId);
+                      setSectionOverride(overrides.find(o => o.lessonId === currentLesson.id) || null);
+                      setShowDeadlineModal(false);
+                    } catch (err) {
+                      console.error('Error saving deadline override:', err);
+                    } finally {
+                      setSavingDeadline(false);
+                    }
+                  }}
+                >
+                  {savingDeadline ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : null}
+                  Guardar
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       )}
 
