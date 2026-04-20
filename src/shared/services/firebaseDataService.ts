@@ -37,7 +37,13 @@ import {
   query,
   where,
   setDoc,
-  writeBatch
+  writeBatch,
+  orderBy as firestoreOrderBy,
+  limit as firestoreLimit,
+  startAfter,
+  QueryDocumentSnapshot,
+  QueryConstraint,
+  type WhereFilterOp,
 } from 'firebase/firestore';
 
 // ============================================
@@ -591,6 +597,24 @@ export interface DBDeadlineExtension {
 }
 
 // ============================================
+// PAGINATED RESULT TYPE
+// ============================================
+
+export interface PaginatedResult<T> {
+  data: T[];
+  lastDoc: QueryDocumentSnapshot | null;
+  hasMore: boolean;
+}
+
+export interface PaginationOptions {
+  pageSize: number;
+  orderByField: string;
+  orderDirection?: 'asc' | 'desc';
+  cursor?: QueryDocumentSnapshot | null;
+  filters?: { field: string; op: WhereFilterOp; value: unknown }[];
+}
+
+// ============================================
 // SERVICIO DE DATOS FIREBASE
 // ============================================
 
@@ -695,6 +719,52 @@ class FirebaseDataService {
     } catch (error) {
       console.error(`Error querying ${collectionName}:`, error);
       return [];
+    }
+  }
+
+  /**
+   * Obtener registros paginados con orderBy, limit, startAfter, y where clauses
+   */
+  async getPaginated<T>(
+    collectionName: string,
+    options: PaginationOptions
+  ): Promise<PaginatedResult<T>> {
+    const {
+      pageSize,
+      orderByField,
+      orderDirection = 'asc',
+      cursor,
+      filters = [],
+    } = options;
+
+    try {
+      const constraints: QueryConstraint[] = [];
+
+      for (const f of filters) {
+        constraints.push(where(f.field, f.op, f.value));
+      }
+
+      constraints.push(firestoreOrderBy(orderByField, orderDirection));
+
+      if (cursor) {
+        constraints.push(startAfter(cursor));
+      }
+
+      // Fetch one extra to detect if there's a next page
+      constraints.push(firestoreLimit(pageSize + 1));
+
+      const q = query(collection(db, collectionName), ...constraints);
+      const snapshot = await getDocs(q);
+
+      const hasMore = snapshot.docs.length > pageSize;
+      const docs = hasMore ? snapshot.docs.slice(0, pageSize) : snapshot.docs;
+      const data = docs.map(d => ({ id: d.id, ...d.data() })) as T[];
+      const lastDoc = docs.length > 0 ? docs[docs.length - 1] : null;
+
+      return { data, lastDoc, hasMore };
+    } catch (error) {
+      console.error(`Error getting paginated ${collectionName}:`, error);
+      return { data: [], lastDoc: null, hasMore: false };
     }
   }
 
@@ -1268,4 +1338,5 @@ export type {
   DBSectionLessonOverride as SectionLessonOverride
 };
 
+export type { WhereFilterOp, QueryDocumentSnapshot };
 export default firebaseDB;
