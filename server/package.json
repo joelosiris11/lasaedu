@@ -3,12 +3,22 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "pm2:start": "pm2 start ecosystem.config.cjs --env production",
+    "pm2:reload": "pm2 reload ecosystem.config.cjs --env production",
+    "pm2:stop": "pm2 stop lasaedu-fileserver",
+    "pm2:logs": "pm2 logs lasaedu-fileserver",
+    "pm2:status": "pm2 status",
+    "deploy": "git pull && npm ci --omit=dev && pm2 reload ecosystem.config.cjs --env production && pm2 save"
   },
   "dependencies": {
-    "express": "^4.21.0",
-    "multer": "^1.4.5-lts.1",
     "cors": "^2.8.5",
-    "firebase-admin": "^12.0.0"
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "firebase-admin": "^12.0.0",
+    "multer": "^1.4.5-lts.1"
+  },
+  "devDependencies": {
+    "pm2": "^5.4.0"
   }
 }
