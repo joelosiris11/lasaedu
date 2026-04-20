@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import multer from 'multer';
 import cors from 'cors';
@@ -55,11 +56,22 @@ async function authMiddleware(req, res, next) {
   }
 }
 
-// CORS
-app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : '*',
-  methods: ['GET', 'POST', 'DELETE'],
-}));
+// CORS — permissive config to handle preflight + uploads from Vite dev server.
+const corsOptions = {
+  origin: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : true,
+  methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Authorization', 'Content-Type', 'X-Requested-With', 'Accept'],
+  credentials: false,
+  maxAge: 86400,
+};
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
+
+// Log every request to help debug network errors from the browser.
+app.use((req, _res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} (origin: ${req.headers.origin || '-'})`);
+  next();
+});
 
 // Multer storage config
 const storage = multer.diskStorage({
@@ -94,10 +106,13 @@ app.post('/upload/:path(*)', authMiddleware, upload.single('file'), (req, res) =
   }
 
   const relativePath = path.relative(UPLOAD_DIR, req.file.path);
-  const baseUrl = process.env.BASE_URL || `http://localhost:${PORT}`;
+  // If BASE_URL is set (prod), return absolute URL. Otherwise (dev), return a
+  // relative URL so the Vite proxy resolves it against the current origin.
+  const baseUrl = process.env.BASE_URL || '';
+  const url = baseUrl ? `${baseUrl}/files/${relativePath}` : `/files/${relativePath}`;
 
   res.json({
-    url: `${baseUrl}/files/${relativePath}`,
+    url,
     filename: req.file.filename,
     originalName: req.file.originalname,
     size: req.file.size,
