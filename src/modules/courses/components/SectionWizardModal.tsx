@@ -795,7 +795,7 @@ export default function SectionWizardModal({
                                 Abre
                               </th>
                               <th className="pb-3 pr-3 font-medium text-gray-700 min-w-[180px]">
-                                Due Date
+                                Fecha de cierre
                               </th>
                               <th className="pb-3 font-medium text-gray-700 min-w-[100px]">
                                 Tiempo (min)
@@ -878,10 +878,10 @@ export default function SectionWizardModal({
                                 Abre
                               </th>
                               <th className="pb-3 pr-3 font-medium text-gray-700 min-w-[180px]">
-                                Due Date
+                                Fecha de entrega
                               </th>
                               <th className="pb-3 font-medium text-gray-700 min-w-[180px]">
-                                Cut-off
+                                Cierre definitivo
                               </th>
                             </tr>
                           </thead>

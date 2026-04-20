@@ -203,7 +203,7 @@ export default function SectionDatesPage() {
                           <th className="pb-3 pr-3 font-medium text-gray-700 min-w-[180px]">Lección</th>
                           <th className="pb-3 pr-3 font-medium text-gray-700 min-w-[120px]">Módulo</th>
                           <th className="pb-3 pr-3 font-medium text-gray-700 min-w-[180px]">Abre</th>
-                          <th className="pb-3 pr-3 font-medium text-gray-700 min-w-[180px]">Due Date</th>
+                          <th className="pb-3 pr-3 font-medium text-gray-700 min-w-[180px]">Fecha de entrega</th>
                           <th className="pb-3 font-medium text-gray-700 min-w-[100px]">Tiempo (min)</th>
                         </tr>
                       </thead>
@@ -246,8 +246,8 @@ export default function SectionDatesPage() {
                           <th className="pb-3 pr-3 font-medium text-gray-700 min-w-[180px]">Lección</th>
                           <th className="pb-3 pr-3 font-medium text-gray-700 min-w-[120px]">Módulo</th>
                           <th className="pb-3 pr-3 font-medium text-gray-700 min-w-[180px]">Abre</th>
-                          <th className="pb-3 pr-3 font-medium text-gray-700 min-w-[180px]">Due Date</th>
-                          <th className="pb-3 font-medium text-gray-700 min-w-[180px]">Cut-off</th>
+                          <th className="pb-3 pr-3 font-medium text-gray-700 min-w-[180px]">Fecha de entrega</th>
+                          <th className="pb-3 font-medium text-gray-700 min-w-[180px]">Cierre definitivo</th>
                         </tr>
                       </thead>
                       <tbody>

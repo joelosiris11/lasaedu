@@ -52,6 +52,7 @@ interface TareaLessonViewProps {
   userRole: 'student' | 'teacher' | 'admin' | 'support';
   onComplete?: () => void; // @deprecated — la lección sólo se completa al calificarse
   sectionOverride?: DBSectionLessonOverride | null;
+  sectionId?: string;
 }
 
 function parseTareaContent(lesson: DBLesson): TareaLessonContent | null {
@@ -90,6 +91,7 @@ export default function TareaLessonView({
   userRole,
   onComplete: _onComplete,
   sectionOverride,
+  sectionId,
 }: TareaLessonViewProps) {
   const [tareaContent, setTareaContent] = useState<TareaLessonContent | null>(null);
   const [submissions, setSubmissions] = useState<DBTaskSubmission[]>([]);
@@ -196,6 +198,7 @@ export default function TareaLessonView({
       const submission = await taskSubmissionService.create({
         lessonId: lesson.id,
         courseId,
+        sectionId,
         studentId: userId,
         studentName: userName,
         files,
@@ -329,14 +332,14 @@ export default function TareaLessonView({
         <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
           <Clock className="w-4 h-4 text-red-500 flex-shrink-0" />
           <div>
-            <p className="text-xs text-gray-500">Due Date</p>
+            <p className="text-xs text-gray-500">Fecha de entrega</p>
             <p className="font-semibold text-gray-900">{dueDate ? formatDeadlineDate(dueDate) : '— —'}</p>
           </div>
         </div>
         <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
           <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />
           <div>
-            <p className="text-xs text-gray-500">Cut-off Date</p>
+            <p className="text-xs text-gray-500">Cierre definitivo</p>
             <p className="font-semibold text-gray-900">{lateDeadline ? formatDeadlineDate(lateDeadline) : '— —'}</p>
           </div>
         </div>
