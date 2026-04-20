@@ -1,7 +1,5 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
-  ChevronDown,
-  ChevronRight,
   History,
   Download,
   Search,
@@ -9,35 +7,40 @@ import {
   Pencil,
   Trash2,
   BookOpen,
-  Layers,
-  FileText,
   Users,
-  GraduationCap,
-  ClipboardList,
   Shield,
   X,
   TrendingUp,
   Activity,
   AlertTriangle,
+  Eye,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@shared/components/ui/Card';
 import { Button } from '@shared/components/ui/Button';
-import { userService } from '@shared/services/dataService';
+import { Pagination } from '@shared/components/ui/Pagination';
+import { usePagination } from '@shared/hooks/usePagination';
+import { useAuthStore } from '@app/store/authStore';
 import {
-  listAuditLogs,
+  userService,
+  courseService,
+  sectionService,
+} from '@shared/services/dataService';
+import {
   type DBAuditLog,
   type AuditAction,
   type AuditResourceType,
 } from '@shared/services/auditLogService';
-import type { DBUser } from '@shared/services/dataService';
+import type { DBUser, DBCourse, DBSection } from '@shared/services/dataService';
 import { exportToCSV } from '@shared/services/exportService';
+import AuditDetailsModal from '../components/AuditDetailsModal';
+import { getResourceIcon, getResourceShortLabel } from '../utils/resourceDisplay';
 
 // ─── Labels ──────────────────────────────────────────────────────────────────
 
 const ACTION_LABELS: Record<AuditAction, string> = {
   create: 'Creó',
   update: 'Editó',
-  delete: 'Eliminó',
+  delete: 'Borró',
 };
 
 const RESOURCE_LABELS: Record<AuditResourceType, string> = {
@@ -62,14 +65,6 @@ const ACTION_ICONS: Record<AuditAction, React.ElementType> = {
   delete: Trash2,
 };
 
-const RESOURCE_ICONS: Record<AuditResourceType, React.ElementType> = {
-  course: BookOpen,
-  module: Layers,
-  lesson: FileText,
-  section: GraduationCap,
-  user: Users,
-  evaluation: ClipboardList,
-};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -200,46 +195,17 @@ function LoadingSkeleton() {
   );
 }
 
-// ─── Diff row ─────────────────────────────────────────────────────────────────
-
-function DiffPanel({ changes }: { changes: Record<string, { from: unknown; to: unknown }> }) {
-  return (
-    <div className="mt-1 rounded-lg border border-red-100 bg-red-50/60 overflow-hidden">
-      <div className="px-4 py-2 border-b border-red-100 flex items-center gap-1.5">
-        <AlertTriangle className="h-3 w-3 text-red-500" />
-        <span className="text-xs font-semibold text-red-700 uppercase tracking-wide">
-          Cambios de campo
-        </span>
-      </div>
-      <div className="px-4 py-3 space-y-2">
-        {Object.entries(changes).map(([field, { from, to }]) => (
-          <div key={field} className="grid grid-cols-[auto_1fr_auto_1fr] items-start gap-x-3 gap-y-0.5 text-xs">
-            <span className="font-semibold text-gray-600 min-w-[80px] pt-0.5 capitalize">
-              {field}
-            </span>
-            {/* from — struck-through in neutral gray for legibility on red-50 background */}
-            <span className="text-gray-400 line-through max-w-xs truncate pt-0.5" title={formatValue(from)}>
-              {formatValue(from)}
-            </span>
-            <span className="text-gray-400 pt-0.5">→</span>
-            {/* to — solid, darker red (no green) */}
-            <span className="text-red-800 font-medium max-w-xs truncate pt-0.5" title={formatValue(to)}>
-              {formatValue(to)}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function AuditLogsPage() {
-  const [logs, setLogs] = useState<DBAuditLog[]>([]);
+  const { user } = useAuthStore();
+  const isTeacher = user?.role === 'teacher';
+
   const [users, setUsers] = useState<DBUser[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [teacherCourses, setTeacherCourses] = useState<DBCourse[]>([]);
+  const [teacherSections, setTeacherSections] = useState<DBSection[]>([]);
+  const [scopeReady, setScopeReady] = useState(!isTeacher);
+  const [selectedLog, setSelectedLog] = useState<DBAuditLog | null>(null);
 
   // Filters
   const [actorFilter, setActorFilter] = useState<string>('');
@@ -249,49 +215,88 @@ export default function AuditLogsPage() {
   const [toDate, setToDate] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState<string>('');
 
+  // Build Firestore filters from current filter state
+  const firestoreFilters = useMemo(() => {
+    const filters: { field: string; op: '==' | '>=' | '<='; value: unknown }[] = [];
+    if (actorFilter) filters.push({ field: 'actorId', op: '==', value: actorFilter });
+    if (resourceFilter) filters.push({ field: 'resourceType', op: '==', value: resourceFilter });
+    if (actionFilter) filters.push({ field: 'action', op: '==', value: actionFilter });
+    if (fromDate) {
+      filters.push({ field: 'timestamp', op: '>=', value: new Date(fromDate).getTime() });
+    }
+    if (toDate) {
+      filters.push({
+        field: 'timestamp',
+        op: '<=',
+        value: new Date(toDate).getTime() + 24 * 60 * 60 * 1000,
+      });
+    }
+    return filters;
+  }, [actorFilter, resourceFilter, actionFilter, fromDate, toDate]);
+
+  const {
+    data,
+    page,
+    hasNext,
+    hasPrev,
+    loading,
+    nextPage,
+    prevPage,
+  } = usePagination<DBAuditLog>({
+    collectionName: 'auditLogs',
+    pageSize: 50,
+    orderByField: 'timestamp',
+    orderDirection: 'desc',
+    filters: firestoreFilters,
+  });
+
+  // Load users + teacher scope (for filtering)
   useEffect(() => {
-    (async () => {
-      setLoading(true);
-      try {
-        const [logsData, usersData] = await Promise.all([
-          listAuditLogs(),
-          userService.getAll(),
-        ]);
-        setLogs(logsData);
-        setUsers(usersData);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+    userService.getAll().then(setUsers);
+    if (isTeacher && user?.id) {
+      Promise.all([
+        courseService.getByInstructor(user.id),
+        sectionService.getByInstructor(user.id),
+      ]).then(([c, s]) => {
+        setTeacherCourses(c);
+        setTeacherSections(s);
+        setScopeReady(true);
+      });
+    } else {
+      setScopeReady(true);
+    }
+  }, [isTeacher, user?.id]);
 
+  const teacherCourseIds = useMemo(
+    () => new Set(teacherCourses.map((c) => c.id)),
+    [teacherCourses]
+  );
+  const teacherSectionIds = useMemo(
+    () => new Set(teacherSections.map((s) => s.id)),
+    [teacherSections]
+  );
+
+  // Client-side search filter + teacher scope
   const filteredLogs = useMemo(() => {
-    const fromTs = fromDate ? new Date(fromDate).getTime() : null;
-    const toTs = toDate ? new Date(toDate).getTime() + 24 * 60 * 60 * 1000 : null;
+    let list = data;
+    if (isTeacher && scopeReady && user?.id) {
+      list = list.filter((l) => {
+        if (l.actorId === user.id) return true;
+        if (l.courseId && teacherCourseIds.has(l.courseId)) return true;
+        if (l.sectionId && teacherSectionIds.has(l.sectionId)) return true;
+        if (l.resourceType === 'course' && teacherCourseIds.has(l.resourceId)) return true;
+        if (l.resourceType === 'section' && teacherSectionIds.has(l.resourceId)) return true;
+        return false;
+      });
+    }
     const needle = searchTerm.trim().toLowerCase();
-
-    return logs.filter((l) => {
-      if (actorFilter && l.actorId !== actorFilter) return false;
-      if (resourceFilter && l.resourceType !== resourceFilter) return false;
-      if (actionFilter && l.action !== actionFilter) return false;
-      if (fromTs && l.timestamp < fromTs) return false;
-      if (toTs && l.timestamp > toTs) return false;
-      if (needle) {
-        const hay = `${l.actorName} ${l.resourceName} ${l.resourceType}`.toLowerCase();
-        if (!hay.includes(needle)) return false;
-      }
-      return true;
-    });
-  }, [logs, actorFilter, resourceFilter, actionFilter, fromDate, toDate, searchTerm]);
-
-  const toggleExpanded = (id: string) => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
+    if (needle) {
+      list = list.filter((l) =>
+        `${l.actorName} ${l.resourceName} ${l.resourceType}`.toLowerCase().includes(needle)
+      );
+    }
+    return list;
+  }, [data, isTeacher, scopeReady, user?.id, teacherCourseIds, teacherSectionIds, searchTerm]);
 
   // ── KPI derivations ────────────────────────────────────────────────────────
 
@@ -301,7 +306,7 @@ export default function AuditLogsPage() {
     weekStart.setHours(0, 0, 0, 0);
 
     // Outcome: contenido nuevo publicado (creates de course/module/lesson/section) esta semana
-    const contenidoPublicado = logs.filter(
+    const contenidoPublicado = data.filter(
       (l) =>
         l.timestamp >= weekStart.getTime() &&
         l.action === 'create' &&
@@ -312,15 +317,15 @@ export default function AuditLogsPage() {
     ).length;
 
     // Outcome: eliminaciones irreversibles (histórico) — señal crítica
-    const eliminacionesIrreversibles = logs.filter((l) => l.action === 'delete').length;
+    const eliminacionesIrreversibles = data.filter((l) => l.action === 'delete').length;
 
     // Outcome: profesores que han realizado cambios (no solo registrados)
     const profesoresActivos = new Set(
-      logs.filter((l) => l.actorRole === 'teacher').map((l) => l.actorId)
+      data.filter((l) => l.actorRole === 'teacher').map((l) => l.actorId)
     ).size;
 
     // Outcome: actores distintos con actividad
-    const actoresActivos = new Set(logs.map((l) => l.actorId)).size;
+    const actoresActivos = new Set(data.map((l) => l.actorId)).size;
 
     return {
       contenidoPublicado,
@@ -328,7 +333,7 @@ export default function AuditLogsPage() {
       profesoresActivos,
       actoresActivos,
     };
-  }, [logs]);
+  }, [data]);
 
   // ── Filter active check ────────────────────────────────────────────────────
 
@@ -421,26 +426,110 @@ export default function AuditLogsPage() {
         />
       </div>
 
-      {/* Filter card */}
-      <Card>
-        <CardHeader className="flex-row items-center justify-between pb-4">
-          <CardTitle className="flex items-center gap-2 text-base font-semibold text-gray-900">
-            <History className="h-4 w-4 text-red-600" />
-            Filtros
-            {hasActiveFilters && (
-              <span className="ml-1 inline-flex items-center justify-center w-5 h-5 rounded-full bg-red-600 text-white text-xs font-bold">
-                !
-              </span>
+      {/* Toolbar */}
+      <div className="bg-white border border-gray-200 rounded-xl px-3 py-2.5">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Search */}
+          <div className="relative flex-1 min-w-[200px] max-w-sm">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
+            <label htmlFor="audit-search" className="sr-only">Buscar</label>
+            <input
+              id="audit-search"
+              type="text"
+              placeholder="Buscar persona o cosa..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-8 pr-7 py-1.5 text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
+            />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+                aria-label="Limpiar búsqueda"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
             )}
-          </CardTitle>
-          <div className="flex items-center gap-3">
+          </div>
+
+          {/* Persona */}
+          <label htmlFor="audit-actor" className="sr-only">Persona</label>
+          <select
+            id="audit-actor"
+            value={actorFilter}
+            onChange={(e) => setActorFilter(e.target.value)}
+            className="px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs text-gray-700 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
+          >
+            <option value="">Todas las personas</option>
+            {users
+              .filter((u) => u.role === 'admin' || u.role === 'teacher')
+              .map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
+                </option>
+              ))}
+          </select>
+
+          {/* Tipo */}
+          <label htmlFor="audit-resource" className="sr-only">Tipo</label>
+          <select
+            id="audit-resource"
+            value={resourceFilter}
+            onChange={(e) => setResourceFilter(e.target.value)}
+            className="px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs text-gray-700 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
+          >
+            <option value="">Todos los tipos</option>
+            {Object.entries(RESOURCE_LABELS).map(([k, v]) => (
+              <option key={k} value={k}>
+                {v}
+              </option>
+            ))}
+          </select>
+
+          {/* Acción */}
+          <label htmlFor="audit-action" className="sr-only">Qué hizo</label>
+          <select
+            id="audit-action"
+            value={actionFilter}
+            onChange={(e) => setActionFilter(e.target.value)}
+            className="px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs text-gray-700 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
+          >
+            <option value="">Cualquier acción</option>
+            {Object.entries(ACTION_LABELS).map(([k, v]) => (
+              <option key={k} value={k}>
+                {v}
+              </option>
+            ))}
+          </select>
+
+          {/* Fechas */}
+          <label htmlFor="audit-from" className="sr-only">Desde</label>
+          <input
+            id="audit-from"
+            type="date"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
+            className="px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs text-gray-700 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
+            aria-label="Desde"
+          />
+          <label htmlFor="audit-to" className="sr-only">Hasta</label>
+          <input
+            id="audit-to"
+            type="date"
+            value={toDate}
+            onChange={(e) => setToDate(e.target.value)}
+            className="px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs text-gray-700 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
+            aria-label="Hasta"
+          />
+
+          {/* Right actions */}
+          <div className="ml-auto flex items-center gap-2">
             {hasActiveFilters && (
               <button
                 onClick={clearFilters}
-                className="flex items-center gap-1 text-xs font-medium text-red-600 hover:text-red-800 transition-colors"
+                className="text-xs font-medium text-red-600 hover:text-red-800 transition-colors"
               >
-                <X className="h-3.5 w-3.5" />
-                Limpiar todo
+                Limpiar
               </button>
             )}
             <Button
@@ -448,129 +537,14 @@ export default function AuditLogsPage() {
               variant="outline"
               size="sm"
               disabled={filteredLogs.length === 0}
-              className="text-xs"
+              className="text-xs border-gray-200 text-gray-700 hover:border-red-300 hover:text-red-700"
             >
               <Download className="h-3.5 w-3.5 mr-1.5" />
-              Exportar CSV
+              <span className="hidden sm:inline">Exportar</span>
             </Button>
           </div>
-        </CardHeader>
-
-        <CardContent>
-          {/* Search row */}
-          <div className="mb-3 relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
-            <input
-              type="text"
-              placeholder="Buscar recurso o actor..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-colors"
-            />
-          </div>
-
-          {/* Select row */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                Actor
-              </label>
-              <select
-                value={actorFilter}
-                onChange={(e) => setActorFilter(e.target.value)}
-                className={`px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-colors ${
-                  actorFilter
-                    ? 'border-red-400 bg-red-50 text-red-800 font-medium'
-                    : 'border-gray-200 bg-gray-50'
-                }`}
-              >
-                <option value="">Todos los actores</option>
-                {users
-                  .filter((u) => u.role === 'admin' || u.role === 'teacher')
-                  .map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.name} ({u.role})
-                    </option>
-                  ))}
-              </select>
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                Tipo de recurso
-              </label>
-              <select
-                value={resourceFilter}
-                onChange={(e) => setResourceFilter(e.target.value)}
-                className={`px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-colors ${
-                  resourceFilter
-                    ? 'border-red-400 bg-red-50 text-red-800 font-medium'
-                    : 'border-gray-200 bg-gray-50'
-                }`}
-              >
-                <option value="">Todos los tipos</option>
-                {Object.entries(RESOURCE_LABELS).map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                Acción
-              </label>
-              <select
-                value={actionFilter}
-                onChange={(e) => setActionFilter(e.target.value)}
-                className={`px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-colors ${
-                  actionFilter
-                    ? 'border-red-400 bg-red-50 text-red-800 font-medium'
-                    : 'border-gray-200 bg-gray-50'
-                }`}
-              >
-                <option value="">Todas las acciones</option>
-                {Object.entries(ACTION_LABELS).map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                Rango de fechas
-              </label>
-              <div className="flex items-center gap-1.5">
-                <span className="text-[11px] font-medium text-gray-400 uppercase px-0.5">De</span>
-                <input
-                  type="date"
-                  value={fromDate}
-                  onChange={(e) => setFromDate(e.target.value)}
-                  className={`flex-1 min-w-0 px-2 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-colors ${
-                    fromDate
-                      ? 'border-red-400 bg-red-50 text-red-800'
-                      : 'border-gray-200 bg-gray-50'
-                  }`}
-                />
-                <span className="text-[11px] font-medium text-gray-400 uppercase px-0.5">a</span>
-                <input
-                  type="date"
-                  value={toDate}
-                  onChange={(e) => setToDate(e.target.value)}
-                  className={`flex-1 min-w-0 px-2 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-colors ${
-                    toDate
-                      ? 'border-red-400 bg-red-50 text-red-800'
-                      : 'border-gray-200 bg-gray-50'
-                  }`}
-                />
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Results card */}
       <Card>
@@ -596,110 +570,95 @@ export default function AuditLogsPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-100 text-left">
-                      {/* expand toggle col */}
-                      <th className="pb-3 pr-2 w-6" />
                       <th className="pb-3 pr-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                        Actor
+                        Quién
                       </th>
                       <th className="pb-3 pr-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                        Acción
+                        Qué hizo
                       </th>
                       <th className="pb-3 pr-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                        Recurso
+                        Sobre qué
                       </th>
-                      <th className="pb-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">
-                        Fecha
+                      <th className="pb-3 pr-4 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">
+                        Cuándo
+                      </th>
+                      <th className="pb-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right w-24">
+                        Detalles
                       </th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredLogs.map((l) => {
-                      const isOpen = expanded.has(l.id);
-                      const hasChanges = l.changes && Object.keys(l.changes).length > 0;
                       const ActionIcon = ACTION_ICONS[l.action];
-                      const ResourceIcon = RESOURCE_ICONS[l.resourceType];
+                      const ResourceIcon = getResourceIcon(l.resourceType, l.metadata);
+                      const resourceLabel = getResourceShortLabel(l.resourceType, l.metadata);
 
                       return (
-                        <Fragment key={l.id}>
-                          <tr
-                            className={`border-b border-gray-50 transition-colors group ${
-                              hasChanges ? 'cursor-pointer hover:bg-red-50/40' : ''
-                            }`}
-                            onClick={() => hasChanges && toggleExpanded(l.id)}
-                          >
-                            {/* Expand chevron — fixed-width slot avoids row jitter when some rows lack changes */}
-                            <td className="py-3 pr-2 w-6">
-                              <span className="inline-flex items-center justify-center w-4 h-4">
-                                {hasChanges ? (
-                                  isOpen ? (
-                                    <ChevronDown className="h-4 w-4 text-red-400" />
-                                  ) : (
-                                    <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-red-400 transition-colors" />
-                                  )
-                                ) : (
-                                  <span className="w-1 h-1 rounded-full bg-gray-200" aria-hidden="true" />
-                                )}
-                              </span>
-                            </td>
-
-                            {/* Actor */}
-                            <td className="py-3 pr-4">
-                              <div className="flex items-center gap-2.5">
-                                <AvatarBadge name={l.actorName} role={l.actorRole} />
-                                <div>
-                                  <p className="font-medium text-gray-900 text-sm leading-tight">
-                                    {l.actorName}
-                                  </p>
-                                  <RoleBadge role={l.actorRole} />
-                                </div>
+                        <tr
+                          key={l.id}
+                          className="border-b border-gray-50 hover:bg-red-50/40 transition-colors cursor-pointer group"
+                          onClick={() => setSelectedLog(l)}
+                        >
+                          {/* Actor */}
+                          <td className="py-3 pr-4">
+                            <div className="flex items-center gap-2.5">
+                              <AvatarBadge name={l.actorName} role={l.actorRole} />
+                              <div>
+                                <p className="font-medium text-gray-900 text-sm leading-tight">
+                                  {l.actorName}
+                                </p>
+                                <RoleBadge role={l.actorRole} />
                               </div>
-                            </td>
+                            </div>
+                          </td>
 
-                            {/* Action badge */}
-                            <td className="py-3 pr-4">
-                              <span
-                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-semibold ${ACTION_COLORS[l.action]}`}
-                              >
-                                <ActionIcon className="h-3 w-3" />
-                                {ACTION_LABELS[l.action]}
+                          {/* Action badge */}
+                          <td className="py-3 pr-4">
+                            <span
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-semibold ${ACTION_COLORS[l.action]}`}
+                            >
+                              <ActionIcon className="h-3 w-3" />
+                              {ACTION_LABELS[l.action]}
+                            </span>
+                          </td>
+
+                          {/* Resource */}
+                          <td className="py-3 pr-4">
+                            <div className="flex items-center gap-2">
+                              <span className="inline-flex items-center justify-center w-6 h-6 rounded bg-gray-100 shrink-0">
+                                <ResourceIcon className="h-3.5 w-3.5 text-red-500" />
                               </span>
-                            </td>
-
-                            {/* Resource */}
-                            <td className="py-3 pr-4">
-                              <div className="flex items-center gap-2">
-                                <span className="inline-flex items-center justify-center w-6 h-6 rounded bg-gray-100 shrink-0">
-                                  <ResourceIcon className="h-3.5 w-3.5 text-red-500" />
-                                </span>
-                                <div>
-                                  <p className="text-sm text-gray-900 font-medium max-w-[220px] truncate">
-                                    {l.resourceName}
-                                  </p>
-                                  <p className="text-xs text-gray-500">
-                                    {RESOURCE_LABELS[l.resourceType]}
-                                  </p>
-                                </div>
+                              <div>
+                                <p className="text-sm text-gray-900 font-medium max-w-[220px] truncate">
+                                  {l.resourceName}
+                                </p>
+                                <p className="text-xs text-gray-500">{resourceLabel}</p>
                               </div>
-                            </td>
+                            </div>
+                          </td>
 
-                            {/* Date */}
-                            <td className="py-3 text-right">
-                              <span className="text-xs text-gray-500 whitespace-nowrap">
-                                {fmtDate(l.timestamp)}
-                              </span>
-                            </td>
-                          </tr>
+                          {/* Date */}
+                          <td className="py-3 pr-4 text-right">
+                            <span className="text-xs text-gray-500 whitespace-nowrap">
+                              {fmtDate(l.timestamp)}
+                            </span>
+                          </td>
 
-                          {/* Expanded diff */}
-                          {isOpen && hasChanges && (
-                            <tr className="border-b border-gray-50 bg-transparent">
-                              <td />
-                              <td colSpan={4} className="pb-4 pr-4">
-                                <DiffPanel changes={l.changes!} />
-                              </td>
-                            </tr>
-                          )}
-                        </Fragment>
+                          {/* View details button */}
+                          <td className="py-3 text-right">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedLog(l);
+                              }}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors"
+                            >
+                              <Eye className="h-3 w-3" />
+                              Ver
+                            </button>
+                          </td>
+                        </tr>
                       );
                     })}
                   </tbody>
@@ -709,18 +668,16 @@ export default function AuditLogsPage() {
               {/* Mobile card list */}
               <div className="md:hidden space-y-2">
                 {filteredLogs.map((l) => {
-                  const isOpen = expanded.has(l.id);
-                  const hasChanges = l.changes && Object.keys(l.changes).length > 0;
                   const ActionIcon = ACTION_ICONS[l.action];
-                  const ResourceIcon = RESOURCE_ICONS[l.resourceType];
+                  const ResourceIcon = getResourceIcon(l.resourceType, l.metadata);
+                  const resourceLabel = getResourceShortLabel(l.resourceType, l.metadata);
 
                   return (
-                    <div
+                    <button
                       key={l.id}
-                      className={`rounded-xl border border-gray-100 bg-gray-50/50 overflow-hidden ${
-                        hasChanges ? 'cursor-pointer' : ''
-                      }`}
-                      onClick={() => hasChanges && toggleExpanded(l.id)}
+                      type="button"
+                      onClick={() => setSelectedLog(l)}
+                      className="w-full text-left rounded-xl border border-gray-100 bg-gray-50/50 hover:border-red-200 hover:shadow-sm transition-all overflow-hidden"
                     >
                       <div className="flex items-start gap-3 p-3">
                         <AvatarBadge name={l.actorName} role={l.actorRole} />
@@ -742,35 +699,35 @@ export default function AuditLogsPage() {
                             </span>
                             <span className="inline-flex items-center gap-1 text-xs text-gray-500">
                               <ResourceIcon className="h-3 w-3 text-red-500" />
-                              {RESOURCE_LABELS[l.resourceType]}
+                              {resourceLabel}
                             </span>
                           </div>
                           <p className="text-xs text-gray-600 truncate">{l.resourceName}</p>
                         </div>
-                        {hasChanges && (
-                          <div className="shrink-0 mt-1">
-                            {isOpen ? (
-                              <ChevronDown className="h-4 w-4 text-red-400" />
-                            ) : (
-                              <ChevronRight className="h-4 w-4 text-gray-400" />
-                            )}
-                          </div>
-                        )}
+                        <Eye className="h-4 w-4 text-red-400 shrink-0 mt-1" />
                       </div>
-
-                      {isOpen && hasChanges && (
-                        <div className="px-3 pb-3">
-                          <DiffPanel changes={l.changes!} />
-                        </div>
-                      )}
-                    </div>
+                    </button>
                   );
                 })}
               </div>
             </>
           )}
+
+          {/* Pagination */}
+          <Pagination
+            page={page}
+            hasNext={hasNext}
+            hasPrev={hasPrev}
+            loading={loading}
+            onNext={nextPage}
+            onPrev={prevPage}
+            itemCount={filteredLogs.length}
+          />
         </CardContent>
       </Card>
+
+      {/* Details popup */}
+      <AuditDetailsModal log={selectedLog} onClose={() => setSelectedLog(null)} />
     </div>
   );
 }

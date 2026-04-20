@@ -49,9 +49,10 @@ export type StudentActivityType =
   | 'submission_deleted'
   | 'lesson_completed'
   | 'course_completed'
-  | 'evaluation_submitted';
+  | 'evaluation_submitted'
+  | 'certificate_issued';
 
-export type StudentResourceType = 'lesson' | 'course' | 'evaluation' | 'submission';
+export type StudentResourceType = 'lesson' | 'course' | 'evaluation' | 'submission' | 'certificate';
 
 export interface DBStudentActivityLog {
   id: string;
@@ -108,6 +109,7 @@ export interface StudentActivityFilters {
   activityType?: StudentActivityType;
   sectionIds?: string[];
   courseId?: string;
+  courseIds?: string[];
   from?: number;
   to?: number;
 }
@@ -222,12 +224,24 @@ export async function listStudentActivity(
       filters.sectionIds && filters.sectionIds.length > 0
         ? new Set(filters.sectionIds)
         : null;
+    const courseSet =
+      filters.courseIds && filters.courseIds.length > 0
+        ? new Set(filters.courseIds)
+        : null;
+
+    // When both scopes provided, match EITHER sectionId OR courseId (union).
+    const scopeMatch = (l: DBStudentActivityLog): boolean => {
+      if (!sectionSet && !courseSet) return true;
+      const inSection = sectionSet && l.sectionId ? sectionSet.has(l.sectionId) : false;
+      const inCourse = courseSet && l.courseId ? courseSet.has(l.courseId) : false;
+      return inSection || inCourse;
+    };
 
     return all
       .filter((l) => (filters.studentId ? l.studentId === filters.studentId : true))
       .filter((l) => (filters.activityType ? l.activityType === filters.activityType : true))
       .filter((l) => (filters.courseId ? l.courseId === filters.courseId : true))
-      .filter((l) => (sectionSet ? (l.sectionId ? sectionSet.has(l.sectionId) : false) : true))
+      .filter(scopeMatch)
       .filter((l) => (filters.from ? l.timestamp >= filters.from : true))
       .filter((l) => (filters.to ? l.timestamp <= filters.to : true))
       .sort((a, b) => b.timestamp - a.timestamp);
