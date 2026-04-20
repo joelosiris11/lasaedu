@@ -47,5 +47,19 @@ export default defineConfig({
       usePolling: true,
       interval: 1000,
     },
+    // Proxy file-server requests so the browser never needs to cross origins.
+    // Works both in Docker (VITE_FILE_SERVER_INTERNAL=http://fileserver:3010)
+    // and locally (defaults to http://localhost:3010).
+    proxy: {
+      '/upload': {
+        target: process.env.VITE_FILE_SERVER_INTERNAL || 'http://fileserver:3010',
+        changeOrigin: true,
+        timeout: 10 * 60 * 1000,
+      },
+      '/files': {
+        target: process.env.VITE_FILE_SERVER_INTERNAL || 'http://fileserver:3010',
+        changeOrigin: true,
+      },
+    },
   },
 })

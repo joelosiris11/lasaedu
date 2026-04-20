@@ -15,7 +15,10 @@ export interface UploadResult {
   metadata?: any;
 }
 
-const FILE_SERVER_URL = import.meta.env.VITE_FILE_SERVER_URL || 'http://localhost:3010';
+// Default is empty string → requests are sent relative to the current origin
+// (Vite dev server), which proxies /upload and /files to the file-server.
+// To bypass the proxy, set VITE_FILE_SERVER_URL to an absolute URL.
+const FILE_SERVER_URL = import.meta.env.VITE_FILE_SERVER_URL ?? '';
 
 class FileUploadService {
   private async getAuthToken(): Promise<string> {

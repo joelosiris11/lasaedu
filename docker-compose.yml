@@ -15,7 +15,10 @@ services:
     env_file:
       - .env
     environment:
-      - VITE_FILE_SERVER_URL=http://localhost:3010
+      # Empty VITE_FILE_SERVER_URL → client uses relative paths that Vite proxies.
+      - VITE_FILE_SERVER_URL=
+      # Internal URL used by the Vite proxy to reach the file server.
+      - VITE_FILE_SERVER_INTERNAL=http://fileserver:3010
 
   # ── File Server ────────────────────────────────
   fileserver:
@@ -27,10 +30,13 @@ services:
       - "3010:3010"
     volumes:
       - ./server/uploads:/uploads
+      # Mount server code so changes don't require a rebuild (dev only).
+      - ./server/index.js:/app/index.js:ro
     environment:
       - PORT=3010
       - UPLOAD_DIR=/uploads
-      - BASE_URL=http://localhost:3010
+      # BASE_URL left empty so the server returns relative URLs — Vite proxies them.
+      - BASE_URL=
       - FIREBASE_PROJECT_ID=demo-project
       - ALLOWED_ORIGINS=http://localhost:5173
     restart: unless-stopped
