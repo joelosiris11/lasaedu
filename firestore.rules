@@ -2,9 +2,186 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Development: allow all reads and writes for authenticated users
+
+    // ---- helpers ----
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function userRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+    function hasRole(role) {
+      return isSignedIn() && userRole() == role;
+    }
+    function isAdmin()   { return hasRole('admin') || hasRole('supervisor'); }
+    function isTeacher() { return hasRole('teacher'); }
+    function isStudent() { return hasRole('student'); }
+    function isSupport() { return hasRole('support'); }
+    function isStaff()   { return isAdmin() || isTeacher(); }
+
+    // ---- users ----
+    match /users/{uid} {
+      allow read:   if isSignedIn();
+      allow create: if isAdmin();
+      allow update: if isAdmin() || request.auth.uid == uid;
+      allow delete: if isAdmin();
+    }
+
+    // ---- courses ----
+    match /courses/{courseId} {
+      allow read:   if isSignedIn();
+      allow create: if isStaff();
+      allow update, delete:
+        if isAdmin() ||
+           (isTeacher() && resource.data.instructorId == request.auth.uid);
+    }
+
+    // ---- modules / lessons / evaluations / sectionLessonOverrides ----
+    match /modules/{id} {
+      allow read:  if isSignedIn();
+      allow write: if isStaff();
+    }
+    match /lessons/{id} {
+      allow read:  if isSignedIn();
+      allow write: if isStaff();
+    }
+    match /evaluations/{id} {
+      allow read:  if isSignedIn();
+      allow write: if isStaff();
+    }
+    match /sections/{id} {
+      allow read:   if isSignedIn();
+      allow create: if isStaff();
+      allow update, delete:
+        if isAdmin() ||
+           (isTeacher() && resource.data.instructorId == request.auth.uid);
+    }
+    match /sectionLessonOverrides/{id} {
+      allow read:  if isSignedIn();
+      allow write: if isStaff();
+    }
+    match /deadlineExtensions/{id} {
+      allow read:  if isSignedIn();
+      allow write: if isStaff();
+    }
+
+    // ---- enrollments ----
+    match /enrollments/{id} {
+      allow read:   if isSignedIn();
+      allow create: if isStaff() ||
+                       (isStudent() && request.resource.data.userId == request.auth.uid);
+      allow update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    // ---- evaluationAttempts ----
+    match /evaluationAttempts/{id} {
+      allow read:   if isStaff() ||
+                       (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isStaff() ||
+                       (isStudent() && request.resource.data.userId == request.auth.uid);
+      allow update: if isStaff() ||
+                       (isStudent() && resource.data.userId == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+
+    // ---- taskSubmissions ----
+    match /taskSubmissions/{id} {
+      allow read:   if isStaff() ||
+                       (isSignedIn() && resource.data.studentId == request.auth.uid);
+      allow create: if isStaff() ||
+                       (isStudent() && request.resource.data.studentId == request.auth.uid);
+      allow update: if isStaff() ||
+                       (isStudent()
+                         && resource.data.studentId == request.auth.uid
+                         && resource.data.status != 'graded');
+      allow delete: if isAdmin();
+    }
+
+    // ---- audit (append-only) ----
+    match /auditLogs/{id} {
+      allow read:   if isStaff();
+      allow create: if isSignedIn();
+      allow update, delete: if false;
+    }
+    match /studentActivityLogs/{id} {
+      allow read:   if isStaff();
+      allow create: if isSignedIn();
+      allow update, delete: if false;
+    }
+
+    // ---- grades / certificates ----
+    match /grades/{id} {
+      allow read:  if isSignedIn();
+      allow write: if isStaff();
+    }
+    match /certificates/{id} {
+      allow read:  if isSignedIn();
+      allow write: if isStaff();
+    }
+
+    // ---- forums ----
+    match /forumPosts/{id} {
+      allow read:   if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete:
+        if isAdmin() || isTeacher() ||
+           (isSignedIn() && resource.data.authorId == request.auth.uid);
+    }
+    match /forumReplies/{id} {
+      allow read:   if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete:
+        if isAdmin() || isTeacher() ||
+           (isSignedIn() && resource.data.authorId == request.auth.uid);
+    }
+
+    // ---- notifications ----
+    match /notifications/{id} {
+      allow read, update:
+        if isAdmin() ||
+           (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
+    // ---- messaging ----
+    match /conversations/{id} {
+      allow read, write: if isSignedIn();
+    }
+    match /messages/{id} {
+      allow read, write: if isSignedIn();
+    }
+
+    // ---- support ----
+    match /supportTickets/{id} {
+      allow read:   if isAdmin() || isSupport() ||
+                       (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn() &&
+                       request.resource.data.userId == request.auth.uid;
+      allow update: if isAdmin() || isSupport() ||
+                       (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+
+    // ---- userSettings ----
+    match /userSettings/{uid} {
+      allow read, write:
+        if isAdmin() ||
+           (isSignedIn() && request.auth.uid == uid);
+    }
+
+    // ---- activities ----
+    match /activities/{id} {
+      allow read:   if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ---- default deny ----
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }
