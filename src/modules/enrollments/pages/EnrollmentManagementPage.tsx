@@ -5,6 +5,7 @@ import {
   sectionService,
   certificateService,
 } from '@shared/services/dataService';
+import { logStudent } from '@shared/services/auditLogService';
 import type {
   DBUser,
   DBCourse,
@@ -12,6 +13,7 @@ import type {
   DBSection,
   DBCertificate,
 } from '@shared/services/dataService';
+import { SectionPicker } from '@shared/components/ui/SectionPicker';
 import {
   Users,
   UserPlus,
@@ -282,6 +284,16 @@ function StudentDetailModal({
         updatedAt: now,
       });
       onCertificateIssued(cert, enrollment.id);
+      logStudent({
+        activityType: 'certificate_issued',
+        resourceType: 'certificate',
+        resourceId: cert.id,
+        resourceName: enrollment.course.title,
+        courseId: enrollment.course.id,
+        sectionId: enrollment.sectionId,
+        studentId: enrollment.userId,
+        studentName: user.name,
+      });
     } catch {
       alert('Error al emitir el certificado. Intenta de nuevo.');
     } finally {
@@ -391,20 +403,14 @@ function StudentDetailModal({
             <div className="border border-red-100 bg-red-50 rounded-lg p-3 flex items-end gap-2">
               <div className="flex-1 min-w-0">
                 <label className="block text-xs font-medium text-gray-700 mb-1">
-                  Sección disponible
+                  Seccion disponible
                 </label>
-                <select
+                <SectionPicker
+                  sections={availableSections}
                   value={addSectionId}
-                  onChange={e => setAddSectionId(e.target.value)}
-                  className="w-full px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
-                >
-                  <option value="">Selecciona una sección…</option>
-                  {availableSections.map(s => (
-                    <option key={s.id} value={s.id}>
-                      {s.courseTitle} — {s.title}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setAddSectionId}
+                  placeholder="Selecciona una seccion..."
+                />
               </div>
               <Button
                 size="sm"
@@ -775,20 +781,15 @@ function BulkEnrollModal({
     >
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1.5" htmlFor="bulk-section">
-            Sección destino
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            Seccion destino
           </label>
-          <select
-            id="bulk-section"
+          <SectionPicker
+            sections={activeSections}
             value={sectionId}
-            onChange={e => setSectionId(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
-          >
-            <option value="">Selecciona una sección…</option>
-            {activeSections.map(s => (
-              <option key={s.id} value={s.id}>{s.courseTitle} — {s.title}</option>
-            ))}
-          </select>
+            onChange={setSectionId}
+            placeholder="Selecciona una seccion..."
+          />
         </div>
 
         {sectionId && skipCount > 0 && (
@@ -824,7 +825,7 @@ export default function EnrollmentManagementPage() {
   const [allCertificates, setAllCertificates] = useState<DBCertificate[]>([]);
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [courseFilter, setCourseFilter] = useState<string>('all');
+  const [sectionFilter, setSectionFilter] = useState<string>('all');
   const [studentFilter, setStudentFilter] = useState<StudentFilter>('all');
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -906,7 +907,7 @@ export default function EnrollmentManagementPage() {
     const q = searchTerm.toLowerCase();
     return studentsWithStats.filter(s => {
       const matchesSearch = !q || s.user.name.toLowerCase().includes(q) || s.user.email.toLowerCase().includes(q);
-      const matchesCourse = courseFilter === 'all' || s.enrollments.some(e => e.courseId === courseFilter);
+      const matchesSection = sectionFilter === 'all' || s.enrollments.some(e => e.sectionId === sectionFilter);
       const matchesFilter = (() => {
         switch (studentFilter) {
           case 'active': return s.activeCount > 0;
@@ -916,9 +917,9 @@ export default function EnrollmentManagementPage() {
           default: return true;
         }
       })();
-      return matchesSearch && matchesCourse && matchesFilter;
+      return matchesSearch && matchesSection && matchesFilter;
     });
-  }, [studentsWithStats, searchTerm, courseFilter, studentFilter]);
+  }, [studentsWithStats, searchTerm, sectionFilter, studentFilter]);
 
   // ─── Selection ─────────────────────────────────────────────────────────────
 
@@ -1002,12 +1003,6 @@ export default function EnrollmentManagementPage() {
     }
   };
 
-  // Courses for course filter dropdown
-  const coursesWithEnrollments = useMemo(() => {
-    const ids = new Set(allEnrollments.map(e => e.courseId));
-    return allCourses.filter(c => ids.has(c.id));
-  }, [allCourses, allEnrollments]);
-
   const selectedStudentObjects = useMemo(
     () => allUsers.filter(u => selectedIds.has(u.id)),
     [allUsers, selectedIds]
@@ -1053,18 +1048,17 @@ export default function EnrollmentManagementPage() {
             )}
           </div>
 
-          {/* Course filter */}
-          {coursesWithEnrollments.length > 1 && (
-            <select
-              value={courseFilter}
-              onChange={e => setCourseFilter(e.target.value)}
-              className="px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs text-gray-700 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
-            >
-              <option value="all">Todos los cursos</option>
-              {coursesWithEnrollments.map(c => (
-                <option key={c.id} value={c.id}>{c.title}</option>
-              ))}
-            </select>
+          {/* Section filter */}
+          {allSections.length > 0 && (
+            <SectionPicker
+              sections={allSections}
+              value={sectionFilter}
+              onChange={setSectionFilter}
+              includeAllOption
+              allOptionLabel="Todas las secciones"
+              placeholder="Filtrar por seccion..."
+              className="min-w-[220px] max-w-xs"
+            />
           )}
 
           {/* Filter chips */}

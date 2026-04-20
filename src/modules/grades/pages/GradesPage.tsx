@@ -9,6 +9,8 @@ import {
   taskSubmissionService,
 } from '@shared/services/dataService';
 import type { DBSection, DBUser } from '@shared/services/dataService';
+import { useSections } from '@shared/hooks/useSections';
+import { SectionPicker } from '@shared/components/ui/SectionPicker';
 import {
   BookOpen,
   Search,
@@ -784,7 +786,6 @@ export default function GradesPage() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState<string>('');
   const [selectedSectionId, setSelectedSectionId] = useState<string>('all');
-  const [sections, setSections] = useState<DBSection[]>([]);
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
   const [studentGrades, setStudentGrades] = useState<StudentGrade[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -799,18 +800,42 @@ export default function GradesPage() {
   const isSupervisor = user?.role === 'supervisor';
   const isStudent = user?.role === 'student';
 
+  // SectionPicker: load sections based on role
+  const { sections: allSections, loading: sectionsLoading } = useSections(
+    isTeacher ? { instructorId: user?.id } : {}
+  );
+
+  // For students, filter sections to only enrolled ones
+  const [studentSectionIds, setStudentSectionIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (isStudent && user?.id) {
+      legacyEnrollmentService.getByUser(user.id).then(enrollments => {
+        setStudentSectionIds(new Set(enrollments.map(e => e.sectionId).filter(Boolean) as string[]));
+      });
+    }
+  }, [isStudent, user?.id]);
+
+  const sections = isStudent
+    ? allSections.filter(s => studentSectionIds.has(s.id))
+    : allSections;
+
+  // When a section is selected, derive courseId
+  const handleSectionChange = (sectionId: string) => {
+    setSelectedSectionId(sectionId);
+    if (sectionId === 'all') {
+      // Keep current courseId or clear
+      return;
+    }
+    const section = sections.find(s => s.id === sectionId);
+    if (section) {
+      setSelectedCourseId(section.courseId);
+    }
+  };
+
+  // Load courses for student tab switcher and for grade data
   useEffect(() => {
     loadCourses();
   }, []);
-
-  useEffect(() => {
-    if (selectedCourseId) {
-      sectionService.getByCourse(selectedCourseId).then(s => {
-        setSections(s);
-        setSelectedSectionId('all');
-      });
-    }
-  }, [selectedCourseId]);
 
   useEffect(() => {
     if (selectedCourseId) {
@@ -906,13 +931,13 @@ export default function GradesPage() {
       if (isStudent) {
         students = [{ id: user?.id || '', name: user?.name || '', email: user?.email }];
       } else {
-        let enrollments = await legacyEnrollmentService.getByCourse(courseId);
+        // Load enrollments scoped to section when possible
+        let enrollments = selectedSectionId !== 'all'
+          ? await sectionService.getEnrollments(selectedSectionId)
+          : await legacyEnrollmentService.getByCourse(courseId);
         const sectionMap = new Map<string, string>(
           sections.map(s => [s.id, s.title])
         );
-        if (selectedSectionId !== 'all') {
-          enrollments = enrollments.filter(e => e.sectionId === selectedSectionId);
-        }
         const uniqueUserIds = Array.from(new Set(enrollments.map(e => e.userId)));
         const usersResolved = await Promise.all(
           uniqueUserIds.map(async (uid) => {
@@ -1237,43 +1262,17 @@ export default function GradesPage() {
               />
             </div>
 
-            {/* Course select */}
-            {courses.length > 1 && (
-              <div className="relative">
-                <select
-                  value={selectedCourseId}
-                  onChange={e => setSelectedCourseId(e.target.value)}
-                  className="appearance-none pl-3 pr-8 py-2 text-sm font-medium bg-white border border-gray-200 rounded-lg text-gray-800 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent cursor-pointer transition-colors hover:border-gray-300"
-                  aria-label="Seleccionar curso"
-                >
-                  {courses.map(course => (
-                    <option key={course.id} value={course.id}>
-                      {course.title}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
-              </div>
-            )}
-
-            {/* Section select */}
-            {sections.length > 1 && (
-              <div className="relative">
-                <select
-                  value={selectedSectionId}
-                  onChange={e => setSelectedSectionId(e.target.value)}
-                  className="appearance-none pl-3 pr-8 py-2 text-sm bg-white border border-gray-200 rounded-lg text-gray-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent cursor-pointer transition-colors hover:border-gray-300"
-                  aria-label="Filtrar por sección"
-                >
-                  <option value="all">Todas las secciones</option>
-                  {sections.map(section => (
-                    <option key={section.id} value={section.id}>
-                      {section.title}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
-              </div>
+            {/* Section picker */}
+            {sections.length > 0 && (
+              <SectionPicker
+                sections={sections}
+                value={selectedSectionId}
+                onChange={handleSectionChange}
+                includeAllOption
+                allOptionLabel="Todas las secciones"
+                placeholder="Filtrar por seccion..."
+                className="min-w-[240px] max-w-sm"
+              />
             )}
 
             {/* Status filter chips */}
