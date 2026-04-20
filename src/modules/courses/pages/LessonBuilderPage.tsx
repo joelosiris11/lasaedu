@@ -6,8 +6,9 @@ import {
   type DBLesson, 
   type DBModule 
 } from '@shared/services/dataService';
-import ContentEditor from '../components/ContentEditor';
 import { RichTextEditor } from '@shared/components/editor';
+import { blocksToHtml, type LegacyContentBlock } from '../utils/blocksToHtml';
+import { fileUploadService } from '@shared/services/fileUploadService';
 import {
   ArrowLeft,
   Save,
@@ -18,9 +19,11 @@ import {
   Headphones,
   FileText,
   HelpCircle,
-  Layers,
-  Type,
-  MessageSquare
+  MessageSquare,
+  Image as ImageIcon,
+  Upload,
+  X as XIcon,
+  Loader2
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@shared/components/ui/Card';
 import { Button } from '@shared/components/ui/Button';
@@ -32,27 +35,24 @@ import VideoLessonEditor, { type VideoLessonContent, defaultVideoContent } from 
 import ResourceLessonEditor, { type ResourceLessonContent, defaultResourceContent } from '../components/ResourceLessonEditor';
 import TareaLessonEditor, { type TareaLessonContent, defaultTareaContent } from '../components/TareaLessonEditor';
 
-interface ContentBlock {
-  id: string;
-  type: 'text' | 'heading' | 'image' | 'video' | 'audio' | 'file' | 'code' | 'quote';
-  content: string;
-  metadata?: any;
-  formatting?: any;
-  order: number;
-}
-
 interface LessonSettings {
   isRequired: boolean;
   timeLimit?: number;
   allowComments: boolean;
   showProgress: boolean;
-  allowDownload: boolean;
   passingScore?: number;
   maxAttempts?: number;
   availableFrom?: string;
   availableUntil?: string;
   dueDate?: string;
   lateSubmissionDeadline?: string;
+  sideImage?: {
+    url: string;
+    position: 'left' | 'right';
+    width?: number; // Percentage the image column takes (20–80). Default 50.
+    fade?: boolean; // Whether to fade the inner edge to white. Default true.
+    focalX?: number; // Horizontal focal point for object-position (0–100). Default 50.
+  };
 }
 
 const LESSON_TYPES = [
@@ -119,14 +119,11 @@ export default function LessonBuilderPage() {
   const [videoContent, setVideoContent] = useState<VideoLessonContent>(defaultVideoContent);
   const [resourceContent, setResourceContent] = useState<ResourceLessonContent>(defaultResourceContent);
   const [tareaContent, setTareaContent] = useState<TareaLessonContent>(defaultTareaContent);
-  const [content, setContent] = useState<ContentBlock[]>([]);
-  const [editorMode, setEditorMode] = useState<'blocks' | 'wysiwyg'>('blocks');
   const [wysiwygContent, setWysiwygContent] = useState('');
   const [settings, setSettings] = useState<LessonSettings>({
     isRequired: true,
     allowComments: true,
-    showProgress: true,
-    allowDownload: false
+    showProgress: true
   });
 
   useEffect(() => {
@@ -179,22 +176,17 @@ export default function LessonBuilderPage() {
               setTareaContent(parsedContent as TareaLessonContent);
             // Check if content is WYSIWYG (has editorMode field) or block-based
             } else if (parsedContent && typeof parsedContent === 'object' && parsedContent.editorMode === 'wysiwyg') {
-              setEditorMode('wysiwyg');
               setWysiwygContent(parsedContent.html || '');
-              setContent([]);
-            } else {
-              setEditorMode('blocks');
-              setContent(Array.isArray(parsedContent) ? parsedContent : []);
+            } else if (Array.isArray(parsedContent)) {
+              // Legacy block-based content → migrate to HTML on the fly
+              setWysiwygContent(blocksToHtml(parsedContent as LegacyContentBlock[]));
+            } else if (typeof parsedContent === 'string') {
+              setWysiwygContent(parsedContent);
             }
           } catch {
-            // If parsing fails, check if it's HTML content
-            if (typeof lessonData.content === 'string' && lessonData.content.includes('<')) {
-              setEditorMode('wysiwyg');
+            // If parsing fails, treat raw string as HTML or plain text
+            if (typeof lessonData.content === 'string') {
               setWysiwygContent(lessonData.content);
-              setContent([]);
-            } else {
-              setEditorMode('blocks');
-              setContent([]);
             }
           }
 
@@ -248,9 +240,7 @@ export default function LessonBuilderPage() {
       if (!tareaContent.instructions.trim()) {
         newErrors.content = 'Las instrucciones de la tarea son obligatorias';
       }
-    } else if (editorMode === 'blocks' && content.length === 0) {
-      newErrors.content = 'La lección debe tener al menos un bloque de contenido';
-    } else if (editorMode === 'wysiwyg' && !wysiwygContent.trim()) {
+    } else if (lessonType === 'texto' && !wysiwygContent.trim()) {
       newErrors.content = 'La lección debe tener contenido';
     }
 
@@ -264,18 +254,18 @@ export default function LessonBuilderPage() {
 
     // Due date required for quiz and tarea
     if ((lessonType === 'quiz' || lessonType === 'tarea') && !settings.dueDate) {
-      newErrors.dueDate = 'La fecha de cierre (Due Date) es obligatoria';
+      newErrors.dueDate = 'La fecha de cierre es obligatoria';
     }
 
-    // Cut-off date required for tarea
+    // Cierre definitivo required for tarea
     if (lessonType === 'tarea' && !settings.lateSubmissionDeadline) {
-      newErrors.lateSubmissionDeadline = 'La fecha de cierre definitivo (Cut-off Date) es obligatoria';
+      newErrors.lateSubmissionDeadline = 'La fecha de cierre definitivo es obligatoria';
     }
 
-    // Cut-off must be after due date
+    // Cierre definitivo must be after fecha de entrega
     if (lessonType === 'tarea' && settings.dueDate && settings.lateSubmissionDeadline) {
       if (new Date(settings.lateSubmissionDeadline) <= new Date(settings.dueDate)) {
-        newErrors.lateSubmissionDeadline = 'El Cut-off Date debe ser posterior al Due Date';
+        newErrors.lateSubmissionDeadline = 'El cierre definitivo debe ser posterior a la fecha de entrega';
       }
     }
 
@@ -300,10 +290,8 @@ export default function LessonBuilderPage() {
         contentToSave = JSON.stringify(resourceContent);
       } else if (lessonType === 'tarea') {
         contentToSave = JSON.stringify(tareaContent);
-      } else if (editorMode === 'wysiwyg') {
-        contentToSave = JSON.stringify({ editorMode: 'wysiwyg', html: wysiwygContent });
       } else {
-        contentToSave = JSON.stringify(content);
+        contentToSave = JSON.stringify({ editorMode: 'wysiwyg', html: wysiwygContent });
       }
 
       const lessonData: Partial<DBLesson> = {
@@ -348,13 +336,6 @@ export default function LessonBuilderPage() {
   const handlePreview = () => {
     if (lessonId) {
       navigate(`/courses/${courseId}/lesson/${lessonId}`);
-    }
-  };
-
-  const handleContentChange = (newContent: ContentBlock[]) => {
-    setContent(newContent);
-    if (errors.content) {
-      setErrors(prev => ({ ...prev, content: '' }));
     }
   };
 
@@ -509,50 +490,14 @@ export default function LessonBuilderPage() {
           {/* Content Editor */}
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>
-                  {lessonType === 'foro' ? 'Configuración del Foro'
-                    : lessonType === 'quiz' ? 'Preguntas del Quiz'
-                    : lessonType === 'video' ? 'Video y Contenido'
-                    : lessonType === 'recurso' ? 'Recurso y Archivos'
-                    : lessonType === 'tarea' ? 'Tarea/Actividad'
-                    : 'Contenido de la Lección'}
-                </CardTitle>
-                {lessonType === 'texto' && (
-                  <div className="flex items-center gap-2 bg-gray-100 rounded-lg p-1">
-                    <button
-                      onClick={() => setEditorMode('blocks')}
-                      className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                        editorMode === 'blocks'
-                          ? 'bg-white text-blue-600 shadow-sm'
-                          : 'text-gray-600 hover:text-gray-900'
-                      }`}
-                    >
-                      <Layers className="w-4 h-4" />
-                      Bloques
-                    </button>
-                    <button
-                      onClick={() => setEditorMode('wysiwyg')}
-                      className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                        editorMode === 'wysiwyg'
-                          ? 'bg-white text-blue-600 shadow-sm'
-                          : 'text-gray-600 hover:text-gray-900'
-                      }`}
-                    >
-                      <Type className="w-4 h-4" />
-                      WYSIWYG
-                    </button>
-                  </div>
-                )}
-              </div>
-              {lessonType === 'texto' && (
-                <p className="text-sm text-gray-600 mt-2">
-                  {editorMode === 'blocks'
-                    ? 'Editor de bloques: añade texto, imágenes, videos y más como bloques independientes'
-                    : 'Editor WYSIWYG: escribe y formatea contenido como en un procesador de texto'
-                  }
-                </p>
-              )}
+              <CardTitle>
+                {lessonType === 'foro' ? 'Configuración del Foro'
+                  : lessonType === 'quiz' ? 'Preguntas del Quiz'
+                  : lessonType === 'video' ? 'Video y Contenido'
+                  : lessonType === 'recurso' ? 'Recurso y Archivos'
+                  : lessonType === 'tarea' ? 'Tarea/Actividad'
+                  : 'Contenido de la Lección'}
+              </CardTitle>
             </CardHeader>
             <CardContent>
               {errors.content && (
@@ -571,23 +516,39 @@ export default function LessonBuilderPage() {
                 <ResourceLessonEditor content={resourceContent} onChange={setResourceContent} courseId={courseId} lessonId={lessonId} />
               ) : lessonType === 'tarea' ? (
                 <TareaLessonEditor content={tareaContent} onChange={setTareaContent} courseId={courseId} lessonId={lessonId} />
-              ) : editorMode === 'blocks' ? (
-                <ContentEditor
-                  initialContent={JSON.stringify(content)}
-                  onSave={setContent}
-                  onContentChange={handleContentChange}
-                  lessonType="text"
-                  courseId={courseId}
-                  lessonId={lessonId}
-                />
               ) : (
-                <div className="min-h-[400px]">
-                  <RichTextEditor
-                    content={wysiwygContent}
-                    onChange={setWysiwygContent}
-                    placeholder="Comienza a escribir el contenido de tu lección..."
-                    className="min-h-[400px]"
+                <div className="space-y-4">
+                  <SideImagePanel
+                    value={settings.sideImage}
+                    onChange={(sideImage) => setSettings(prev => ({ ...prev, sideImage }))}
+                    courseId={courseId}
+                    lessonId={lessonId}
                   />
+                  {(() => {
+                    const si = settings.sideImage;
+                    const editorEl = (
+                      <div className="min-h-[400px]">
+                        <RichTextEditor
+                          content={wysiwygContent}
+                          onChange={setWysiwygContent}
+                          placeholder="Comienza a escribir el contenido de tu lección..."
+                          className="min-h-[400px]"
+                        />
+                      </div>
+                    );
+                    if (!si?.url) return editorEl;
+                    const w = Math.min(80, Math.max(20, si.width || 50));
+                    const cols = si.position === 'left' ? `${w}% ${100 - w}%` : `${100 - w}% ${w}%`;
+                    const imgEl = <SideImagePreview url={si.url} position={si.position} fade={si.fade !== false} focalX={si.focalX ?? 50} />;
+                    return (
+                      <div
+                        className="flex flex-col gap-4 md:grid md:gap-0 md:[grid-template-columns:var(--side-cols)]"
+                        style={{ ['--side-cols' as any]: cols }}
+                      >
+                        {si.position === 'left' ? <>{imgEl}{editorEl}</> : <>{editorEl}{imgEl}</>}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
             </CardContent>
@@ -623,23 +584,6 @@ export default function LessonBuilderPage() {
                 />
               </div>
 
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label className="font-medium">Permitir Descarga</Label>
-                  <p className="text-sm text-gray-600">
-                    Permitir a los estudiantes descargar el contenido
-                  </p>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={settings.allowDownload}
-                  onChange={(e) => setSettings(prev => ({ 
-                    ...prev, 
-                    allowDownload: e.target.checked 
-                  }))}
-                  className="h-4 w-4 text-blue-600 rounded"
-                />
-              </div>
             </div>
 
             {/* Quiz-specific settings */}
@@ -703,7 +647,7 @@ export default function LessonBuilderPage() {
               </div>
             )}
 
-            {/* Due Date - for quiz and tarea */}
+            {/* Fechas - for quiz and tarea */}
             {(lessonType === 'quiz' || lessonType === 'tarea') && (
               <div className="space-y-4">
                 <h3 className="font-medium">
@@ -718,7 +662,7 @@ export default function LessonBuilderPage() {
 
                 <div className={`grid grid-cols-1 ${lessonType === 'tarea' ? 'md:grid-cols-2' : ''} gap-4`}>
                   <div>
-                    <Label htmlFor="dueDate">Due Date (fecha de cierre) *</Label>
+                    <Label htmlFor="dueDate">{lessonType === 'quiz' ? 'Fecha de cierre *' : 'Fecha de entrega *'}</Label>
                     <Input
                       id="dueDate"
                       type="datetime-local"
@@ -741,7 +685,7 @@ export default function LessonBuilderPage() {
 
                   {lessonType === 'tarea' && (
                     <div>
-                      <Label htmlFor="lateSubmissionDeadline">Cut-off Date (cierre definitivo) *</Label>
+                      <Label htmlFor="lateSubmissionDeadline">Cierre definitivo *</Label>
                       <Input
                         id="lateSubmissionDeadline"
                         type="datetime-local"
@@ -765,6 +709,220 @@ export default function LessonBuilderPage() {
             )}
           </CardContent>
         </Card>
+      )}
+    </div>
+  );
+}
+
+// ─── Side image panel (for texto lessons) ──────────────────────────
+
+type SideImageValue = {
+  url: string;
+  position: 'left' | 'right';
+  width?: number;
+  fade?: boolean;
+  focalX?: number;
+};
+
+function SideImagePanel({
+  value,
+  onChange,
+  courseId,
+  lessonId,
+}: {
+  value?: SideImageValue;
+  onChange: (v: SideImageValue | undefined) => void;
+  courseId?: string;
+  lessonId?: string;
+}) {
+  const [uploading, setUploading] = useState(false);
+  const [urlInput, setUrlInput] = useState('');
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const result = await fileUploadService.uploadImage(file, courseId, lessonId);
+      onChange({ url: result.url, position: value?.position || 'right' });
+    } catch (err: any) {
+      console.error('[SideImage] upload failed:', err);
+      const msg = err?.message || 'Error desconocido';
+      setUploadError(`No se pudo subir: ${msg}. Puedes pegar la URL de una imagen como alternativa.`);
+    } finally {
+      setUploading(false);
+      if (e.target) e.target.value = '';
+    }
+  };
+
+  const applyUrl = () => {
+    const url = urlInput.trim();
+    if (!url) return;
+    onChange({ url, position: value?.position || 'right' });
+    setUrlInput('');
+    setUploadError(null);
+  };
+
+  return (
+    <div className="border border-gray-200 rounded-lg p-3 bg-gray-50">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <ImageIcon className="h-4 w-4 text-gray-500" />
+          <span className="text-sm font-medium text-gray-700">Imagen lateral</span>
+          <span className="text-xs text-gray-500">— aparece al lado del texto</span>
+        </div>
+        {value?.url && (
+          <button
+            type="button"
+            onClick={() => onChange(undefined)}
+            className="flex items-center gap-1 text-xs text-red-600 hover:text-red-800"
+          >
+            <XIcon className="h-3.5 w-3.5" />
+            Quitar
+          </button>
+        )}
+      </div>
+
+      {value?.url ? (
+        <div className="space-y-3">
+          <div className="flex items-start gap-3">
+            <img src={value.url} alt="Lateral" className="w-24 h-24 object-cover rounded border border-gray-200 flex-shrink-0" />
+            <div className="flex-1 space-y-2">
+              <div>
+                <Label className="text-xs text-gray-600">Posición</Label>
+                <div className="flex gap-2 mt-1">
+                  {(['left', 'right'] as const).map(pos => (
+                    <button
+                      key={pos}
+                      type="button"
+                      onClick={() => onChange({ ...value, position: pos })}
+                      className={`flex-1 py-1.5 px-3 text-xs rounded border transition-colors ${
+                        value.position === pos
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
+                      }`}
+                    >
+                      {pos === 'left' ? '◧ Izquierda' : 'Derecha ◨'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs text-gray-600">Ancho de la imagen</Label>
+                  <span className="text-xs font-mono text-gray-500">{value.width ?? 50}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={20}
+                  max={80}
+                  step={5}
+                  value={value.width ?? 50}
+                  onChange={(e) => onChange({ ...value, width: Number(e.target.value) })}
+                  className="w-full h-2 mt-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                />
+                <div className="flex justify-between text-[10px] text-gray-400 mt-0.5 font-mono">
+                  <span>20%</span><span>50%</span><span>80%</span>
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs text-gray-600">Centro horizontal de la foto</Label>
+                  <span className="text-xs font-mono text-gray-500">{value.focalX ?? 50}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={5}
+                  value={value.focalX ?? 50}
+                  onChange={(e) => onChange({ ...value, focalX: Number(e.target.value) })}
+                  className="w-full h-2 mt-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                />
+                <div className="flex justify-between text-[10px] text-gray-400 mt-0.5">
+                  <span>← Izq</span><span>Centro</span><span>Der →</span>
+                </div>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={value.fade !== false}
+                  onChange={(e) => onChange({ ...value, fade: e.target.checked })}
+                  className="h-3.5 w-3.5 text-blue-600 rounded"
+                />
+                <span className="text-xs text-gray-600">Difuminar borde hacia el texto</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <label className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm bg-white border border-dashed border-gray-300 rounded cursor-pointer hover:bg-gray-100 text-gray-600">
+              {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+              <span>{uploading ? 'Subiendo...' : 'Subir imagen'}</span>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleUpload}
+                disabled={uploading}
+                className="hidden"
+              />
+            </label>
+          </div>
+          <div className="flex items-center gap-2">
+            <Input
+              type="url"
+              value={urlInput}
+              onChange={(e) => setUrlInput(e.target.value)}
+              placeholder="O pega la URL de una imagen..."
+              className="flex-1 text-sm"
+            />
+            <Button type="button" size="sm" onClick={applyUrl} disabled={!urlInput.trim()}>
+              Usar URL
+            </Button>
+          </div>
+          {uploadError && (
+            <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded p-2">
+              {uploadError}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SideImagePreview({
+  url,
+  position,
+  fade,
+  focalX = 50,
+}: {
+  url: string;
+  position: 'left' | 'right';
+  fade: boolean;
+  focalX?: number;
+}) {
+  // Fade direction: the inner edge (toward the text) fades to white.
+  const gradientDir = position === 'left' ? 'to right' : 'to left';
+  return (
+    <div className="relative min-h-[400px] overflow-hidden bg-gray-100">
+      <img
+        src={url}
+        alt=""
+        className="absolute inset-0 w-full h-full object-cover"
+        style={{ objectPosition: `${focalX}% 50%` }}
+      />
+      {fade && (
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background: `linear-gradient(${gradientDir}, transparent 55%, rgba(255,255,255,0.75) 85%, #ffffff 100%)`,
+          }}
+        />
       )}
     </div>
   );

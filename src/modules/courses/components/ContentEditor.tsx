@@ -23,6 +23,7 @@ import { Button } from '@shared/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@shared/components/ui/Card';
 import { Input } from '@shared/components/ui/Input';
 import { Label } from '@shared/components/ui/Label';
+import { FormatHelpButton } from '@shared/components/ui/FormatHelpButton';
 import { fileUploadService } from '@shared/services/fileUploadService';
 import VideoPlayer from '@shared/components/media/VideoPlayer';
 import { SortableList, arrayMove } from '@shared/components/dnd';
@@ -51,6 +52,8 @@ interface ContentBlock {
     size?: number; // For files
     language?: string; // For code blocks
     source?: 'youtube' | 'vimeo' | 'url' | 'upload'; // For video sources
+    layout?: 'none' | 'left' | 'right' | 'top' | 'bottom'; // For image+text composite layout
+    body?: string; // Accompanying text when layout is set
   };
   formatting?: {
     bold?: boolean;
@@ -164,6 +167,44 @@ function SortableContentBlock({
           className="w-full min-h-[100px] p-2 border rounded resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
           placeholder="Escribe tu contenido aquí..."
         />
+      ) : block.type === 'image' ? (
+        <div className="space-y-3">
+          <div className="preview-area">{renderBlockFn(block)}</div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-gray-500 font-medium">Layout:</span>
+            {([
+              { v: 'none', label: 'Solo imagen' },
+              { v: 'left', label: 'Imagen izq · texto der' },
+              { v: 'right', label: 'Texto izq · imagen der' },
+              { v: 'top', label: 'Imagen arriba · texto abajo' },
+              { v: 'bottom', label: 'Texto arriba · imagen abajo' },
+            ] as const).map(({ v, label }) => {
+              const active = (block.metadata?.layout || 'none') === v;
+              return (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onUpdate({ metadata: { ...block.metadata, layout: v } });
+                  }}
+                  className={`text-xs px-2 py-1 rounded border transition-colors ${active ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+          {(block.metadata?.layout && block.metadata.layout !== 'none') && (
+            <textarea
+              value={block.metadata?.body || ''}
+              onChange={(e) => onUpdate({ metadata: { ...block.metadata, body: e.target.value } })}
+              onClick={(e) => e.stopPropagation()}
+              placeholder="Texto que acompaña la imagen..."
+              className="w-full min-h-[80px] p-2 border rounded resize-y text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          )}
+        </div>
       ) : (
         <div className="preview-area">
           {renderBlockFn(block)}
@@ -445,12 +486,24 @@ export default function ContentEditor({
           className: "font-bold mb-2"
         }, block.content);
       
-      case 'text':
+      case 'text': {
+        const content = block.content || '';
+        const isHtml = /<(h[1-6]|p|strong|em|b|i|u|ul|ol|li|blockquote|code|pre|br|a|span|div)\b/i.test(content);
+        if (isHtml) {
+          return (
+            <div
+              style={formatStyle}
+              className="mb-2 prose prose-sm max-w-none [&_strong]:font-semibold [&_em]:italic"
+              dangerouslySetInnerHTML={{ __html: content }}
+            />
+          );
+        }
         return (
           <p style={formatStyle} className="mb-2">
-            {block.content}
+            {content}
           </p>
         );
+      }
       
       case 'quote':
         return (
@@ -466,21 +519,32 @@ export default function ContentEditor({
           </pre>
         );
       
-      case 'image':
-        return (
-          <div className="mb-4">
-            <img 
-              src={block.content} 
-              alt={block.metadata?.alt} 
+      case 'image': {
+        const layout = block.metadata?.layout;
+        const body = block.metadata?.body || '';
+        const imgEl = (
+          <figure>
+            <img
+              src={block.content}
+              alt={block.metadata?.alt}
               className="max-w-full h-auto rounded-lg"
             />
             {block.metadata?.caption && (
-              <p className="text-sm text-gray-600 mt-2 text-center">
+              <figcaption className="text-sm text-gray-600 mt-2 text-center">
                 {block.metadata.caption}
-              </p>
+              </figcaption>
             )}
-          </div>
+          </figure>
         );
+        if (layout && layout !== 'none' && body) {
+          const textEl = <div className="whitespace-pre-line text-gray-700 leading-relaxed">{body}</div>;
+          if (layout === 'left') return <div className="mb-4 grid md:grid-cols-2 gap-4 items-start">{imgEl}{textEl}</div>;
+          if (layout === 'right') return <div className="mb-4 grid md:grid-cols-2 gap-4 items-start">{textEl}{imgEl}</div>;
+          if (layout === 'top') return <div className="mb-4 space-y-3">{imgEl}{textEl}</div>;
+          if (layout === 'bottom') return <div className="mb-4 space-y-3">{textEl}{imgEl}</div>;
+        }
+        return <div className="mb-4">{imgEl}</div>;
+      }
       
       case 'video':
         // Use VideoPlayer for YouTube/Vimeo, native video for uploads
@@ -626,6 +690,10 @@ export default function ContentEditor({
           >
             <Video className="w-4 h-4" />
           </Button>
+
+          <div className="ml-auto">
+            <FormatHelpButton />
+          </div>
         </div>
       </CardHeader>
 
