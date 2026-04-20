@@ -5,6 +5,7 @@ import { firebaseDB } from '@shared/services/firebaseDataService';
 import type { DBEvaluationAttempt } from '@shared/services/firebaseDataService';
 import type { QuizLessonContent, QuizQuestion } from './QuizLessonEditor';
 import { resolveDeadlines, getTaskDeadlineStatus, formatDeadlineDate, getTimeRemaining, parseTimestamp } from '@shared/utils/deadlines';
+import { logStudent } from '@shared/services/auditLogService';
 import { Button } from '@shared/components/ui/Button';
 import {
   CheckCircle,
@@ -93,6 +94,11 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const popupRef = useRef<Window | null>(null);
   const [popupOpen, setPopupOpen] = useState(false);
+
+  // Teacher simulation mode — when true, ignores readOnly and runs the quiz as a student
+  // without persisting attempts to Firebase.
+  const [isSimulating, setIsSimulating] = useState(false);
+  const effectiveReadOnly = readOnly && !isSimulating;
 
   // Open quiz in a popup window (used when not in popupMode)
   const openQuizPopup = () => {
@@ -248,8 +254,8 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
     setQuizStartedAt(startTime);
     setTimeLeft(getEffectiveTimeLimit());
 
-    // Save in-progress attempt to Firebase
-    if (userId) {
+    // Save in-progress attempt to Firebase (skipped during teacher simulation)
+    if (userId && !isSimulating) {
       try {
         const attempt = await firebaseDB.createAttempt({
           evaluationId: lesson.id,
@@ -318,8 +324,8 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
   const setAnswer = useCallback((questionId: string, value: any) => {
     setAnswers((prev) => {
       const next = { ...prev, [questionId]: value };
-      // Debounced save to Firebase
-      if (activeAttemptId) {
+      // Debounced save to Firebase (skipped during teacher simulation)
+      if (activeAttemptId && !isSimulating) {
         if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
         saveTimeoutRef.current = setTimeout(() => {
           const answersList = Object.entries(next).map(([qId, ans]) => ({
@@ -333,7 +339,7 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
       }
       return next;
     });
-  }, [activeAttemptId]);
+  }, [activeAttemptId, isSimulating]);
 
   const isAnswered = (qId: string): boolean => {
     const a = answers[qId];
@@ -396,7 +402,7 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
     const quizResult = scoreQuiz();
     setResult(quizResult);
     setPhase('results');
-    if (quizResult.passed) onComplete();
+    if (quizResult.passed && !isSimulating) onComplete();
 
     const timeSpent = quizStartedAt ? Math.floor((Date.now() - quizStartedAt) / 1000) : 0;
     const completedAnswers = quizContent!.questions.map((q) => {
@@ -404,7 +410,7 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
       return { questionId: q.id, answer: answers[q.id], isCorrect: qr?.correct, pointsEarned: qr?.earnedPoints || 0 };
     });
 
-    if (userId && quizContent) {
+    if (userId && quizContent && !isSimulating) {
       try {
         if (activeAttemptId) {
           // Update existing in-progress attempt to completed
@@ -445,6 +451,23 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
     }
     setActiveAttemptId(null);
     setQuizStartedAt(null);
+
+    // Log student activity (skipped during teacher simulation)
+    if (isSimulating) return;
+    logStudent({
+      activityType: 'evaluation_submitted',
+      resourceType: 'evaluation',
+      resourceId: lesson.id,
+      resourceName: lesson.title,
+      courseId: courseId || undefined,
+      sectionId,
+      metadata: {
+        percentage: quizResult.percentage,
+        passed: quizResult.passed,
+        earnedPoints: quizResult.earnedPoints,
+        totalPoints: quizResult.totalPoints,
+      },
+    });
   };
 
   const bestScore = pastAttempts.length > 0 ? Math.max(...pastAttempts.map((a) => a.percentage)) : null;
@@ -506,12 +529,22 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
   // PHASE: START
   // =====================
   // Read-only mode for teachers: show quiz questions as preview
-  if (readOnly) {
+  if (effectiveReadOnly) {
     return (
       <div className="p-4 md:p-6">
-        <div className="flex items-center gap-2 mb-4 p-3 bg-gray-50 rounded-lg">
-          <Eye className="h-4 w-4 text-gray-500" />
-          <span className="text-sm text-gray-600">Vista de profesor — {quizContent.questions.length} preguntas, {quizContent.questions.reduce((s, q) => s + q.points, 0)} pts, aprobación: {quizContent.settings.passingScore || 70}%</span>
+        <div className="flex items-center justify-between gap-3 mb-4 p-3 bg-gray-50 rounded-lg">
+          <div className="flex items-center gap-2 min-w-0">
+            <Eye className="h-4 w-4 text-gray-500 flex-shrink-0" />
+            <span className="text-sm text-gray-600 truncate">Vista de profesor — {quizContent.questions.length} preguntas, {quizContent.questions.reduce((s, q) => s + q.points, 0)} pts, aprobación: {quizContent.settings.passingScore || 70}%</span>
+          </div>
+          <Button
+            size="sm"
+            onClick={() => setIsSimulating(true)}
+            className="bg-red-600 hover:bg-red-700 text-white flex-shrink-0"
+          >
+            <HelpCircle className="h-4 w-4 mr-1" />
+            Tomar como estudiante
+          </Button>
         </div>
         <div className="space-y-3">
           {quizContent.questions.map((q, idx) => (
@@ -529,6 +562,30 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
                   {q.options.map((opt) => (
                     <p key={opt.id} className={`text-xs px-2 py-1 rounded ${opt.isCorrect ? 'bg-green-50 text-green-700 font-medium' : 'text-gray-500'}`}>
                       {opt.isCorrect ? '✓' : '○'} {opt.text}
+                    </p>
+                  ))}
+                </div>
+              )}
+              {(q.type === 'match_drag' || q.type === 'match_dropdown') && q.pairs && (
+                <div className="space-y-1 mt-1">
+                  <p className="text-[10px] uppercase tracking-wide text-gray-400 mb-1">
+                    {q.type === 'match_drag' ? 'Emparejar (arrastrar)' : 'Emparejar (dropdown)'}
+                  </p>
+                  {q.pairs.map((pair) => (
+                    <div key={pair.id} className="flex items-center gap-2 text-xs bg-green-50 text-green-700 px-2 py-1 rounded">
+                      <span className="font-medium flex-1">{pair.left || <span className="italic text-gray-400">(vacío)</span>}</span>
+                      <span className="text-gray-400">→</span>
+                      <span className="flex-1">{pair.right || <span className="italic text-gray-400">(vacío)</span>}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {q.type === 'open_answer' && q.acceptedAnswers && q.acceptedAnswers.length > 0 && (
+                <div className="space-y-1 mt-1">
+                  <p className="text-[10px] uppercase tracking-wide text-gray-400 mb-1">Respuestas aceptadas</p>
+                  {q.acceptedAnswers.map((ans, i) => (
+                    <p key={i} className="text-xs bg-green-50 text-green-700 px-2 py-1 rounded font-medium">
+                      {ans || <span className="italic text-gray-400 font-normal">(vacío)</span>}
                     </p>
                   ))}
                 </div>
@@ -558,6 +615,21 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
 
     return (
       <div className="p-6 md:p-10">
+        {isSimulating && (
+          <div className="max-w-md mx-auto mb-4 flex items-center justify-between gap-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg">
+            <span className="text-xs text-amber-800 flex items-center gap-1">
+              <Eye className="h-3.5 w-3.5" />
+              Modo simulación — nada se guardará
+            </span>
+            <button
+              type="button"
+              onClick={() => { setIsSimulating(false); setPhase('start'); setResult(null); setAnswers({}); setDisplayQuestions([]); setActiveAttemptId(null); setQuizStartedAt(null); }}
+              className="text-xs font-medium text-amber-900 hover:underline"
+            >
+              Salir
+            </button>
+          </div>
+        )}
         <div className="max-w-md mx-auto text-center">
           <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-5">
             <HelpCircle className="h-8 w-8 text-red-600" />
@@ -744,6 +816,21 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
     return (
       <div className="fixed inset-0 z-[100] bg-white overflow-auto w-screen h-screen">
         <div className="h-full overflow-y-auto">
+          {isSimulating && (
+            <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex items-center justify-between gap-3">
+              <span className="text-xs text-amber-800 flex items-center gap-1">
+                <Eye className="h-3.5 w-3.5" />
+                Modo simulación — nada se guardará
+              </span>
+              <button
+                type="button"
+                onClick={() => { setIsSimulating(false); setPhase('start'); setResult(null); setAnswers({}); setDisplayQuestions([]); setActiveAttemptId(null); setQuizStartedAt(null); }}
+                className="text-xs font-medium text-amber-900 hover:underline"
+              >
+                Salir
+              </button>
+            </div>
+          )}
           {/* Sticky header */}
           <div className="sticky top-0 z-10 bg-white border-b border-gray-200">
             <div className="max-w-4xl mx-auto px-4 sm:px-8 py-3 flex items-center justify-between gap-3">
@@ -850,7 +937,11 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
         </div>
 
         <div className="flex flex-col sm:flex-row gap-2 justify-center">
-          {popupMode ? (
+          {isSimulating ? (
+            <Button variant="outline" onClick={() => { setIsSimulating(false); setPhase('start'); setResult(null); setAnswers({}); setDisplayQuestions([]); setActiveAttemptId(null); setQuizStartedAt(null); }}>
+              Volver a vista de profesor
+            </Button>
+          ) : popupMode ? (
             <Button variant="outline" onClick={() => window.close()}>
               Cerrar ventana
             </Button>

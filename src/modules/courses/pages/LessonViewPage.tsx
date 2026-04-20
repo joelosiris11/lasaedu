@@ -20,6 +20,7 @@ import {
 import { firebaseDB } from '@shared/services/firebaseDataService';
 import type { DBEvaluationAttempt } from '@shared/services/firebaseDataService';
 import { isAvailable, resolveDeadlines } from '@shared/utils/deadlines';
+import { logStudent } from '@shared/services/auditLogService';
 import {
   ArrowLeft,
   ArrowRight,
@@ -47,6 +48,7 @@ import LessonForumView from '../components/LessonForumView';
 import QuizLessonView from '../components/QuizLessonView';
 import VideoLessonView from '../components/VideoLessonView';
 import TareaLessonView from '../components/TareaLessonView';
+import { blocksToHtml, type LegacyContentBlock } from '../utils/blocksToHtml';
 import SubmissionReviewView from '../components/SubmissionReviewView';
 import StudentLessonDetail from '../components/StudentLessonDetail';
 import type { ResourceLessonContent } from '../components/ResourceLessonEditor';
@@ -389,6 +391,28 @@ export default function LessonViewPage() {
       setCompletedLessons(prev => new Set([...prev, currentLesson.id]));
       setShowCompletionModal(true);
 
+      // Log student activity
+      logStudent({
+        activityType: 'lesson_completed',
+        resourceType: 'lesson',
+        resourceId: currentLesson.id,
+        resourceName: currentLesson.title,
+        courseId: effectiveCourseId || course?.id,
+        sectionId,
+      });
+
+      // If course is now completed, log that too
+      if (newProgress >= 100) {
+        logStudent({
+          activityType: 'course_completed',
+          resourceType: 'course',
+          resourceId: effectiveCourseId || course?.id || '',
+          resourceName: course?.title,
+          courseId: effectiveCourseId || course?.id,
+          sectionId,
+        });
+      }
+
     } catch (error) {
       console.error('Error completing lesson:', error);
     }
@@ -695,18 +719,39 @@ export default function LessonViewPage() {
       return true;
     });
 
+    const buildStyle = (f: any): React.CSSProperties => ({
+      fontWeight: f?.bold ? 'bold' : undefined,
+      fontStyle: f?.italic ? 'italic' : undefined,
+      textDecoration: f?.underline ? 'underline' : undefined,
+      textAlign: f?.alignment || undefined,
+      color: f?.color || undefined,
+    });
     return (
     <div className="space-y-4">
       {filtered.map((block: any) => {
+        const style = buildStyle(block.formatting);
         switch (block.type) {
           case 'heading': {
             const level = block.metadata?.level || 2;
-            if (level === 1) return <h1 key={block.id} className="text-2xl font-bold">{block.content}</h1>;
-            if (level === 2) return <h2 key={block.id} className="text-xl font-semibold">{block.content}</h2>;
-            return <h3 key={block.id} className="text-lg font-medium">{block.content}</h3>;
+            if (level === 1) return <h1 key={block.id} style={style} className="text-2xl font-bold">{block.content}</h1>;
+            if (level === 2) return <h2 key={block.id} style={style} className="text-xl font-semibold">{block.content}</h2>;
+            return <h3 key={block.id} style={style} className="text-lg font-medium">{block.content}</h3>;
           }
-          case 'text':
-            return <p key={block.id} className="text-gray-700 leading-relaxed whitespace-pre-line">{block.content}</p>;
+          case 'text': {
+            const content = block.content || '';
+            const isHtml = /<(h[1-6]|p|strong|em|b|i|u|ul|ol|li|blockquote|code|pre|br|a|span|div)\b/i.test(content);
+            if (isHtml) {
+              return (
+                <div
+                  key={block.id}
+                  style={style}
+                  className="prose prose-sm sm:prose max-w-none text-gray-700 [&_strong]:font-semibold [&_em]:italic"
+                  dangerouslySetInnerHTML={{ __html: content }}
+                />
+              );
+            }
+            return <p key={block.id} style={style} className="text-gray-700 leading-relaxed whitespace-pre-line">{content}</p>;
+          }
           case 'code':
             return (
               <pre key={block.id} className="bg-gray-900 text-gray-100 rounded-lg p-4 overflow-x-auto text-sm">
@@ -714,7 +759,57 @@ export default function LessonViewPage() {
               </pre>
             );
           case 'quote':
-            return <blockquote key={block.id} className="border-l-4 border-red-300 pl-4 italic text-gray-600">{block.content}</blockquote>;
+            return <blockquote key={block.id} style={style} className="border-l-4 border-red-300 pl-4 italic text-gray-600">{block.content}</blockquote>;
+          case 'image': {
+            const layout = block.metadata?.layout as ('left' | 'right' | 'top' | 'bottom' | undefined);
+            const caption = block.metadata?.caption;
+            const body = block.metadata?.body || '';
+            const img = (
+              <figure className="my-2">
+                <img src={block.content} alt={block.metadata?.alt || ''} className="max-w-full h-auto rounded-lg" loading="lazy" />
+                {caption && <figcaption className="text-xs text-gray-500 mt-1 text-center">{caption}</figcaption>}
+              </figure>
+            );
+            if (layout && body) {
+              const textNode = <div className="whitespace-pre-line text-gray-700 leading-relaxed">{body}</div>;
+              if (layout === 'left') return <div key={block.id} className="grid md:grid-cols-2 gap-4 items-start">{img}{textNode}</div>;
+              if (layout === 'right') return <div key={block.id} className="grid md:grid-cols-2 gap-4 items-start">{textNode}{img}</div>;
+              if (layout === 'top') return <div key={block.id}>{img}{textNode}</div>;
+              if (layout === 'bottom') return <div key={block.id}>{textNode}{img}</div>;
+            }
+            return <div key={block.id}>{img}</div>;
+          }
+          case 'video': {
+            const source = block.metadata?.source;
+            if (source === 'youtube' || source === 'vimeo') {
+              return (
+                <div key={block.id} className="my-2 aspect-video">
+                  <iframe src={block.content} className="w-full h-full rounded-lg" allowFullScreen />
+                  {block.metadata?.caption && <p className="text-xs text-gray-500 mt-1 text-center">{block.metadata.caption}</p>}
+                </div>
+              );
+            }
+            return (
+              <div key={block.id} className="my-2">
+                <video src={block.content} controls className="w-full rounded-lg" />
+                {block.metadata?.caption && <p className="text-xs text-gray-500 mt-1 text-center">{block.metadata.caption}</p>}
+              </div>
+            );
+          }
+          case 'audio':
+            return (
+              <div key={block.id} className="my-2">
+                <audio src={block.content} controls className="w-full" />
+                {block.metadata?.caption && <p className="text-xs text-gray-500 mt-1">{block.metadata.caption}</p>}
+              </div>
+            );
+          case 'file':
+            return (
+              <a key={block.id} href={block.content} target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 text-sm text-gray-700">
+                📎 {block.metadata?.caption || 'Descargar archivo'}
+              </a>
+            );
           default:
             return null;
         }
@@ -753,30 +848,68 @@ export default function LessonViewPage() {
             onComplete={handleVideoComplete}
           />
         ) : currentLesson.type === 'texto' ? (
-          <div className="p-6 prose prose-red max-w-none">
-            {(() => {
-              let html = '';
-              try {
-                const parsed = typeof currentLesson.content === 'string'
-                  ? JSON.parse(currentLesson.content) : currentLesson.content;
-                if (Array.isArray(parsed)) {
-                  return renderContentBlocks(parsed);
-                }
-                if (parsed?.editorMode === 'wysiwyg') {
-                  html = parsed.html || '';
-                } else if (typeof currentLesson.content === 'string') {
-                  html = currentLesson.content;
-                }
-              } catch {
-                html = typeof currentLesson.content === 'string' ? currentLesson.content : '';
+          (() => {
+            let html = '';
+            try {
+              const parsed = typeof currentLesson.content === 'string'
+                ? JSON.parse(currentLesson.content) : currentLesson.content;
+              if (Array.isArray(parsed)) {
+                html = blocksToHtml(parsed as LegacyContentBlock[]);
+              } else if (parsed?.editorMode === 'wysiwyg') {
+                html = parsed.html || '';
+              } else if (typeof currentLesson.content === 'string') {
+                html = currentLesson.content;
               }
-              return html ? (
-                <div dangerouslySetInnerHTML={{ __html: html }} />
-              ) : (
-                <p className="text-gray-500">No hay contenido disponible para esta leccion.</p>
+            } catch {
+              html = typeof currentLesson.content === 'string' ? currentLesson.content : '';
+            }
+            const sideImage = (currentLesson as any).settings?.sideImage as {
+              url: string;
+              position: 'left' | 'right';
+              width?: number;
+              fade?: boolean;
+              focalX?: number;
+            } | undefined;
+            const textEl = html ? (
+              <div className="rich-html prose prose-red max-w-none p-6" dangerouslySetInnerHTML={{ __html: html }} />
+            ) : (
+              <p className="text-gray-500 p-6">No hay contenido disponible para esta leccion.</p>
+            );
+            if (sideImage?.url) {
+              const w = Math.min(80, Math.max(20, sideImage.width || 50));
+              const cols = sideImage.position === 'left' ? `${w}% ${100 - w}%` : `${100 - w}% ${w}%`;
+              const fade = sideImage.fade !== false;
+              const gradientDir = sideImage.position === 'left' ? 'to right' : 'to left';
+              const focalX = Math.min(100, Math.max(0, sideImage.focalX ?? 50));
+              const imgEl = (
+                <div className="relative overflow-hidden bg-gray-100 min-h-[400px] md:min-h-[calc(100vh-120px)] md:sticky md:top-0">
+                  <img
+                    src={sideImage.url}
+                    alt=""
+                    className="absolute inset-0 w-full h-full object-cover"
+                    style={{ objectPosition: `${focalX}% 50%` }}
+                  />
+                  {fade && (
+                    <div
+                      className="absolute inset-0 pointer-events-none"
+                      style={{
+                        background: `linear-gradient(${gradientDir}, transparent 55%, rgba(255,255,255,0.75) 85%, #ffffff 100%)`,
+                      }}
+                    />
+                  )}
+                </div>
               );
-            })()}
-          </div>
+              return (
+                <div
+                  className="flex flex-col md:grid md:items-start md:[grid-template-columns:var(--side-cols)]"
+                  style={{ ['--side-cols' as any]: cols }}
+                >
+                  {sideImage.position === 'left' ? <>{imgEl}{textEl}</> : <>{textEl}{imgEl}</>}
+                </div>
+              );
+            }
+            return <>{textEl}</>;
+          })()
         ) : currentLesson.type === 'recurso' ? (
           <div className="p-6">
             {(() => {
@@ -843,6 +976,7 @@ export default function LessonViewPage() {
             userRole={user?.role || 'student'}
             onComplete={handleLessonComplete}
             sectionOverride={sectionOverride}
+            sectionId={sectionId}
           />
         ) : currentLesson.type === 'quiz' ? (
           <QuizLessonView
@@ -871,8 +1005,8 @@ export default function LessonViewPage() {
             </div>
           </div>
         )}
-        {/* Mark as complete - only for students */}
-        {!isTeacherOrAdmin && !isLessonCompleted && currentLesson.type !== 'video' && currentLesson.type !== 'foro' && currentLesson.type !== 'quiz' && currentLesson.type !== 'tarea' && (
+        {/* Mark as complete - only for students (foro/quiz/tarea auto-complete via their own flows) */}
+        {!isTeacherOrAdmin && !isLessonCompleted && currentLesson.type !== 'foro' && currentLesson.type !== 'quiz' && currentLesson.type !== 'tarea' && (
           <div className="p-6 pt-2 text-center border-t border-gray-100 mt-4">
             <Button
               onClick={handleLessonComplete}
@@ -1111,7 +1245,7 @@ export default function LessonViewPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {currentLesson.type === 'quiz' ? 'Fecha de cierre' : 'Due Date (fecha de cierre)'}
+                  {currentLesson.type === 'quiz' ? 'Fecha de cierre' : 'Fecha de entrega'}
                 </label>
                 <input
                   type="datetime-local"
@@ -1135,7 +1269,7 @@ export default function LessonViewPage() {
               )}
               {currentLesson.type === 'tarea' && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Cut-off Date (cierre definitivo)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Cierre definitivo</label>
                   <input
                     type="datetime-local"
                     value={deadlineForm.lateSubmissionDeadline}

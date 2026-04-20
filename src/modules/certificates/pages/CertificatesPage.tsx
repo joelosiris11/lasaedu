@@ -8,6 +8,7 @@ import {
   taskSubmissionService,
 } from '@shared/services/dataService';
 import { firebaseDB } from '@shared/services/firebaseDataService';
+import { logStudent } from '@shared/services/auditLogService';
 import { certificateGenerator } from '@shared/services/certificateGeneratorNew';
 import type { CertificateData } from '@shared/services/certificateGeneratorNew';
 import { Download, Award, Calendar, User, Clock, AlertTriangle } from 'lucide-react';
@@ -316,8 +317,7 @@ export default function CertificatesPage() {
     if (!user?.id) return;
     setLoading(true);
     try {
-      const enrollments = await legacyEnrollmentService.getAll();
-      const userEnrollments = enrollments.filter((e) => e.userId === user.id);
+      const userEnrollments = await legacyEnrollmentService.getByUser(user.id);
       const completedEnrollments = userEnrollments.filter((e) => e.status === 'completed');
 
       const userCertificates = await certificateService.getByUser(user.id);
@@ -419,6 +419,14 @@ export default function CertificatesPage() {
       const saved = await certificateService.create({
         ...certificateData,
       } as any);
+
+      logStudent({
+        activityType: 'certificate_issued',
+        resourceType: 'certificate',
+        resourceId: saved?.id || certificateData.id,
+        resourceName: completion.courseTitle,
+        courseId: completion.courseId,
+      });
 
       setCompletedCourses((prev) =>
         prev.map((c) =>

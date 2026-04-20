@@ -2,9 +2,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useBlocker } from 'react-router-dom';
 import { useAuthStore } from '@app/store/authStore';
 import { evaluationService, extensionService } from '@shared/services/dataService';
+import { firebaseDB } from '@shared/services/firebaseDataService';
 import { assessmentService } from '@shared/services/assessmentService';
 import type { Question as ModernQuestion, QuestionOption } from '@shared/types/assessment';
 import { getExamTimeLimit, getStudentExtension, formatDeadlineDate } from '@shared/utils/deadlines';
+import { logStudent } from '@shared/services/auditLogService';
 import {
   ArrowLeft,
   ArrowRight,
@@ -423,7 +425,33 @@ export default function TakeEvaluationPage() {
     
     // Save submission to Firebase
     await evaluationService.createAttempt(submission);
-    
+
+    // Resolve sectionId via student's enrollment for this course (best-effort)
+    let sectionId: string | undefined;
+    try {
+      const enrollments = await firebaseDB.getEnrollmentsByUser(user.id);
+      const match = enrollments.find((e) => e.courseId === evaluation.courseId);
+      sectionId = match?.sectionId;
+    } catch {
+      // ignore — logging must never break submission
+    }
+
+    // Log student activity
+    logStudent({
+      activityType: 'evaluation_submitted',
+      resourceType: 'evaluation',
+      resourceId: evaluation.id,
+      resourceName: evaluation.title,
+      courseId: evaluation.courseId,
+      sectionId,
+      metadata: {
+        percentage,
+        passed: submissionResult.passed,
+        score: earnedPoints,
+        totalPoints,
+      },
+    });
+
     setResult(submissionResult);
     setSubmitted(true);
     setConfirming(false);

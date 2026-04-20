@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Activity,
+  Award,
   Download,
   Search,
   FileCheck,
@@ -18,7 +19,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@shared/components/ui/Card';
 import { Button } from '@shared/components/ui/Button';
 import { useAuthStore } from '@app/store/authStore';
-import { sectionService, userService } from '@shared/services/dataService';
+import { sectionService, courseService, userService } from '@shared/services/dataService';
 import type { DBSection, DBUser } from '@shared/services/dataService';
 import {
   listStudentActivity,
@@ -36,6 +37,7 @@ const ACTIVITY_LABELS: Record<StudentActivityType, string> = {
   lesson_completed: 'Completó lección',
   course_completed: 'Completó curso',
   evaluation_submitted: 'Entregó evaluación',
+  certificate_issued: 'Certificado emitido',
 };
 
 // All red shades — no blue/green/amber/purple/emerald
@@ -46,6 +48,7 @@ const ACTIVITY_COLORS: Record<StudentActivityType, string> = {
   lesson_completed: 'bg-rose-50 text-rose-700 border-rose-200',
   course_completed: 'bg-red-600 text-white border-red-600',
   evaluation_submitted: 'bg-red-500 text-white border-red-500',
+  certificate_issued: 'bg-red-700 text-white border-red-700',
 };
 
 // Icons per activity type — all red-tinted when rendered
@@ -56,6 +59,7 @@ const ACTIVITY_ICONS: Record<StudentActivityType, React.ElementType> = {
   lesson_completed: BookOpen,
   course_completed: GraduationCap,
   evaluation_submitted: ClipboardList,
+  certificate_issued: Award,
 };
 
 // ─── Avatar ───────────────────────────────────────────────────────────────────
@@ -183,19 +187,24 @@ export default function StudentActivityPage() {
       if (!user) return;
       setLoading(true);
       try {
-        // Teacher: solo sus secciones → restringe logs. Admin/Supervisor: todas las secciones.
-        const teacherSections = isTeacher
-          ? await sectionService.getByInstructor(user.id)
-          : await sectionService.getAll();
+        // Teacher: sus secciones + sus cursos (union) → ver todo su movimiento.
+        // Admin/Supervisor: todo.
+        const [visibleSections, teacherCourses] = await Promise.all([
+          isTeacher
+            ? sectionService.getByInstructor(user.id)
+            : sectionService.getAll(),
+          isTeacher ? courseService.getByInstructor(user.id) : Promise.resolve([]),
+        ]);
 
-        const sectionIds = teacherSections.map((s) => s.id);
+        const sectionIds = visibleSections.map((s) => s.id);
+        const courseIds = teacherCourses.map((c) => c.id);
 
         const [logsData, usersData] = await Promise.all([
-          listStudentActivity(isTeacher ? { sectionIds } : {}),
+          listStudentActivity(isTeacher ? { sectionIds, courseIds } : {}),
           userService.getAll(),
         ]);
 
-        setSections(teacherSections);
+        setSections(visibleSections);
         setStudents(usersData.filter((u) => u.role === 'student'));
         setLogs(logsData);
       } finally {
@@ -403,8 +412,8 @@ export default function StudentActivityPage() {
             </>
           )}
 
-          {/* Estudiante — solo si hay más de 1 */}
-          {students.length > 1 && (
+          {/* Estudiante */}
+          {students.length > 0 && (
             <>
               <label htmlFor="filter-student" className="sr-only">Estudiante</label>
               <select

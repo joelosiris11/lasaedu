@@ -31,6 +31,8 @@ import type {
   DBDeadlineExtension,
   DBSection,
   DBSectionLessonOverride,
+  PaginatedResult,
+  PaginationOptions,
 } from './firebaseDataService';
 
 // Re-exportar tipos para consumidores
@@ -56,6 +58,8 @@ export type {
   DBDeadlineExtension,
   DBSection,
   DBSectionLessonOverride,
+  PaginatedResult,
+  PaginationOptions,
 };
 
 // ============================================
@@ -539,6 +543,7 @@ export const lessonService = {
       resourceId: result.id,
       resourceName: result.title,
       courseId: result.courseId,
+      metadata: { lessonType: result.type },
     });
     return result;
   },
@@ -553,6 +558,7 @@ export const lessonService = {
       resourceName: result?.title ?? before?.title ?? id,
       courseId: result?.courseId ?? before?.courseId,
       changes,
+      metadata: { lessonType: result?.type ?? before?.type },
     });
     return result;
   },
@@ -565,6 +571,7 @@ export const lessonService = {
       resourceId: id,
       resourceName: before?.title ?? id,
       courseId: before?.courseId,
+      metadata: { lessonType: before?.type },
     });
     return result;
   },
@@ -634,17 +641,51 @@ export const evaluationService = {
   getAll: () => firebaseDB.getEvaluations(),
   getById: (id: string) => firebaseDB.getById<DBEvaluation>('evaluations', id),
   getByCourse: (courseId: string) => firebaseDB.getEvaluationsByCourse(courseId),
-  create: (data: Omit<DBEvaluation, 'id'>) => firebaseDB.createEvaluation(data),
-  update: (id: string, data: Partial<DBEvaluation>) => firebaseDB.updateEvaluation(id, data),
-  delete: (id: string) => firebaseDB.delete('evaluations', id),
-  
+  create: async (data: Omit<DBEvaluation, 'id'>) => {
+    const result = await firebaseDB.createEvaluation(data);
+    await logAudit({
+      action: 'create',
+      resourceType: 'evaluation',
+      resourceId: result.id,
+      resourceName: result.title,
+      courseId: result.courseId,
+    });
+    return result;
+  },
+  update: async (id: string, data: Partial<DBEvaluation>) => {
+    const before = await firebaseDB.getById<DBEvaluation>('evaluations', id);
+    const result = await firebaseDB.updateEvaluation(id, data);
+    const changes = diff(before as unknown as Record<string, unknown> | undefined, data as Record<string, unknown>);
+    await logAudit({
+      action: 'update',
+      resourceType: 'evaluation',
+      resourceId: id,
+      resourceName: result?.title ?? before?.title ?? id,
+      courseId: result?.courseId ?? before?.courseId,
+      changes,
+    });
+    return result;
+  },
+  delete: async (id: string) => {
+    const before = await firebaseDB.getById<DBEvaluation>('evaluations', id);
+    const result = await firebaseDB.delete('evaluations', id);
+    await logAudit({
+      action: 'delete',
+      resourceType: 'evaluation',
+      resourceId: id,
+      resourceName: before?.title ?? id,
+      courseId: before?.courseId,
+    });
+    return result;
+  },
+
   // Intentos de evaluación
   getAttemptsByUser: (userId: string) => firebaseDB.getEvaluationAttempts(userId),
   getAttemptsByEvaluation: (evalId: string) => firebaseDB.getAttemptsByEvaluation(evalId),
   createAttempt: (data: any) => firebaseDB.createAttempt(data),
   updateAttempt: (id: string, data: any) => firebaseDB.updateAttempt(id, data),
-  
-  subscribe: (callback: (evaluations: DBEvaluation[]) => void) => 
+
+  subscribe: (callback: (evaluations: DBEvaluation[]) => void) =>
     firebaseDB.subscribe<DBEvaluation>('evaluations', callback),
 };
 
