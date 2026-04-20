@@ -27,7 +27,6 @@ import SettingsPage from '@modules/settings/pages/SettingsPage';
 // Import new critical pages
 import EnrollmentManagementPage from '@modules/enrollments/pages/EnrollmentManagementPage';
 import ForumsPage from '@modules/forums/pages/ForumsPage';
-import DataInitPage from '@modules/auth/pages/DataInitPage';
 
 // Audit pages
 import AuditLogsPage from '@modules/audit/pages/AuditLogsPage';
@@ -88,10 +87,6 @@ const DashboardRedirect = () => {
 };
 
 export const router = createBrowserRouter([
-  {
-    path: '/data-init',
-    element: <DataInitPage />
-  },
   {
     path: '/login',
     element: <LoginPage />
@@ -297,7 +292,7 @@ export const router = createBrowserRouter([
       {
         path: 'audit-logs',
         element: (
-          <ProtectedRoute allowedRoles={['admin', 'supervisor']}>
+          <ProtectedRoute allowedRoles={['admin', 'supervisor', 'teacher']}>
             <AuditLogsPage />
           </ProtectedRoute>
         )

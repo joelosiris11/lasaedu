@@ -7,8 +7,7 @@ import { useAuthStore } from '../../../app/store/authStore';
 import { Button } from '@shared/components/ui/Button';
 import { Input } from '@shared/components/ui/Input';
 import { Label } from '@shared/components/ui/Label';
-import { AlertCircle, Loader2, ChevronDown, GraduationCap, BookOpen, Users } from 'lucide-react';
-import { dataInit } from '@shared/services/dataInit';
+import { AlertCircle, Loader2, GraduationCap, BookOpen, Users } from 'lucide-react';
 
 const loginSchema = z.object({
   email: z.string().email('Email invalido'),
@@ -21,8 +20,6 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const { login, isLoading, error, isAuthenticated, user } = useAuthStore();
   const [localError, setLocalError] = useState<string | null>(null);
-  const [resetting, setResetting] = useState(false);
-  const [devOpen, setDevOpen] = useState(false);
 
   useEffect(() => {
     if (isAuthenticated && user) {
@@ -34,7 +31,6 @@ export default function LoginPage() {
     register,
     handleSubmit,
     formState: { errors },
-    setValue,
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
@@ -42,26 +38,6 @@ export default function LoginPage() {
       password: '',
     },
   });
-
-  const fillDemoCredentials = (email: string) => {
-    setValue('email', email);
-    setValue('password', 'password123');
-  };
-
-  const handleResetDB = async () => {
-    if (!window.confirm('Estas seguro de que quieres resetear la base de datos? Se borraran todos los datos y se reinicializaran con datos de prueba.')) {
-      return;
-    }
-    setResetting(true);
-    try {
-      await dataInit();
-      window.location.reload();
-    } catch (err) {
-      console.error('Error resetting DB:', err);
-      alert('Error al resetear la base de datos. Revisa la consola para mas detalles.');
-      setResetting(false);
-    }
-  };
 
   const onSubmit = async (data: LoginFormValues) => {
     setLocalError(null);
@@ -217,53 +193,6 @@ export default function LoginPage() {
           <p className="text-center text-xs text-muted-foreground mt-6">
             Necesitas acceso? Contacta al administrador.
           </p>
-
-          {/* Dev tools — collapsible */}
-          <div className="mt-10 border-t pt-4">
-            <button
-              type="button"
-              onClick={() => setDevOpen(!devOpen)}
-              className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-500 transition-colors mx-auto"
-            >
-              <ChevronDown className={`h-3 w-3 transition-transform duration-200 ${devOpen ? 'rotate-180' : ''}`} />
-              Dev Tools
-            </button>
-
-            {devOpen && (
-              <div className="mt-3 rounded-lg bg-gray-100 border border-gray-200 p-3 space-y-3">
-                <p className="text-[11px] text-gray-500 text-center font-medium uppercase tracking-wider">
-                  Usuarios de prueba <span className="font-normal normal-case">(pass: password123)</span>
-                </p>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {[
-                    { email: 'admin@lasaedu.com', label: 'Admin' },
-                    { email: 'admin2@lasaedu.com', label: 'Admin 2' },
-                    { email: 'teacher@lasaedu.com', label: 'Teacher' },
-                    { email: 'teacher2@lasaedu.com', label: 'Teacher 2' },
-                    { email: 'student@lasaedu.com', label: 'Student' },
-                    { email: 'support@lasaedu.com', label: 'Support' },
-                  ].map(({ email, label }) => (
-                    <button
-                      key={email}
-                      type="button"
-                      onClick={() => fillDemoCredentials(email)}
-                      className="text-[11px] text-left px-2 py-1.5 rounded-md bg-white border border-gray-200 text-gray-600 hover:border-red-300 hover:text-red-600 transition-colors truncate"
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  onClick={handleResetDB}
-                  disabled={resetting}
-                  className="w-full text-[11px] text-red-400 hover:text-red-600 transition-colors py-1"
-                >
-                  {resetting ? 'Reseteando...' : 'Resetear Base de Datos'}
-                </button>
-              </div>
-            )}
-          </div>
         </div>
       </div>
     </div>
