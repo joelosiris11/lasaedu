@@ -64,7 +64,8 @@ const sidebarSections: SidebarSection[] = [
       { icon: UserPlus, label: 'Inscripciones', path: '/enrollments', roles: ['teacher'] },
       { icon: ClipboardList, label: 'Calificaciones', path: '/grades', roles: ['teacher'] },
       { icon: Award, label: 'Certificados', path: '/certificates', roles: ['teacher'] },
-      { icon: Activity, label: 'Actividad Estudiantes', path: '/student-activity', roles: ['teacher'] },
+      { icon: History, label: 'Actividad Prof.', path: '/audit-logs', roles: ['teacher'] },
+      { icon: Activity, label: 'Actividad Estu.', path: '/student-activity', roles: ['teacher'] },
     ],
   },
   // Admin: "Gestión" section - no duplicates, no reportes
