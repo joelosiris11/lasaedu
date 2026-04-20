@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useAuthStore } from '@app/store/authStore';
 import {
   courseService,
@@ -6,6 +6,7 @@ import {
   sectionService,
   legacyEnrollmentService,
 } from '@shared/services/dataService';
+import { Pagination } from '@shared/components/ui/Pagination';
 import {
   MessageSquare,
   Plus,
@@ -329,12 +330,12 @@ export default function ForumsPage() {
   };
 
   // Filter and sort posts
-  const filteredPosts = posts
+  const allFilteredPosts = useMemo(() => posts
     .filter(post => {
       const matchesSearch = post.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            post.content.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesCourse = filterCourse === 'all' || post.courseId === filterCourse;
-      const matchesStatus = filterStatus === 'all' || 
+      const matchesStatus = filterStatus === 'all' ||
                            (filterStatus === 'resolved' && post.isResolved) ||
                            (filterStatus === 'unresolved' && !post.isResolved);
       return matchesSearch && matchesCourse && matchesStatus;
@@ -343,7 +344,7 @@ export default function ForumsPage() {
       // Pinned posts always first
       if (a.isPinned && !b.isPinned) return -1;
       if (!a.isPinned && b.isPinned) return 1;
-      
+
       if (sortBy === 'recent') {
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       }
@@ -356,7 +357,20 @@ export default function ForumsPage() {
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       }
       return 0;
-    });
+    }), [posts, searchTerm, filterCourse, filterStatus, sortBy]);
+
+  // Client-side pagination for posts
+  const POSTS_PER_PAGE = 20;
+  const [postsPage, setPostsPage] = useState(1);
+
+  // Reset page when filters change
+  useEffect(() => { setPostsPage(1); }, [searchTerm, filterCourse, filterStatus, sortBy]);
+
+  const postsTotalPages = Math.ceil(allFilteredPosts.length / POSTS_PER_PAGE);
+  const filteredPosts = allFilteredPosts.slice(
+    (postsPage - 1) * POSTS_PER_PAGE,
+    postsPage * POSTS_PER_PAGE
+  );
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -587,6 +601,16 @@ export default function ForumsPage() {
                 ))}
               </div>
             )}
+
+            {/* Pagination for posts */}
+            <Pagination
+              page={postsPage}
+              hasNext={postsPage < postsTotalPages}
+              hasPrev={postsPage > 1}
+              onNext={() => setPostsPage(p => p + 1)}
+              onPrev={() => setPostsPage(p => p - 1)}
+              itemCount={filteredPosts.length}
+            />
           </CardContent>
         </Card>
       </div>

@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { useAuthStore } from '@app/store/authStore';
 import { supportTicketService } from '@shared/services/dataService';
 import type { DBSupportTicket } from '@shared/services/firebaseDataService';
-import { 
+import { usePagination } from '@shared/hooks/usePagination';
+import { Pagination } from '@shared/components/ui/Pagination';
+import {
   HelpCircle,
   Plus,
   Search,
@@ -37,15 +39,13 @@ interface TicketMessage {
 
 export default function SupportPage() {
   const { user } = useAuthStore();
-  const [tickets, setTickets] = useState<Ticket[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
-  const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [newMessage, setNewMessage] = useState('');
-  
+
   // Form state
   const [ticketForm, setTicketForm] = useState({
     subject: '',
@@ -56,34 +56,37 @@ export default function SupportPage() {
 
   const isSupport = user?.role === 'support' || user?.role === 'admin' || user?.role === 'supervisor';
 
-  useEffect(() => {
-    loadTickets();
-  }, []);
-
-  const loadTickets = async () => {
-    try {
-      let allTickets: Ticket[];
-
-      // Load tickets from Firebase based on role
-      if (isSupport) {
-        allTickets = await supportTicketService.getAll();
-      } else {
-        allTickets = user?.id ? await supportTicketService.getByUser(user.id) : [];
-      }
-
-      // Ensure all tickets have messages array
-      allTickets = allTickets.map(ticket => ({
-        ...ticket,
-        messages: ticket.messages || []
-      }));
-
-      setTickets(allTickets);
-    } catch (error) {
-      console.error('Error loading tickets:', error);
-    } finally {
-      setLoading(false);
+  // Build Firestore filters from role + dropdown filters
+  const filters = useMemo(() => {
+    const f: { field: string; op: '==' | '<' | '>' | '<=' | '>=' | '!=' | 'array-contains'; value: unknown }[] = [];
+    if (!isSupport && user?.id) {
+      f.push({ field: 'userId', op: '==', value: user.id });
     }
-  };
+    if (statusFilter !== 'all') {
+      f.push({ field: 'status', op: '==', value: statusFilter });
+    }
+    if (priorityFilter !== 'all') {
+      f.push({ field: 'priority', op: '==', value: priorityFilter });
+    }
+    return f;
+  }, [isSupport, user?.id, statusFilter, priorityFilter]);
+
+  const {
+    data,
+    page,
+    hasNext,
+    hasPrev,
+    loading,
+    nextPage,
+    prevPage,
+    reset,
+  } = usePagination<Ticket>({
+    collectionName: 'supportTickets',
+    pageSize: 20,
+    orderByField: 'createdAt',
+    orderDirection: 'desc',
+    filters,
+  });
 
   const createTicket = async () => {
     if (!ticketForm.subject.trim() || !ticketForm.description.trim()) return;
@@ -110,8 +113,8 @@ export default function SupportPage() {
         updatedAt: Date.now()
       };
 
-      const newTicket = await supportTicketService.create(ticketData as any);
-      setTickets([...tickets, newTicket]);
+      await supportTicketService.create(ticketData as any);
+      reset();
       setShowCreateModal(false);
       setTicketForm({ subject: '', description: '', category: 'tecnico', priority: 'media' });
     } catch (error) {
@@ -147,7 +150,7 @@ export default function SupportPage() {
 
       const updatedTicket = { ...selectedTicket, ...updates } as Ticket;
       setSelectedTicket(updatedTicket);
-      setTickets(tickets.map(t => t.id === selectedTicket.id ? updatedTicket : t));
+      reset();
       setNewMessage('');
     } catch (error) {
       console.error('Error sending message:', error);
@@ -155,7 +158,7 @@ export default function SupportPage() {
   };
 
   const updateTicketStatus = async (ticketId: string, newStatus: Ticket['status']) => {
-    const ticket = tickets.find(t => t.id === ticketId);
+    const ticket = data.find(t => t.id === ticketId);
     if (!ticket) return;
 
     try {
@@ -172,7 +175,7 @@ export default function SupportPage() {
       await supportTicketService.update(ticketId, updates as any);
 
       const updatedTicket = { ...ticket, ...updates } as Ticket;
-      setTickets(tickets.map(t => t.id === ticketId ? updatedTicket : t));
+      reset();
       if (selectedTicket?.id === ticketId) {
         setSelectedTicket(updatedTicket);
       }
@@ -181,13 +184,19 @@ export default function SupportPage() {
     }
   };
 
+  // Ensure all tickets have messages array
+  const tickets = data.map(ticket => ({
+    ...ticket,
+    messages: ticket.messages || []
+  }));
+
+  // Client-side search filter on current page data (status/priority are server-side)
   const filteredTickets = tickets.filter(ticket => {
-    const matchesSearch = ticket.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         ticket.userName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         ticket.id.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || ticket.status === statusFilter;
-    const matchesPriority = priorityFilter === 'all' || ticket.priority === priorityFilter;
-    return matchesSearch && matchesStatus && matchesPriority;
+    if (!searchTerm) return true;
+    const term = searchTerm.toLowerCase();
+    return ticket.subject.toLowerCase().includes(term) ||
+           ticket.userName.toLowerCase().includes(term) ||
+           ticket.id.toLowerCase().includes(term);
   });
 
   const getStatusBadge = (status: Ticket['status']) => {
@@ -235,7 +244,7 @@ export default function SupportPage() {
     return labels[category] || 'Otro';
   };
 
-  // Stats
+  // Stats (computed from current page data)
   const stats = {
     total: tickets.length,
     open: tickets.filter(t => ['new', 'open', 'in_progress', 'waiting'].includes(t.status)).length,
@@ -367,7 +376,7 @@ export default function SupportPage() {
                   <p className="text-gray-600">
                     {searchTerm || statusFilter !== 'all' || priorityFilter !== 'all'
                       ? 'No se encontraron tickets con esos filtros'
-                      : isSupport 
+                      : isSupport
                         ? 'No hay tickets pendientes'
                         : 'No has creado ningún ticket aún'
                     }
@@ -376,7 +385,7 @@ export default function SupportPage() {
               ) : (
                 <div className="divide-y">
                   {filteredTickets.map(ticket => (
-                    <div 
+                    <div
                       key={ticket.id}
                       onClick={() => setSelectedTicket(ticket)}
                       className={`p-4 cursor-pointer hover:bg-gray-50 ${
@@ -410,6 +419,15 @@ export default function SupportPage() {
                 </div>
               )}
             </CardContent>
+            <Pagination
+              page={page}
+              hasNext={hasNext}
+              hasPrev={hasPrev}
+              loading={loading}
+              onNext={nextPage}
+              onPrev={prevPage}
+              itemCount={filteredTickets.length}
+            />
           </Card>
         </div>
 

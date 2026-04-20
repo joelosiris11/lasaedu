@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { useAuthStore } from '@app/store/authStore';
 import { userService } from '@shared/services/dataService';
 import type { DBUser } from '@shared/services/firebaseDataService';
+import { usePagination } from '@shared/hooks/usePagination';
+import { Pagination } from '@shared/components/ui/Pagination';
 import {
   adminCreateUser,
   adminResetPassword,
@@ -102,8 +104,6 @@ function KpiCard({
 
 const UsersPage = () => {
   const { user: currentUser } = useAuthStore();
-  const [users, setUsers] = useState<DBUser[]>([]);
-  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<DBUser['role'] | 'all'>('all');
 
@@ -113,37 +113,40 @@ const UsersPage = () => {
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetTarget, setResetTarget] = useState<DBUser | null>(null);
 
-  const loadUsers = async () => {
-    setLoading(true);
-    try {
-      setUsers(await userService.getAll());
-    } catch (error) {
-      console.error('Error loading users:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // ── Pagination ──
+  const filters = useMemo(() => {
+    if (roleFilter === 'all') return [];
+    return [{ field: 'role', op: '==' as const, value: roleFilter }];
+  }, [roleFilter]);
 
-  useEffect(() => { loadUsers(); }, []);
-
-  // ── Filter ──
-  const filteredUsers = users.filter(user => {
-    const q = searchTerm.toLowerCase();
-    const matchesSearch =
-      displayName(user).toLowerCase().includes(q) ||
-      user.email.toLowerCase().includes(q) ||
-      (user.profile?.phone || '').includes(q);
-    const matchesRole = roleFilter === 'all' || user.role === roleFilter;
-    return matchesSearch && matchesRole;
+  const { data, page, hasNext, hasPrev, loading, nextPage, prevPage, reset } = usePagination<DBUser>({
+    collectionName: 'users',
+    pageSize: 25,
+    orderByField: 'name',
+    orderDirection: 'asc',
+    filters,
   });
+
+  // ── Client-side search filter ──
+  const filteredUsers = useMemo(() => {
+    if (!searchTerm) return data;
+    const q = searchTerm.toLowerCase();
+    return data.filter(user => {
+      return (
+        displayName(user).toLowerCase().includes(q) ||
+        user.email.toLowerCase().includes(q) ||
+        (user.profile?.phone || '').includes(q)
+      );
+    });
+  }, [data, searchTerm]);
 
   // ── Stats ──
   const stats = {
-    total: users.length,
-    students: users.filter(u => u.role === 'student').length,
-    teachers: users.filter(u => u.role === 'teacher').length,
-    admins: users.filter(u => u.role === 'admin').length,
-    active: users.filter(u => isRecentlyActive(u.lastActive)).length,
+    total: data.length,
+    students: data.filter(u => u.role === 'student').length,
+    teachers: data.filter(u => u.role === 'teacher').length,
+    admins: data.filter(u => u.role === 'admin').length,
+    active: data.filter(u => isRecentlyActive(u.lastActive)).length,
   };
 
   // ── Actions ──
@@ -155,7 +158,7 @@ const UsersPage = () => {
     if (!confirm('¿Estás seguro de que quieres eliminar este usuario?')) return;
     try {
       await userService.delete(userId);
-      setUsers(prev => prev.filter(u => u.id !== userId));
+      reset();
     } catch (error) {
       console.error('Error deleting user:', error);
       alert('Error al eliminar usuario');
@@ -327,6 +330,15 @@ const UsersPage = () => {
               </table>
             </div>
           )}
+          <Pagination
+            page={page}
+            hasNext={hasNext}
+            hasPrev={hasPrev}
+            loading={loading}
+            onNext={nextPage}
+            onPrev={prevPage}
+            itemCount={filteredUsers.length}
+          />
         </CardContent>
       </Card>
 
@@ -334,12 +346,8 @@ const UsersPage = () => {
       {showUserModal && (
         <UserFormModal
           user={selectedUser}
-          onSaved={(u) => {
-            if (selectedUser) {
-              setUsers(prev => prev.map(x => x.id === u.id ? u : x));
-            } else {
-              setUsers(prev => [...prev, u]);
-            }
+          onSaved={() => {
+            reset();
             setShowUserModal(false);
             setSelectedUser(null);
           }}
