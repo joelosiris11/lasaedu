@@ -45,6 +45,14 @@ function isRecentlyActive(lastActive: number | undefined): boolean {
   return (Date.now() - lastActive) < 7 * 24 * 60 * 60 * 1000;
 }
 
+function formatPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, '').slice(0, 10);
+  if (digits.length === 0) return '';
+  if (digits.length <= 3) return `(${digits}`;
+  if (digits.length <= 6) return `(${digits.slice(0, 3)}) - ${digits.slice(3)}`;
+  return `(${digits.slice(0, 3)}) - ${digits.slice(3, 6)} - ${digits.slice(6)}`;
+}
+
 function formatDate(timestamp: number | undefined): string {
   if (!timestamp) return 'Nunca';
   const date = new Date(timestamp);
@@ -135,7 +143,10 @@ const UsersPage = () => {
       return (
         displayName(user).toLowerCase().includes(q) ||
         user.email.toLowerCase().includes(q) ||
-        (user.profile?.phone || '').includes(q)
+        (() => {
+          const qDigits = q.replace(/\D/g, '');
+          return qDigits.length > 0 && (user.profile?.phone || '').replace(/\D/g, '').includes(qDigits);
+        })()
       );
     });
   }, [data, searchTerm]);
@@ -289,7 +300,7 @@ const UsersPage = () => {
                           </span>
                         </td>
                         <td className="px-5 py-3 hidden md:table-cell text-sm text-gray-600">
-                          {user.profile?.phone || '\u2014'}
+                          {user.profile?.phone ? formatPhone(user.profile.phone) : '\u2014'}
                         </td>
                         <td className="px-5 py-3 hidden lg:table-cell">
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ${
@@ -386,7 +397,7 @@ function UserFormModal({
     lastName: user?.lastName || user?.name?.split(' ').slice(1).join(' ') || '',
     email: user?.email || '',
     role: user?.role || ('student' as DBUser['role']),
-    phone: user?.profile?.phone || '',
+    phone: formatPhone(user?.profile?.phone || ''),
     address: user?.profile?.address || '',
     birthDate: user?.profile?.birthDate || '',
   });
@@ -499,7 +510,15 @@ function UserFormModal({
           {/* Teléfono */}
           <div>
             <Label htmlFor="phone">Teléfono</Label>
-            <Input id="phone" type="tel" value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="809-000-0000" />
+            <Input
+              id="phone"
+              type="tel"
+              inputMode="numeric"
+              value={form.phone}
+              onChange={e => set('phone', formatPhone(e.target.value))}
+              placeholder="(809) - 000 - 0000"
+              maxLength={20}
+            />
           </div>
 
           {/* Dirección */}
