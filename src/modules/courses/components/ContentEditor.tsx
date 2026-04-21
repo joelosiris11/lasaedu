@@ -127,7 +127,7 @@ function SortableContentBlock({
       ref={setNodeRef}
       style={style}
       className={`border rounded-lg p-4 cursor-pointer transition-colors ${
-        isSelected ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
+        isSelected ? 'border-red-500 bg-red-50' : 'border-gray-200'
       }`}
       onClick={onSelect}
     >
@@ -137,7 +137,7 @@ function SortableContentBlock({
             ref={setActivatorNodeRef}
             {...listeners}
             {...attributes}
-            className="cursor-grab active:cursor-grabbing touch-none p-1 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 rounded"
+            className="cursor-grab active:cursor-grabbing touch-none p-1 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 rounded"
             aria-label="Arrastrar para reordenar bloque"
             type="button"
             onClick={e => e.stopPropagation()}
@@ -164,7 +164,7 @@ function SortableContentBlock({
         <textarea
           value={block.content}
           onChange={(e) => onUpdate({ content: e.target.value })}
-          className="w-full min-h-[100px] p-2 border rounded resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full min-h-[100px] p-2 border rounded resize-none focus:outline-none focus:ring-2 focus:ring-red-500"
           placeholder="Escribe tu contenido aquí..."
         />
       ) : block.type === 'image' ? (
@@ -188,7 +188,7 @@ function SortableContentBlock({
                     e.stopPropagation();
                     onUpdate({ metadata: { ...block.metadata, layout: v } });
                   }}
-                  className={`text-xs px-2 py-1 rounded border transition-colors ${active ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
+                  className={`text-xs px-2 py-1 rounded border transition-colors ${active ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
                 >
                   {label}
                 </button>
@@ -201,7 +201,7 @@ function SortableContentBlock({
               onChange={(e) => onUpdate({ metadata: { ...block.metadata, body: e.target.value } })}
               onClick={(e) => e.stopPropagation()}
               placeholder="Texto que acompaña la imagen..."
-              className="w-full min-h-[80px] p-2 border rounded resize-y text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full min-h-[80px] p-2 border rounded resize-y text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
             />
           )}
         </div>
@@ -507,7 +507,7 @@ export default function ContentEditor({
       
       case 'quote':
         return (
-          <blockquote className="border-l-4 border-blue-500 pl-4 italic mb-4" style={formatStyle}>
+          <blockquote className="border-l-4 border-red-500 pl-4 italic mb-4" style={formatStyle}>
             {block.content}
           </blockquote>
         );
@@ -705,7 +705,7 @@ export default function ContentEditor({
             const block = contentBlocks.find(b => b.id === activeId);
             if (!block) return null;
             return (
-              <div className="border rounded-lg p-4 bg-white shadow-lg border-blue-300">
+              <div className="border rounded-lg p-4 bg-white shadow-lg border-red-300">
                 <div className="flex items-center gap-2">
                   <GripVertical className="w-4 h-4 text-gray-400" />
                   <span className="text-sm font-medium text-gray-600">
@@ -764,7 +764,7 @@ export default function ContentEditor({
                     onClick={() => setMediaInputMode('url')}
                     className={`flex-1 py-2 px-4 text-sm font-medium border-b-2 transition-colors ${
                       mediaInputMode === 'url'
-                        ? 'border-blue-500 text-blue-600'
+                        ? 'border-red-500 text-red-600'
                         : 'border-transparent text-gray-500 hover:text-gray-700'
                     }`}
                   >
@@ -774,7 +774,7 @@ export default function ContentEditor({
                     onClick={() => setMediaInputMode('upload')}
                     className={`flex-1 py-2 px-4 text-sm font-medium border-b-2 transition-colors ${
                       mediaInputMode === 'upload'
-                        ? 'border-blue-500 text-blue-600'
+                        ? 'border-red-500 text-red-600'
                         : 'border-transparent text-gray-500 hover:text-gray-700'
                     }`}
                   >
@@ -858,7 +858,7 @@ export default function ContentEditor({
                       <div className="mt-2">
                         <div className="bg-gray-200 rounded-full h-2">
                           <div
-                            className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                            className="bg-red-600 h-2 rounded-full transition-all duration-300"
                             style={{ width: `${uploadProgress}%` }}
                           ></div>
                         </div>

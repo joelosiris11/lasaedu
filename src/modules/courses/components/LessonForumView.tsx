@@ -389,7 +389,7 @@ export default function LessonForumView({
                   </div>
                   <h3 className="text-lg font-bold text-gray-900">{selectedPost.title}</h3>
                   <div className="flex items-center gap-2 mt-1 text-sm text-gray-500">
-                    <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-xs font-medium">
+                    <div className="w-6 h-6 rounded-full bg-gradient-to-br from-red-400 to-red-600 flex items-center justify-center text-white text-xs font-medium">
                       {selectedPost.authorName.charAt(0).toUpperCase()}
                     </div>
                     <span>{selectedPost.authorName}</span>
@@ -465,7 +465,7 @@ export default function LessonForumView({
                           variant="ghost"
                           size="sm"
                           onClick={() => handleLikeReply(reply)}
-                          className={reply.likedBy.includes(userId) ? 'text-blue-600' : ''}
+                          className={reply.likedBy.includes(userId) ? 'text-red-600' : ''}
                         >
                           <ThumbsUp className="h-3 w-3 mr-1" />
                           {reply.likesCount}
@@ -559,7 +559,7 @@ export default function LessonForumView({
                   className="p-4 bg-white border border-gray-200 rounded-lg cursor-pointer hover:border-teal-300 hover:bg-teal-50/30 transition-colors"
                 >
                   <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-medium flex-shrink-0">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-red-400 to-red-600 flex items-center justify-center text-white font-medium flex-shrink-0">
                       {post.authorName.charAt(0).toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">

@@ -44,7 +44,7 @@ function formatFileSize(bytes: number): string {
 }
 
 function getFileIcon(contentType: string) {
-  if (contentType.startsWith('image/')) return <Image className="w-5 h-5 text-blue-500" />;
+  if (contentType.startsWith('image/')) return <Image className="w-5 h-5 text-red-500" />;
   if (contentType.includes('zip') || contentType.includes('rar')) return <FileArchive className="w-5 h-5 text-yellow-500" />;
   return <FileText className="w-5 h-5 text-gray-500" />;
 }
@@ -188,12 +188,12 @@ export default function FileUploadZone({
         className={`
           border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors
           ${disabled ? 'border-gray-200 bg-gray-50 cursor-not-allowed' : ''}
-          ${dragOver ? 'border-blue-400 bg-blue-50' : 'border-gray-300 hover:border-gray-400'}
+          ${dragOver ? 'border-red-400 bg-red-50' : 'border-gray-300 hover:border-gray-400'}
         `}
       >
-        <Upload className={`w-8 h-8 mx-auto mb-2 ${dragOver ? 'text-blue-500' : 'text-gray-400'}`} />
+        <Upload className={`w-8 h-8 mx-auto mb-2 ${dragOver ? 'text-red-500' : 'text-gray-400'}`} />
         <p className="text-sm text-gray-600">
-          Arrastra archivos aqui o <span className="text-blue-600 font-medium">haz clic para seleccionar</span>
+          Arrastra archivos aqui o <span className="text-red-600 font-medium">haz clic para seleccionar</span>
         </p>
         <p className="text-xs text-gray-400 mt-1">
           Max {formatFileSize(maxFileSize)} por archivo
@@ -239,7 +239,7 @@ export default function FileUploadZone({
             ) : (
               <div className="mt-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-blue-500 rounded-full transition-all duration-300"
+                  className="h-full bg-red-500 rounded-full transition-all duration-300"
                   style={{ width: `${u.progress}%` }}
                 />
               </div>

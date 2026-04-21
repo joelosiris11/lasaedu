@@ -223,7 +223,7 @@ export default function QuizLessonEditor({ content, onChange }: QuizLessonEditor
                 onDragOver={(e) => handleDragOver(e, idx)}
                 onDragEnd={handleDragEnd}
                 className={`border rounded-lg transition-colors ${
-                  dragIndex === idx ? 'border-blue-400 bg-blue-50' : 'border-gray-200 bg-white'
+                  dragIndex === idx ? 'border-red-400 bg-red-50' : 'border-gray-200 bg-white'
                 }`}
               >
                 {/* Question header */}
@@ -236,7 +236,7 @@ export default function QuizLessonEditor({ content, onChange }: QuizLessonEditor
                   <span className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 ${
                     q.type === 'context'
                       ? 'bg-amber-100 text-amber-700'
-                      : 'bg-blue-100 text-blue-700'
+                      : 'bg-red-100 text-red-700'
                   }`}>
                     {getTypeLabel(q.type)}
                   </span>
@@ -276,7 +276,7 @@ export default function QuizLessonEditor({ content, onChange }: QuizLessonEditor
                         placeholder={q.type === 'context'
                           ? 'Escribe el texto informativo que verán los estudiantes antes de las preguntas siguientes...'
                           : 'Escribe la pregunta...'}
-                        className={`w-full p-3 border border-gray-300 rounded-lg resize-y focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                        className={`w-full p-3 border border-gray-300 rounded-lg resize-y focus:ring-2 focus:ring-red-500 focus:border-red-500 ${
                           q.type === 'context' ? 'min-h-[160px]' : 'min-h-[80px]'
                         }`}
                       />
@@ -328,9 +328,9 @@ export default function QuizLessonEditor({ content, onChange }: QuizLessonEditor
 
       {/* Add question */}
       {showTypeSelector ? (
-        <div className="border-2 border-blue-200 rounded-lg p-4 bg-blue-50">
+        <div className="border-2 border-red-200 rounded-lg p-4 bg-red-50">
           <div className="flex items-center justify-between mb-3">
-            <h4 className="font-medium text-blue-900">Selecciona el tipo de pregunta</h4>
+            <h4 className="font-medium text-red-900">Selecciona el tipo de pregunta</h4>
             <Button variant="ghost" size="sm" onClick={() => setShowTypeSelector(false)}>
               Cancelar
             </Button>
@@ -346,10 +346,10 @@ export default function QuizLessonEditor({ content, onChange }: QuizLessonEditor
                   className={`p-3 bg-white border rounded-lg transition-colors text-left ${
                     isContext
                       ? 'col-span-2 md:col-span-3 border-amber-200 hover:border-amber-400 hover:bg-amber-50 flex items-center gap-3'
-                      : 'border-gray-200 hover:border-blue-400 hover:bg-blue-50'
+                      : 'border-gray-200 hover:border-red-400 hover:bg-red-50'
                   }`}
                 >
-                  <Icon className={`h-5 w-5 ${isContext ? 'text-amber-600 flex-shrink-0' : 'text-blue-600 mb-1'}`} />
+                  <Icon className={`h-5 w-5 ${isContext ? 'text-amber-600 flex-shrink-0' : 'text-red-600 mb-1'}`} />
                   <p className="text-sm font-medium">{type.label}</p>
                 </button>
               );
@@ -377,7 +377,7 @@ export default function QuizLessonEditor({ content, onChange }: QuizLessonEditor
               type="checkbox"
               checked={content.settings.shuffleQuestions}
               onChange={(e) => updateSettings('shuffleQuestions', e.target.checked)}
-              className="h-4 w-4 text-blue-600 rounded"
+              className="h-4 w-4 text-red-600 rounded"
             />
           </div>
 
@@ -390,7 +390,7 @@ export default function QuizLessonEditor({ content, onChange }: QuizLessonEditor
               type="checkbox"
               checked={content.settings.shuffleOptions}
               onChange={(e) => updateSettings('shuffleOptions', e.target.checked)}
-              className="h-4 w-4 text-blue-600 rounded"
+              className="h-4 w-4 text-red-600 rounded"
             />
           </div>
 
@@ -403,7 +403,7 @@ export default function QuizLessonEditor({ content, onChange }: QuizLessonEditor
               type="checkbox"
               checked={content.settings.showResults}
               onChange={(e) => updateSettings('showResults', e.target.checked)}
-              className="h-4 w-4 text-blue-600 rounded"
+              className="h-4 w-4 text-red-600 rounded"
             />
           </div>
 
@@ -416,7 +416,7 @@ export default function QuizLessonEditor({ content, onChange }: QuizLessonEditor
               type="checkbox"
               checked={content.settings.showCorrectAnswers}
               onChange={(e) => updateSettings('showCorrectAnswers', e.target.checked)}
-              className="h-4 w-4 text-blue-600 rounded"
+              className="h-4 w-4 text-red-600 rounded"
             />
           </div>
         </div>
@@ -548,7 +548,7 @@ function ChoiceEditor({
               name={`q-${question.id}`}
               checked={opt.isCorrect}
               onChange={() => updateOption(opt.id, { isCorrect: multi ? !opt.isCorrect : true })}
-              className="h-4 w-4 text-blue-600"
+              className="h-4 w-4 text-red-600"
             />
             <Input
               value={opt.text}

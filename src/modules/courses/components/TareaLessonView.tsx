@@ -274,7 +274,7 @@ export default function TareaLessonView({
 
       {/* Deadline countdown for students */}
       {!isTeacherOrAdmin && dueDate && deadlineStatus === 'open' && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center gap-2 text-sm text-blue-800">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-center gap-2 text-sm text-red-800">
           <Clock className="w-4 h-4" />
           <span>Tiempo restante para entrega a tiempo: <strong>{getTimeRemaining(dueDate)}</strong></span>
         </div>
@@ -293,7 +293,7 @@ export default function TareaLessonView({
                 rel="noopener noreferrer"
                 className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
               >
-                <FileText className="w-5 h-5 text-blue-500 flex-shrink-0" />
+                <FileText className="w-5 h-5 text-red-500 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-700 truncate">{file.name}</p>
                   <p className="text-xs text-gray-400">{formatFileSize(file.size)}</p>

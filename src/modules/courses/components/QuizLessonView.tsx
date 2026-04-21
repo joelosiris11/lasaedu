@@ -701,7 +701,7 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
 
           {/* Deadline status messages */}
           {!readOnly && deadlineStatus === 'not_open' && (
-            <div className="flex items-center justify-center gap-2 text-sm text-blue-700 bg-blue-50 p-3 rounded-lg mb-4">
+            <div className="flex items-center justify-center gap-2 text-sm text-red-700 bg-red-50 p-3 rounded-lg mb-4">
               <Clock className="h-4 w-4" />
               <span>
                 Este quiz estará disponible el {availableFromTs ? formatDeadlineDate(availableFromTs) : 'pronto'}
@@ -785,14 +785,14 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
               </div>
             ) : (
               <div className="mb-4">
-                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg text-center">
-                  <Clock className="h-6 w-6 text-blue-600 mx-auto mb-2" />
-                  <p className="text-sm font-medium text-blue-800">Tienes un intento en progreso</p>
-                  <p className="text-xs text-blue-600 mb-3">
+                <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-center">
+                  <Clock className="h-6 w-6 text-red-600 mx-auto mb-2" />
+                  <p className="text-sm font-medium text-red-800">Tienes un intento en progreso</p>
+                  <p className="text-xs text-red-600 mb-3">
                     {answeredSaved} de {inProgressAttempt.answers.length} respondidas
                     {totalSec !== null && ` · ${formatTime(Math.max(0, totalSec - elapsedSec))} restantes`}
                   </p>
-                  <Button onClick={shouldUsePopup ? openQuizPopup : resumeQuiz} className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-sm">
+                  <Button onClick={shouldUsePopup ? openQuizPopup : resumeQuiz} className="w-full py-2.5 bg-red-600 hover:bg-red-700 text-sm">
                     <RotateCcw className="h-4 w-4 mr-2" />Continuar intento
                   </Button>
                 </div>

@@ -46,7 +46,7 @@ export default function ForumLessonEditor({ content, onChange }: ForumLessonEdit
           value={content.prompt}
           onChange={(e) => onChange({ ...content, prompt: e.target.value })}
           placeholder="Ej: Analiza las ventajas y desventajas de los frameworks modernos de JavaScript. Justifica tu posicion con ejemplos concretos."
-          className="w-full min-h-[120px] p-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          className="w-full min-h-[120px] p-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
           maxLength={2000}
         />
         <span className="text-xs text-gray-400">{content.prompt.length}/2000</span>
@@ -67,7 +67,7 @@ export default function ForumLessonEditor({ content, onChange }: ForumLessonEdit
             type="checkbox"
             checked={content.settings.allowNewThreads}
             onChange={(e) => updateSettings('allowNewThreads', e.target.checked)}
-            className="h-4 w-4 text-blue-600 rounded"
+            className="h-4 w-4 text-red-600 rounded"
           />
         </div>
 
@@ -82,7 +82,7 @@ export default function ForumLessonEditor({ content, onChange }: ForumLessonEdit
             type="checkbox"
             checked={content.settings.requirePost}
             onChange={(e) => updateSettings('requirePost', e.target.checked)}
-            className="h-4 w-4 text-blue-600 rounded"
+            className="h-4 w-4 text-red-600 rounded"
           />
         </div>
 
@@ -97,7 +97,7 @@ export default function ForumLessonEditor({ content, onChange }: ForumLessonEdit
             type="checkbox"
             checked={content.settings.requireReply}
             onChange={(e) => updateSettings('requireReply', e.target.checked)}
-            className="h-4 w-4 text-blue-600 rounded"
+            className="h-4 w-4 text-red-600 rounded"
           />
         </div>
 

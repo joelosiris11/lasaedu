@@ -214,7 +214,7 @@ export default function TareaLessonEditor({
                         if (el) el.indeterminate = someSelected && !allSelected;
                       }}
                       onChange={() => toggleGroup(group.extensions)}
-                      className="h-4 w-4 text-blue-600 rounded"
+                      className="h-4 w-4 text-red-600 rounded"
                     />
                     <span className="text-sm font-medium text-gray-700">{group.label}</span>
                   </label>
@@ -224,7 +224,7 @@ export default function TareaLessonEditor({
                         key={ext}
                         className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs cursor-pointer transition-colors ${
                           submissionSettings.allowedExtensions.includes(ext)
-                            ? 'bg-blue-100 text-blue-700'
+                            ? 'bg-red-100 text-red-700'
                             : 'bg-gray-100 text-gray-500'
                         }`}
                       >
