@@ -161,24 +161,19 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
     })();
   }, [userId, lesson.id]);
 
-  // In popup mode, auto-start the quiz once data is loaded
+  // In popup mode, show the start screen so the student can confirm "Comenzar".
+  // Only auto-resume if there is a live in-progress attempt whose timer hasn't expired.
   const [autoStarted, setAutoStarted] = useState(false);
   useEffect(() => {
     if (!popupMode || autoStarted || !quizContent || loadingAttempts) return;
+    if (!inProgressAttempt) return;
+    const startMs = new Date(inProgressAttempt.startedAt).getTime();
+    const timeLimitMin = lesson.settings?.timeLimit || quizContent.settings.timeLimit;
+    const totalSec = timeLimitMin && timeLimitMin > 0 ? timeLimitMin * 60 : null;
+    const elapsed = Math.floor((Date.now() - startMs) / 1000);
+    if (totalSec !== null && elapsed >= totalSec) return;
     setAutoStarted(true);
-    // If there's an in-progress attempt, resume it; otherwise start fresh
-    if (inProgressAttempt) {
-      // Check if the in-progress attempt timer has expired
-      const startMs = new Date(inProgressAttempt.startedAt).getTime();
-      const timeLimitMin = lesson.settings?.timeLimit || quizContent.settings.timeLimit;
-      const totalSec = timeLimitMin && timeLimitMin > 0 ? timeLimitMin * 60 : null;
-      const elapsed = Math.floor((Date.now() - startMs) / 1000);
-      if (totalSec === null || elapsed < totalSec) {
-        resumeQuiz();
-        return;
-      }
-    }
-    initQuiz();
+    resumeQuiz();
   }, [popupMode, autoStarted, quizContent, loadingAttempts, inProgressAttempt]);
 
   const navigate = useNavigate();
@@ -261,7 +256,7 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
           evaluationId: lesson.id,
           userId,
           courseId: courseId || '',
-          answers: questions.map(q => ({ questionId: q.id, answer: null, isCorrect: false, pointsEarned: 0 })),
+          answers: questions.map(q => ({ questionId: q.id, answer: '', isCorrect: false, pointsEarned: 0 })),
           score: 0,
           maxScore: 0,
           percentage: 0,
@@ -635,6 +630,11 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
             <HelpCircle className="h-8 w-8 text-red-600" />
           </div>
           <h2 className="text-xl font-bold text-gray-900 mb-2">Quiz</h2>
+          {lesson.settings?.excludeFromFinalGrade && (
+            <span className="inline-block mb-3 px-2.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-700 rounded-full">
+              Práctica · no cuenta para la nota final
+            </span>
+          )}
           <p className="text-gray-500 mb-6">Revisa la información antes de comenzar</p>
 
           <div className="mb-6 text-left border border-gray-200 rounded-lg overflow-hidden">
@@ -722,7 +722,7 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
             <div className="mb-6 text-left">
               <h4 className="text-sm font-semibold text-gray-700 mb-2">Intentos anteriores</h4>
               <div className="space-y-2 max-h-40 overflow-y-auto">
-                {pastAttempts.map((attempt, i) => (
+                {pastAttempts.map((attempt) => (
                   <div key={attempt.id} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg">
                     <div className="flex items-center gap-2">
                       {attempt.passed

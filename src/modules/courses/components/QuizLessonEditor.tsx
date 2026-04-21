@@ -58,6 +58,7 @@ export interface QuizLessonContent {
     showResults: boolean;
     showCorrectAnswers: boolean;
     passingScore: number;
+    timeLimit?: number;
   };
 }
 

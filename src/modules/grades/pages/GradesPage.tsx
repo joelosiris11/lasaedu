@@ -4,22 +4,21 @@ import {
   courseService,
   evaluationService,
   legacyEnrollmentService,
+  lessonService,
   sectionService,
   userService,
   taskSubmissionService,
 } from '@shared/services/dataService';
-import type { DBSection, DBUser } from '@shared/services/dataService';
+import type { DBUser } from '@shared/services/dataService';
 import { useSections } from '@shared/hooks/useSections';
 import { SectionPicker } from '@shared/components/ui/SectionPicker';
 import {
   BookOpen,
   Search,
   Download,
-  User,
   Award,
   BarChart3,
   FileText,
-  ChevronDown,
   ClipboardList,
   Eye,
   AlertCircle,
@@ -94,14 +93,6 @@ const getGradeColor = (percentage: number | null) => {
   if (percentage === null) return 'text-gray-400';
   if (percentage >= 70) return 'text-gray-900';
   return 'text-red-600';
-};
-
-const getGradeBadge = (percentage: number) => {
-  if (percentage >= 90) return { label: 'A', color: 'bg-red-600 text-white' };
-  if (percentage >= 80) return { label: 'B', color: 'bg-red-500 text-white' };
-  if (percentage >= 70) return { label: 'C', color: 'bg-red-200 text-red-800' };
-  if (percentage >= 60) return { label: 'D', color: 'bg-red-100 text-red-700' };
-  return { label: 'F', color: 'bg-gray-200 text-gray-700' };
 };
 
 const getStudentLetter = (percentage: number) => {
@@ -577,11 +568,9 @@ function StudentDetailModal({
 
 function StudentRow({
   grade,
-  courseTitle,
   onViewDetails,
 }: {
   grade: StudentGrade;
-  courseTitle: string;
   onViewDetails: () => void;
 }) {
   const noGrades = grade.totalMaxPoints === 0;
@@ -801,7 +790,7 @@ export default function GradesPage() {
   const isStudent = user?.role === 'student';
 
   // SectionPicker: load sections based on role
-  const { sections: allSections, loading: sectionsLoading } = useSections(
+  const { sections: allSections } = useSections(
     isTeacher ? { instructorId: user?.id } : {}
   );
 
@@ -876,9 +865,19 @@ export default function GradesPage() {
   const loadCourseGrades = async (courseId: string) => {
     setGradesLoading(true);
     try {
+      // ── Lessons (to honor excludeFromFinalGrade on quiz lessons) ─────────────
+      const courseLessons = await lessonService.getByCourse(courseId);
+      const excludedLessonIds = new Set(
+        courseLessons
+          .filter(l => l.type === 'quiz' && (l.settings as any)?.excludeFromFinalGrade)
+          .map(l => l.id)
+      );
+
       // ── Evaluations ──────────────────────────────────────────────────────────
       const allEvaluations = await evaluationService.getAll();
-      const filteredEvals = allEvaluations.filter(e => e.courseId === courseId);
+      const filteredEvals = allEvaluations
+        .filter(e => e.courseId === courseId)
+        .filter(e => !excludedLessonIds.has(e.id));
       const evalItems: Evaluation[] = filteredEvals.map(e => {
         const maxPoints = Array.isArray(e.questions) && e.questions.length > 0
           ? e.questions.reduce((sum: number, q: any) => sum + (q.points || 0), 0) || 100
@@ -1363,7 +1362,6 @@ export default function GradesPage() {
                   <StudentRow
                     key={grade.studentId}
                     grade={grade}
-                    courseTitle={selectedCourse?.title ?? ''}
                     onViewDetails={() => openDetail(grade)}
                   />
                 ))}
