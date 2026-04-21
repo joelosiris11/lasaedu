@@ -826,9 +826,6 @@ export default function LessonViewPage() {
         <div className="flex items-center text-sm text-gray-500 mb-2">
           {getLessonIcon(currentLesson.type, isLessonCompleted)}
           <span className="ml-2 capitalize">{currentLesson.type}</span>
-          <span className="mx-2">•</span>
-          <Clock className="h-4 w-4 mr-1" />
-          <span>{currentLesson.duration} min</span>
           {isLessonCompleted && (
             <>
               <span className="mx-2">•</span>

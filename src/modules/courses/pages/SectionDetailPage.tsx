@@ -316,7 +316,6 @@ export default function SectionDetailPage() {
                             <p className={`font-medium truncate ${isDone ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
                               {lesson.title}
                             </p>
-                            <p className="text-xs text-gray-500">{lesson.duration} min</p>
                           </div>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">

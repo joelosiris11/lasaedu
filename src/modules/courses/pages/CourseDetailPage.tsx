@@ -129,8 +129,7 @@ function SortableModuleCard({
                 Módulo {moduleIndex + 1}: {module.title}
               </h3>
               <p className="text-sm text-gray-600">
-                {module.lessons.length} lecciones •
-                {module.lessons.reduce((sum, l) => sum + parseInt(l.duration || '0'), 0)} min
+                {module.lessons.length} {module.lessons.length === 1 ? 'lección' : 'lecciones'}
               </p>
               {module.objectives && module.objectives.length > 0 && (
                 <div className="flex flex-wrap gap-1 mt-1">
@@ -312,8 +311,6 @@ function SortableLessonRow({
           <p className="font-medium">{lesson.title}</p>
           <div className="flex items-center space-x-2 text-sm text-gray-500">
             <span className="capitalize">{lesson.type}</span>
-            <span>•</span>
-            <span>{lesson.duration} min</span>
           </div>
         </div>
       </div>
