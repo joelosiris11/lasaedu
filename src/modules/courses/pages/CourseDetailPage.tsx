@@ -377,6 +377,7 @@ export default function CourseDetailPage() {
     availableFrom: '',
   });
   const [newObjective, setNewObjective] = useState('');
+  const [savingModule, setSavingModule] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const imageInputRef = useRef<HTMLInputElement>(null);
 
@@ -489,8 +490,10 @@ export default function CourseDetailPage() {
   };
 
   const handleSaveModule = async () => {
+    if (savingModule) return; // prevent double-submit
     if (!courseId || !moduleForm.title.trim()) return;
 
+    setSavingModule(true);
     try {
       const updateData: Partial<DBModule> = {
         title: moduleForm.title,
@@ -522,6 +525,8 @@ export default function CourseDetailPage() {
       loadCourseData();
     } catch (error) {
       console.error('Error saving module:', error);
+    } finally {
+      setSavingModule(false);
     }
   };
 
@@ -1077,11 +1082,15 @@ export default function CourseDetailPage() {
             </div>
 
             <div className="flex justify-end space-x-2 mt-6">
-              <Button variant="outline" onClick={() => setShowModuleModal(false)}>
+              <Button variant="outline" onClick={() => setShowModuleModal(false)} disabled={savingModule}>
                 Cancelar
               </Button>
-              <Button onClick={handleSaveModule}>
-                {selectedModule ? 'Guardar Cambios' : 'Crear Módulo'}
+              <Button onClick={handleSaveModule} disabled={savingModule || !moduleForm.title.trim()}>
+                {savingModule ? (
+                  <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" />Guardando...</>
+                ) : (
+                  selectedModule ? 'Guardar Cambios' : 'Crear Módulo'
+                )}
               </Button>
             </div>
           </div>
