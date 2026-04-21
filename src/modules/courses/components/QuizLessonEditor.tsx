@@ -14,11 +14,13 @@ import {
   ArrowLeftRight,
   ChevronDownSquare,
   PenLine,
+  BookOpen,
 } from 'lucide-react';
 
 // --- Types ---
 
 export type QuizQuestionType =
+  | 'context'
   | 'true_false'
   | 'single_choice'
   | 'multiple_choice'
@@ -87,13 +89,14 @@ function normalizeText(text: string): string {
     .trim();
 }
 
-const QUESTION_TYPES: { value: QuizQuestionType; label: string; icon: typeof ToggleLeft; description: string }[] = [
-  { value: 'true_false', label: 'Verdadero/Falso', icon: ToggleLeft, description: 'Pregunta binaria' },
-  { value: 'single_choice', label: 'Opcion Unica', icon: CheckCircle, description: 'Una sola respuesta correcta' },
-  { value: 'multiple_choice', label: 'Opcion Multiple', icon: ListChecks, description: 'Varias respuestas correctas' },
-  { value: 'match_drag', label: 'Emparejar (Drag)', icon: ArrowLeftRight, description: 'Arrastrar para emparejar' },
-  { value: 'match_dropdown', label: 'Emparejar (Dropdown)', icon: ChevronDownSquare, description: 'Seleccionar par del dropdown' },
-  { value: 'open_answer', label: 'Respuesta Abierta', icon: PenLine, description: 'Texto con normalizacion' },
+const QUESTION_TYPES: { value: QuizQuestionType; label: string; icon: typeof ToggleLeft }[] = [
+  { value: 'context', label: 'Contexto', icon: BookOpen },
+  { value: 'true_false', label: 'Verdadero/Falso', icon: ToggleLeft },
+  { value: 'single_choice', label: 'Opcion Unica', icon: CheckCircle },
+  { value: 'multiple_choice', label: 'Opcion Multiple', icon: ListChecks },
+  { value: 'match_drag', label: 'Emparejar (Drag)', icon: ArrowLeftRight },
+  { value: 'match_dropdown', label: 'Emparejar (Dropdown)', icon: ChevronDownSquare },
+  { value: 'open_answer', label: 'Respuesta Abierta', icon: PenLine },
 ];
 
 function createEmptyQuestion(type: QuizQuestionType): QuizQuestion {
@@ -105,6 +108,8 @@ function createEmptyQuestion(type: QuizQuestionType): QuizQuestion {
   };
 
   switch (type) {
+    case 'context':
+      return { ...base, points: 0 };
     case 'true_false':
       return { ...base, correctBool: true };
     case 'single_choice':
@@ -228,13 +233,19 @@ export default function QuizLessonEditor({ content, onChange }: QuizLessonEditor
                 >
                   <GripVertical className="h-4 w-4 text-gray-400 cursor-grab flex-shrink-0" />
                   <span className="text-sm font-medium text-gray-500 w-6">{idx + 1}.</span>
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 flex-shrink-0">
+                  <span className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 ${
+                    q.type === 'context'
+                      ? 'bg-amber-100 text-amber-700'
+                      : 'bg-blue-100 text-blue-700'
+                  }`}>
                     {getTypeLabel(q.type)}
                   </span>
                   <span className="flex-1 text-sm text-gray-800 truncate">
-                    {q.question || '(Sin pregunta)'}
+                    {q.question || (q.type === 'context' ? '(Sin contenido)' : '(Sin pregunta)')}
                   </span>
-                  <span className="text-xs text-gray-500 flex-shrink-0">{q.points} pts</span>
+                  {q.type !== 'context' && (
+                    <span className="text-xs text-gray-500 flex-shrink-0">{q.points} pts</span>
+                  )}
                   <Button
                     variant="ghost"
                     size="sm"
@@ -256,15 +267,24 @@ export default function QuizLessonEditor({ content, onChange }: QuizLessonEditor
                 {/* Expanded editor */}
                 {isExpanded && (
                   <div className="border-t p-4 space-y-4">
-                    {/* Question text */}
+                    {/* Question / context text */}
                     <div>
-                      <Label>Pregunta *</Label>
+                      <Label>{q.type === 'context' ? 'Contenido *' : 'Pregunta *'}</Label>
                       <textarea
                         value={q.question}
                         onChange={(e) => updateQuestion(q.id, { question: e.target.value })}
-                        placeholder="Escribe la pregunta..."
-                        className="w-full min-h-[80px] p-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder={q.type === 'context'
+                          ? 'Escribe el texto informativo que verán los estudiantes antes de las preguntas siguientes...'
+                          : 'Escribe la pregunta...'}
+                        className={`w-full p-3 border border-gray-300 rounded-lg resize-y focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                          q.type === 'context' ? 'min-h-[160px]' : 'min-h-[80px]'
+                        }`}
                       />
+                      {q.type === 'context' && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          El estudiante verá este texto como contexto. No suma puntos ni requiere respuesta.
+                        </p>
+                      )}
                     </div>
 
                     {/* Type-specific editor */}
@@ -273,29 +293,31 @@ export default function QuizLessonEditor({ content, onChange }: QuizLessonEditor
                       onUpdate={(updates) => updateQuestion(q.id, updates)}
                     />
 
-                    {/* Points and explanation */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <Label>Puntos</Label>
-                        <Input
-                          type="number"
-                          value={q.points}
-                          onChange={(e) =>
-                            updateQuestion(q.id, { points: Math.max(1, parseInt(e.target.value) || 1) })
-                          }
-                          min={1}
-                          className="max-w-[120px]"
-                        />
+                    {/* Points and explanation — hidden for context */}
+                    {q.type !== 'context' && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <Label>Puntos</Label>
+                          <Input
+                            type="number"
+                            value={q.points}
+                            onChange={(e) =>
+                              updateQuestion(q.id, { points: Math.max(1, parseInt(e.target.value) || 1) })
+                            }
+                            min={1}
+                            className="max-w-[120px]"
+                          />
+                        </div>
+                        <div>
+                          <Label>Explicacion (opcional)</Label>
+                          <Input
+                            value={q.explanation || ''}
+                            onChange={(e) => updateQuestion(q.id, { explanation: e.target.value })}
+                            placeholder="Se muestra al revisar resultados"
+                          />
+                        </div>
                       </div>
-                      <div>
-                        <Label>Explicacion (opcional)</Label>
-                        <Input
-                          value={q.explanation || ''}
-                          onChange={(e) => updateQuestion(q.id, { explanation: e.target.value })}
-                          placeholder="Se muestra al revisar resultados"
-                        />
-                      </div>
-                    </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -316,15 +338,19 @@ export default function QuizLessonEditor({ content, onChange }: QuizLessonEditor
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             {QUESTION_TYPES.map((type) => {
               const Icon = type.icon;
+              const isContext = type.value === 'context';
               return (
                 <button
                   key={type.value}
                   onClick={() => addQuestion(type.value)}
-                  className="p-3 bg-white border border-gray-200 rounded-lg hover:border-blue-400 hover:bg-blue-50 transition-colors text-left"
+                  className={`p-3 bg-white border rounded-lg transition-colors text-left ${
+                    isContext
+                      ? 'col-span-2 md:col-span-3 border-amber-200 hover:border-amber-400 hover:bg-amber-50 flex items-center gap-3'
+                      : 'border-gray-200 hover:border-blue-400 hover:bg-blue-50'
+                  }`}
                 >
-                  <Icon className="h-5 w-5 text-blue-600 mb-1" />
+                  <Icon className={`h-5 w-5 ${isContext ? 'text-amber-600 flex-shrink-0' : 'text-blue-600 mb-1'}`} />
                   <p className="text-sm font-medium">{type.label}</p>
-                  <p className="text-xs text-gray-500">{type.description}</p>
                 </button>
               );
             })}
@@ -423,6 +449,8 @@ function QuestionTypeEditor({
   onUpdate: (updates: Partial<QuizQuestion>) => void;
 }) {
   switch (question.type) {
+    case 'context':
+      return null;
     case 'true_false':
       return <TrueFalseEditor question={question} onUpdate={onUpdate} />;
     case 'single_choice':

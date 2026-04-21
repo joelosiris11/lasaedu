@@ -20,6 +20,7 @@ import {
   Send,
   Eye,
   X,
+  BookOpen,
 } from 'lucide-react';
 
 // --- Helpers ---
@@ -234,6 +235,7 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
     const initialAnswers: QuizAnswers = {};
     for (const q of questions) {
       switch (q.type) {
+        case 'context': break; // no answer for context blocks
         case 'true_false': case 'single_choice': initialAnswers[q.id] = null; break;
         case 'multiple_choice': initialAnswers[q.id] = []; break;
         case 'match_drag': case 'match_dropdown': initialAnswers[q.id] = {}; break;
@@ -337,6 +339,9 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
   }, [activeAttemptId, isSimulating]);
 
   const isAnswered = (qId: string): boolean => {
+    // Context blocks don't require an answer → always considered "complete".
+    const q = displayQuestions.find((item) => item.id === qId) || quizContent?.questions.find((item) => item.id === qId);
+    if (q?.type === 'context') return true;
     const a = answers[qId];
     if (a === null || a === undefined) return false;
     if (typeof a === 'string' && a.trim() === '') return false;
@@ -351,6 +356,7 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
     let totalPoints = 0, earnedPoints = 0;
 
     for (const q of quizContent.questions) {
+      if (q.type === 'context') continue; // context blocks don't score
       totalPoints += q.points;
       const answer = answers[q.id];
       let correct = false;
@@ -496,7 +502,7 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
           </Button>
         </div>
         <div className="space-y-3">
-          {quizContent.questions.map((q, idx) => {
+          {quizContent.questions.filter(q => q.type !== 'context').map((q, idx) => {
             const attemptAnswer = reviewingAttempt.answers.find((a) => a.questionId === q.id);
             const isCorrect = attemptAnswer?.isCorrect ?? false;
             return (
@@ -530,7 +536,7 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
         <div className="flex items-center justify-between gap-3 mb-4 p-3 bg-gray-50 rounded-lg">
           <div className="flex items-center gap-2 min-w-0">
             <Eye className="h-4 w-4 text-gray-500 flex-shrink-0" />
-            <span className="text-sm text-gray-600 truncate">Vista de profesor — {quizContent.questions.length} preguntas, {quizContent.questions.reduce((s, q) => s + q.points, 0)} pts, aprobación: {quizContent.settings.passingScore || 70}%</span>
+            <span className="text-sm text-gray-600 truncate">Vista de profesor — {quizContent.questions.filter(q => q.type !== 'context').length} preguntas, {quizContent.questions.reduce((s, q) => s + (q.type === 'context' ? 0 : q.points), 0)} pts, aprobación: {quizContent.settings.passingScore || 70}%</span>
           </div>
           <Button
             size="sm"
@@ -542,7 +548,21 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
           </Button>
         </div>
         <div className="space-y-3">
-          {quizContent.questions.map((q, idx) => (
+          {quizContent.questions.map((q, idx) => {
+            if (q.type === 'context') {
+              return (
+                <div key={q.id} className="p-3 border border-amber-200 bg-amber-50/40 rounded-lg">
+                  <p className="text-[10px] uppercase tracking-wide text-amber-700 font-semibold mb-1 flex items-center gap-1">
+                    <BookOpen className="w-3 h-3" />
+                    Contexto #{idx + 1}
+                  </p>
+                  <p className="text-sm text-gray-800 whitespace-pre-wrap">
+                    {q.question || <span className="italic text-gray-400">(Sin contenido)</span>}
+                  </p>
+                </div>
+              );
+            }
+            return (
             <div key={q.id} className="p-3 border border-gray-200 rounded-lg">
               <p className="text-sm font-medium text-gray-900 mb-2">
                 <span className="text-red-600 mr-1">{idx + 1}.</span>
@@ -586,7 +606,8 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     );
@@ -595,7 +616,8 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
   if (phase === 'start') {
     const effectiveTimeLimit = lesson.settings?.timeLimit || quizContent.settings.timeLimit;
     const hasTimer = effectiveTimeLimit && effectiveTimeLimit > 0;
-    const totalPoints = quizContent.questions.reduce((s, q) => s + q.points, 0);
+    const answerableQs = quizContent.questions.filter((q) => q.type !== 'context');
+    const totalPoints = answerableQs.reduce((s, q) => s + q.points, 0);
 
     // Resolve deadlines from template + section override
     const resolved = resolveDeadlines(lesson.settings, sectionOverride);
@@ -642,7 +664,7 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
               <tbody>
                 <tr className="border-b border-gray-100">
                   <td className="px-4 py-2.5 text-gray-500 font-medium bg-gray-50 w-1/3">Preguntas</td>
-                  <td className="px-4 py-2.5 text-gray-900 font-semibold">{quizContent.questions.length}</td>
+                  <td className="px-4 py-2.5 text-gray-900 font-semibold">{answerableQs.length}</td>
                 </tr>
                 <tr className="border-b border-gray-100">
                   <td className="px-4 py-2.5 text-gray-500 font-medium bg-gray-50">Puntos totales</td>
@@ -809,9 +831,11 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
   // =====================
   if (phase === 'active' && displayQuestions.length > 0) {
     const currentQ = displayQuestions[currentIndex];
-    const answeredCount = displayQuestions.filter((q) => isAnswered(q.id)).length;
+    const answerableQuestions = displayQuestions.filter((q) => q.type !== 'context');
+    const answeredCount = answerableQuestions.filter((q) => isAnswered(q.id)).length;
     const isTimerCritical = timeLeft !== null && timeLeft <= 60;
     const isLast = currentIndex === displayQuestions.length - 1;
+    const isContext = currentQ.type === 'context';
 
     return (
       <div className="fixed inset-0 z-[100] bg-white overflow-auto w-screen h-screen">
@@ -836,7 +860,10 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
             <div className="max-w-4xl mx-auto px-4 sm:px-8 py-3 flex items-center justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <h2 className="text-sm sm:text-base font-semibold text-gray-900 truncate">{lesson.title || 'Quiz'}</h2>
-                <p className="text-xs text-gray-500">{currentIndex + 1} / {displayQuestions.length} preguntas · {answeredCount} respondidas</p>
+                <p className="text-xs text-gray-500">
+                  {currentIndex + 1} / {displayQuestions.length}
+                  {answerableQuestions.length > 0 && ` · ${answeredCount}/${answerableQuestions.length} respondidas`}
+                </p>
               </div>
               {timeLeft !== null && (
                 <div className={`flex items-center gap-1.5 text-sm font-mono font-bold px-3 py-1 rounded-full flex-shrink-0 ${isTimerCritical ? 'bg-red-100 text-red-700 animate-pulse' : 'bg-gray-100 text-gray-700'}`}>
@@ -854,37 +881,56 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
             <div className="mb-6 overflow-x-auto">
               <div className="flex gap-1.5 min-w-0 flex-wrap">
                 {displayQuestions.map((q, idx) => {
-                  const answered = isAnswered(q.id);
+                  const isCtx = q.type === 'context';
+                  const answered = !isCtx && isAnswered(q.id);
                   const isCurrent = idx === currentIndex;
                   return (
                     <button key={q.id} onClick={() => setCurrentIndex(idx)}
                       className={`w-8 h-8 rounded text-xs font-medium flex-shrink-0 transition-all ${
                         isCurrent
                           ? 'bg-red-600 text-white ring-2 ring-red-300'
-                          : answered
-                            ? 'bg-green-100 text-green-700 border border-green-300'
-                            : 'bg-white text-red-400 border-2 border-dashed border-red-300 hover:bg-red-50'
+                          : isCtx
+                            ? 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
+                            : answered
+                              ? 'bg-green-100 text-green-700 border border-green-300'
+                              : 'bg-white text-red-400 border-2 border-dashed border-red-300 hover:bg-red-50'
                       }`}>
-                      {idx + 1}
+                      {isCtx ? <BookOpen className="w-3.5 h-3.5 mx-auto" /> : idx + 1}
                     </button>
                   );
                 })}
               </div>
-              <div className="flex items-center gap-4 mt-2 text-[10px] text-gray-400">
+              <div className="flex items-center gap-4 mt-2 text-[10px] text-gray-400 flex-wrap">
                 <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-100 border border-green-300 inline-block" /> Respondida</span>
                 <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-white border-2 border-dashed border-red-300 inline-block" /> Sin responder</span>
+                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-50 border border-amber-200 inline-block" /> Contexto</span>
               </div>
             </div>
 
-            <div className="mb-8">
-              <div className="flex items-start justify-between mb-4">
-                <h3 className="font-medium text-gray-900 text-base md:text-lg">
-                  <span className="text-red-600 mr-2">{currentIndex + 1}.</span>{currentQ.question}
-                </h3>
-                <span className="text-xs text-gray-500 flex-shrink-0 ml-3 mt-1">{currentQ.points} pts</span>
+            {isContext ? (
+              <div className="mb-8">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-full bg-amber-100 text-amber-700">
+                    <BookOpen className="w-3 h-3" />
+                    Contexto
+                  </span>
+                  <span className="text-xs text-gray-500">No suma puntos · lee antes de continuar</span>
+                </div>
+                <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-5 md:p-6 whitespace-pre-wrap text-gray-800 leading-relaxed text-base">
+                  {currentQ.question || <span className="italic text-gray-400">(Sin contenido)</span>}
+                </div>
               </div>
-              <QuestionInput key={currentQ.id} question={currentQ} answer={answers[currentQ.id]} onChange={(val) => setAnswer(currentQ.id, val)} shuffleOptions={quizContent.settings.shuffleOptions} />
-            </div>
+            ) : (
+              <div className="mb-8">
+                <div className="flex items-start justify-between mb-4">
+                  <h3 className="font-medium text-gray-900 text-base md:text-lg">
+                    <span className="text-red-600 mr-2">{currentIndex + 1}.</span>{currentQ.question}
+                  </h3>
+                  <span className="text-xs text-gray-500 flex-shrink-0 ml-3 mt-1">{currentQ.points} pts</span>
+                </div>
+                <QuestionInput key={currentQ.id} question={currentQ} answer={answers[currentQ.id]} onChange={(val) => setAnswer(currentQ.id, val)} shuffleOptions={quizContent.settings.shuffleOptions} />
+              </div>
+            )}
 
             <div className="flex items-center justify-between pt-4 border-t border-gray-200">
               <Button variant="outline" size="sm" onClick={() => setCurrentIndex((i) => Math.max(0, i - 1))} disabled={currentIndex === 0}>
@@ -924,7 +970,7 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
 
         {/* Simple correct/incorrect list */}
         <div className="space-y-2 mb-6">
-          {displayQuestions.map((q, idx) => {
+          {displayQuestions.filter(q => q.type !== 'context').map((q, idx) => {
             const qr = result.questionResults.find((r) => r.questionId === q.id);
             return (
               <div key={q.id} className={`flex items-center gap-2 p-3 rounded-lg border ${qr?.correct ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
