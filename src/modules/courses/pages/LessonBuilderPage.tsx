@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useParams, useNavigate, useBlocker } from 'react-router-dom';
 import { 
   lessonService, 
   moduleService, 
@@ -9,8 +9,8 @@ import {
 import { RichTextEditor } from '@shared/components/editor';
 import { blocksToHtml, type LegacyContentBlock } from '../utils/blocksToHtml';
 import { fileUploadService } from '@shared/services/fileUploadService';
+import { useHeaderStore } from '@app/store/headerStore';
 import {
-  ArrowLeft,
   Save,
   Eye,
   Settings,
@@ -46,6 +46,7 @@ interface LessonSettings {
   availableUntil?: string;
   dueDate?: string;
   lateSubmissionDeadline?: string;
+  excludeFromFinalGrade?: boolean;
   sideImage?: {
     url: string;
     position: 'left' | 'right';
@@ -252,8 +253,9 @@ export default function LessonBuilderPage() {
       newErrors.maxAttempts = 'Debe permitir al menos 1 intento';
     }
 
-    // Due date required for quiz and tarea
-    if ((lessonType === 'quiz' || lessonType === 'tarea') && !settings.dueDate) {
+    // Due date required for tarea; required for quiz unless it's marked as practice (not in final grade)
+    const quizRequiresDueDate = lessonType === 'quiz' && !settings.excludeFromFinalGrade;
+    if ((quizRequiresDueDate || lessonType === 'tarea') && !settings.dueDate) {
       newErrors.dueDate = 'La fecha de cierre es obligatoria';
     }
 
@@ -273,8 +275,8 @@ export default function LessonBuilderPage() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSave = async () => {
-    if (!validateForm() || !courseId || !moduleId) return;
+  const handleSave = async (): Promise<boolean> => {
+    if (!validateForm() || !courseId || !moduleId) return false;
 
     setSaving(true);
     try {
@@ -325,9 +327,13 @@ export default function LessonBuilderPage() {
 
       // Show success message or redirect
       console.log('Lesson saved successfully');
+      // Reset dirty-tracking baseline on successful save.
+      snapshotRef.current = currentSnapshot;
+      return true;
     } catch (error) {
       console.error('Error saving lesson:', error);
       setErrors({ submit: 'Error al guardar la lección. Intenta de nuevo.' });
+      return false;
     } finally {
       setSaving(false);
     }
@@ -339,49 +345,120 @@ export default function LessonBuilderPage() {
     }
   };
 
+  // ── Unsaved-changes guard ──────────────────────────────────────────
+  // Snapshot of the last saved (or freshly loaded) state. If the current
+  // serialized state differs from it, the form is "dirty".
+  const snapshotRef = useRef<string | null>(null);
+  const currentSnapshot = useMemo(
+    () => JSON.stringify({
+      title, description, lessonType,
+      forumContent, quizContent, videoContent, resourceContent, tareaContent,
+      wysiwygContent, settings,
+    }),
+    [title, description, lessonType, forumContent, quizContent, videoContent, resourceContent, tareaContent, wysiwygContent, settings]
+  );
+
+  useEffect(() => {
+    // Set the initial snapshot once loadData finishes.
+    if (!loading && snapshotRef.current === null) {
+      snapshotRef.current = currentSnapshot;
+    }
+  }, [loading, currentSnapshot]);
+
+  const dirty = snapshotRef.current !== null && snapshotRef.current !== currentSnapshot;
+
+  const [confirmLeave, setConfirmLeave] = useState<null | { onDiscard: () => void }>(null);
+
+  // In-app navigation guard.
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) => dirty && currentLocation.pathname !== nextLocation.pathname
+  );
+  useEffect(() => {
+    if (blocker.state === 'blocked') {
+      setConfirmLeave({ onDiscard: () => blocker.proceed() });
+    }
+  }, [blocker]);
+
+  // Browser-level guard (refresh / close tab).
+  useEffect(() => {
+    if (!dirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [dirty]);
+
+  const requestBack = useCallback(() => {
+    if (!dirty) {
+      navigate(`/courses/${courseId}`);
+      return;
+    }
+    setConfirmLeave({ onDiscard: () => navigate(`/courses/${courseId}`) });
+  }, [dirty, navigate, courseId]);
+
+  const handleSaveFromModal = async () => {
+    const ok = await handleSave();
+    if (ok !== false) {
+      // Consider current state the new baseline.
+      snapshotRef.current = currentSnapshot;
+      const action = confirmLeave;
+      setConfirmLeave(null);
+      action?.onDiscard();
+    }
+  };
+
+  const handleDiscardFromModal = () => {
+    // Proceed without saving.
+    snapshotRef.current = currentSnapshot; // suppress guard during navigation
+    const action = confirmLeave;
+    setConfirmLeave(null);
+    action?.onDiscard();
+  };
+
+  const handleCancelLeave = () => {
+    if (blocker.state === 'blocked') blocker.reset();
+    setConfirmLeave(null);
+  };
+
+  // Sync the top header: title = "Editar/Nueva Lección", subtitle = Module name,
+  // back button → course, actions = Guardar + Vista Previa.
+  const setOverride = useHeaderStore((s) => s.setOverride);
+  useEffect(() => {
+    setOverride({
+      title: lessonId ? 'Editar Lección' : 'Nueva Lección',
+      subtitle: module?.title ? `Módulo: ${module.title}${dirty ? ' · cambios sin guardar' : ''}` : (dirty ? 'Cambios sin guardar' : undefined),
+      onBack: requestBack,
+      actions: (
+        <>
+          {lessonId && (
+            <Button variant="outline" size="sm" onClick={handlePreview}>
+              <Eye className="w-4 h-4 mr-1.5" />
+              <span className="hidden sm:inline">Vista Previa</span>
+            </Button>
+          )}
+          <Button size="sm" onClick={handleSave} disabled={saving || !dirty} className="bg-red-600 hover:bg-red-700">
+            <Save className="w-4 h-4 mr-1.5" />
+            {saving ? 'Guardando...' : dirty ? 'Guardar' : 'Guardado'}
+          </Button>
+        </>
+      ),
+    });
+    return () => setOverride(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lessonId, module?.title, saving, courseId, dirty, requestBack, wysiwygContent, title, description, lessonType, forumContent, quizContent, videoContent, resourceContent, tareaContent, settings]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
       </div>
     );
   }
 
   return (
     <div className="max-w-6xl mx-auto p-6">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-4">
-          <Button
-            variant="ghost"
-            onClick={() => navigate(`/courses/${courseId}`)}
-          >
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Volver al Curso
-          </Button>
-          <div>
-            <h1 className="text-2xl font-bold">
-              {lessonId ? 'Editar Lección' : 'Nueva Lección'}
-            </h1>
-            <p className="text-gray-600">
-              Módulo: {module?.title}
-            </p>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          {lessonId && (
-            <Button variant="outline" onClick={handlePreview}>
-              <Eye className="w-4 h-4 mr-2" />
-              Vista Previa
-            </Button>
-          )}
-          <Button onClick={handleSave} disabled={saving}>
-            <Save className="w-4 h-4 mr-2" />
-            {saving ? 'Guardando...' : 'Guardar'}
-          </Button>
-        </div>
-      </div>
-
       {/* Error Messages */}
       {errors.submit && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
@@ -395,7 +472,7 @@ export default function LessonBuilderPage() {
           onClick={() => setActiveTab('content')}
           className={`px-4 py-2 font-medium ${
             activeTab === 'content'
-              ? 'border-b-2 border-blue-500 text-blue-600'
+              ? 'border-b-2 border-red-500 text-red-600'
               : 'text-gray-600 hover:text-gray-900'
           }`}
         >
@@ -406,7 +483,7 @@ export default function LessonBuilderPage() {
           onClick={() => setActiveTab('settings')}
           className={`px-4 py-2 font-medium ${
             activeTab === 'settings'
-              ? 'border-b-2 border-blue-500 text-blue-600'
+              ? 'border-b-2 border-red-500 text-red-600'
               : 'text-gray-600 hover:text-gray-900'
           }`}
         >
@@ -469,12 +546,12 @@ export default function LessonBuilderPage() {
                         onClick={() => setLessonType(type.value)}
                         className={`p-4 border rounded-lg text-left transition-colors ${
                           lessonType === type.value
-                            ? 'border-blue-500 bg-blue-50'
+                            ? 'border-red-500 bg-red-50'
                             : 'border-gray-200 hover:border-gray-300'
                         }`}
                       >
                         <Icon className={`w-6 h-6 mb-2 ${
-                          lessonType === type.value ? 'text-blue-600' : 'text-gray-600'
+                          lessonType === type.value ? 'text-red-600' : 'text-gray-600'
                         }`} />
                         <h4 className="font-medium mb-1">{type.label}</h4>
                         <p className="text-sm text-gray-600">{type.description}</p>
@@ -580,7 +657,7 @@ export default function LessonBuilderPage() {
                     ...prev, 
                     isRequired: e.target.checked 
                   }))}
-                  className="h-4 w-4 text-blue-600 rounded"
+                  className="h-4 w-4 text-red-600 rounded"
                 />
               </div>
 
@@ -590,6 +667,25 @@ export default function LessonBuilderPage() {
             {lessonType === 'quiz' && (
               <div className="space-y-4">
                 <h3 className="font-medium">Configuración de Quiz</h3>
+
+                <div className="flex items-start justify-between gap-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                  <div>
+                    <Label className="font-medium">No contar para la nota final</Label>
+                    <p className="text-sm text-gray-600">
+                      Úsalo para quizzes de práctica. No tendrán límite de tiempo ni fecha de cierre.
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={!!settings.excludeFromFinalGrade}
+                    onChange={(e) => setSettings(prev => ({
+                      ...prev,
+                      excludeFromFinalGrade: e.target.checked,
+                      ...(e.target.checked ? { timeLimit: undefined, dueDate: '', lateSubmissionDeadline: '' } : {}),
+                    }))}
+                    className="h-4 w-4 text-red-600 rounded mt-1"
+                  />
+                </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
@@ -611,20 +707,22 @@ export default function LessonBuilderPage() {
                       <p className="text-red-500 text-sm mt-1">{errors.passingScore}</p>
                     )}
                   </div>
-                  <div>
-                    <Label htmlFor="timeLimit">Límite de Tiempo (min)</Label>
-                    <Input
-                      id="timeLimit"
-                      type="number"
-                      value={settings.timeLimit || ''}
-                      onChange={(e) => setSettings(prev => ({
-                        ...prev,
-                        timeLimit: e.target.value ? parseInt(e.target.value) : undefined
-                      }))}
-                      placeholder="Sin límite"
-                      min="1"
-                    />
-                  </div>
+                  {!settings.excludeFromFinalGrade && (
+                    <div>
+                      <Label htmlFor="timeLimit">Límite de Tiempo (min)</Label>
+                      <Input
+                        id="timeLimit"
+                        type="number"
+                        value={settings.timeLimit || ''}
+                        onChange={(e) => setSettings(prev => ({
+                          ...prev,
+                          timeLimit: e.target.value ? parseInt(e.target.value) : undefined
+                        }))}
+                        placeholder="Sin límite"
+                        min="1"
+                      />
+                    </div>
+                  )}
                   <div>
                     <Label htmlFor="maxAttempts">Máximo de Intentos</Label>
                     <Input
@@ -647,8 +745,8 @@ export default function LessonBuilderPage() {
               </div>
             )}
 
-            {/* Fechas - for quiz and tarea */}
-            {(lessonType === 'quiz' || lessonType === 'tarea') && (
+            {/* Fechas - for tarea and for quiz (only when it counts for final grade) */}
+            {((lessonType === 'quiz' && !settings.excludeFromFinalGrade) || lessonType === 'tarea') && (
               <div className="space-y-4">
                 <h3 className="font-medium">
                   {lessonType === 'tarea' ? 'Fechas de Entrega' : 'Fecha Límite'}
@@ -709,6 +807,41 @@ export default function LessonBuilderPage() {
             )}
           </CardContent>
         </Card>
+      )}
+
+      {/* Unsaved-changes confirm modal */}
+      {confirmLeave && (
+        <div className="fixed inset-0 z-[200] bg-black/40 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-200">
+              <h3 className="text-base font-semibold text-gray-900">Tienes cambios sin guardar</h3>
+              <p className="text-sm text-gray-600 mt-1">
+                Si sales ahora, perderás los cambios hechos en esta lección. ¿Qué quieres hacer?
+              </p>
+            </div>
+            <div className="px-5 py-4 flex flex-col sm:flex-row gap-2 sm:justify-end">
+              <Button variant="ghost" onClick={handleCancelLeave} disabled={saving}>
+                Seguir editando
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleDiscardFromModal}
+                disabled={saving}
+                className="border-red-300 text-red-700 hover:bg-red-50"
+              >
+                Descartar cambios
+              </Button>
+              <Button
+                onClick={handleSaveFromModal}
+                disabled={saving}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                <Save className="h-4 w-4 mr-1.5" />
+                {saving ? 'Guardando...' : 'Guardar y salir'}
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -800,7 +933,7 @@ function SideImagePanel({
                       onClick={() => onChange({ ...value, position: pos })}
                       className={`flex-1 py-1.5 px-3 text-xs rounded border transition-colors ${
                         value.position === pos
-                          ? 'bg-blue-600 text-white border-blue-600'
+                          ? 'bg-red-600 text-white border-red-600'
                           : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
                       }`}
                     >
@@ -821,7 +954,7 @@ function SideImagePanel({
                   step={5}
                   value={value.width ?? 50}
                   onChange={(e) => onChange({ ...value, width: Number(e.target.value) })}
-                  className="w-full h-2 mt-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                  className="w-full h-2 mt-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-red-600"
                 />
                 <div className="flex justify-between text-[10px] text-gray-400 mt-0.5 font-mono">
                   <span>20%</span><span>50%</span><span>80%</span>
@@ -839,7 +972,7 @@ function SideImagePanel({
                   step={5}
                   value={value.focalX ?? 50}
                   onChange={(e) => onChange({ ...value, focalX: Number(e.target.value) })}
-                  className="w-full h-2 mt-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                  className="w-full h-2 mt-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-red-600"
                 />
                 <div className="flex justify-between text-[10px] text-gray-400 mt-0.5">
                   <span>← Izq</span><span>Centro</span><span>Der →</span>
@@ -850,7 +983,7 @@ function SideImagePanel({
                   type="checkbox"
                   checked={value.fade !== false}
                   onChange={(e) => onChange({ ...value, fade: e.target.checked })}
-                  className="h-3.5 w-3.5 text-blue-600 rounded"
+                  className="h-3.5 w-3.5 text-red-600 rounded"
                 />
                 <span className="text-xs text-gray-600">Difuminar borde hacia el texto</span>
               </label>
