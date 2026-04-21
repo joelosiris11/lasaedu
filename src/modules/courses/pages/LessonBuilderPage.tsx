@@ -23,7 +23,9 @@ import {
   Image as ImageIcon,
   Upload,
   X as XIcon,
-  Loader2
+  Loader2,
+  AlertTriangle,
+  Trash2,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@shared/components/ui/Card';
 import { Button } from '@shared/components/ui/Button';
@@ -276,6 +278,7 @@ export default function LessonBuilderPage() {
   };
 
   const handleSave = async (): Promise<boolean> => {
+    if (saving) return false; // prevent double-save
     if (!validateForm() || !courseId || !moduleId) return false;
 
     setSaving(true);
@@ -311,10 +314,11 @@ export default function LessonBuilderPage() {
       if (lessonId) {
         // Update existing lesson
         await lessonService.update(lessonId, lessonData);
+        snapshotRef.current = currentSnapshot;
       } else {
         // Create new lesson
         const existingLessons = await lessonService.getByModule(moduleId);
-        
+
         const newLesson: Omit<DBLesson, 'id'> = {
           ...lessonData,
           order: existingLessons.length,
@@ -322,13 +326,14 @@ export default function LessonBuilderPage() {
         } as Omit<DBLesson, 'id'>;
 
         const createdLesson = await lessonService.create(newLesson);
+        // Baseline must be reset BEFORE navigate so the guard doesn't treat
+        // the redirect-to-edit as an unsaved-changes navigation.
+        snapshotRef.current = currentSnapshot;
+        bypassGuardRef.current = true;
         navigate(`/courses/${courseId}/modules/${moduleId}/lessons/${createdLesson.id}/edit`);
       }
 
-      // Show success message or redirect
       console.log('Lesson saved successfully');
-      // Reset dirty-tracking baseline on successful save.
-      snapshotRef.current = currentSnapshot;
       return true;
     } catch (error) {
       console.error('Error saving lesson:', error);
@@ -349,6 +354,9 @@ export default function LessonBuilderPage() {
   // Snapshot of the last saved (or freshly loaded) state. If the current
   // serialized state differs from it, the form is "dirty".
   const snapshotRef = useRef<string | null>(null);
+  // Flip to `true` to let the next navigation pass through the blocker
+  // unchallenged — used for the create→edit redirect after a successful save.
+  const bypassGuardRef = useRef(false);
   const currentSnapshot = useMemo(
     () => JSON.stringify({
       title, description, lessonType,
@@ -371,7 +379,13 @@ export default function LessonBuilderPage() {
 
   // In-app navigation guard.
   const blocker = useBlocker(
-    ({ currentLocation, nextLocation }) => dirty && currentLocation.pathname !== nextLocation.pathname
+    ({ currentLocation, nextLocation }) => {
+      if (bypassGuardRef.current) {
+        bypassGuardRef.current = false;
+        return false;
+      }
+      return dirty && currentLocation.pathname !== nextLocation.pathname;
+    }
   );
   useEffect(() => {
     if (blocker.state === 'blocked') {
@@ -403,6 +417,7 @@ export default function LessonBuilderPage() {
     if (ok !== false) {
       // Consider current state the new baseline.
       snapshotRef.current = currentSnapshot;
+      bypassGuardRef.current = true;
       const action = confirmLeave;
       setConfirmLeave(null);
       action?.onDiscard();
@@ -411,7 +426,8 @@ export default function LessonBuilderPage() {
 
   const handleDiscardFromModal = () => {
     // Proceed without saving.
-    snapshotRef.current = currentSnapshot; // suppress guard during navigation
+    snapshotRef.current = currentSnapshot;
+    bypassGuardRef.current = true;
     const action = confirmLeave;
     setConfirmLeave(null);
     action?.onDiscard();
@@ -811,34 +827,60 @@ export default function LessonBuilderPage() {
 
       {/* Unsaved-changes confirm modal */}
       {confirmLeave && (
-        <div className="fixed inset-0 z-[200] bg-black/40 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-200">
-              <h3 className="text-base font-semibold text-gray-900">Tienes cambios sin guardar</h3>
-              <p className="text-sm text-gray-600 mt-1">
-                Si sales ahora, perderás los cambios hechos en esta lección. ¿Qué quieres hacer?
-              </p>
+        <div
+          className="fixed inset-0 z-[200] bg-black/50 backdrop-blur-[2px] flex items-center justify-center p-4 animate-fadeIn"
+          onClick={handleCancelLeave}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl w-full max-w-2xl animate-modalIn"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="unsaved-title"
+          >
+            <div className="px-6 pt-6 pb-5">
+              <div className="flex items-start gap-3">
+                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center">
+                  <AlertTriangle className="w-5 h-5 text-amber-600" />
+                </div>
+                <div className="min-w-0">
+                  <h3 id="unsaved-title" className="text-base font-semibold text-gray-900">
+                    Cambios sin guardar
+                  </h3>
+                  <p className="text-sm text-gray-600 mt-1 leading-relaxed">
+                    Tu lección tiene cambios que aún no se guardaron. Si sales ahora se perderán.
+                  </p>
+                </div>
+              </div>
             </div>
-            <div className="px-5 py-4 flex flex-col sm:flex-row gap-2 sm:justify-end">
-              <Button variant="ghost" onClick={handleCancelLeave} disabled={saving}>
-                Seguir editando
-              </Button>
+            <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 rounded-b-xl flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-2">
               <Button
                 variant="outline"
                 onClick={handleDiscardFromModal}
                 disabled={saving}
-                className="border-red-300 text-red-700 hover:bg-red-50"
+                className="group border-gray-300 text-gray-700 bg-white transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm hover:border-red-300 hover:text-red-700 hover:bg-red-50 active:translate-y-0 active:shadow-none"
               >
+                <Trash2 className="h-4 w-4 mr-1.5 transition-transform duration-200 group-hover:rotate-[-8deg]" />
                 Descartar cambios
               </Button>
-              <Button
-                onClick={handleSaveFromModal}
-                disabled={saving}
-                className="bg-red-600 hover:bg-red-700"
-              >
-                <Save className="h-4 w-4 mr-1.5" />
-                {saving ? 'Guardando...' : 'Guardar y salir'}
-              </Button>
+              <div className="flex flex-col-reverse sm:flex-row gap-2">
+                <Button
+                  variant="outline"
+                  onClick={handleCancelLeave}
+                  disabled={saving}
+                  className="border-gray-300 text-gray-900 bg-white transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm hover:bg-gray-100 active:translate-y-0 active:shadow-none"
+                >
+                  Seguir editando
+                </Button>
+                <Button
+                  onClick={handleSaveFromModal}
+                  disabled={saving}
+                  className="group bg-red-600 transition-all duration-200 hover:bg-red-700 hover:-translate-y-0.5 hover:shadow-md hover:shadow-red-600/20 active:translate-y-0 active:shadow-none"
+                >
+                  <Save className="h-4 w-4 mr-1.5 transition-transform duration-200 group-hover:scale-110" />
+                  {saving ? 'Guardando...' : 'Guardar y salir'}
+                </Button>
+              </div>
             </div>
           </div>
         </div>

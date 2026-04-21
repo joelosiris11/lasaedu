@@ -64,11 +64,21 @@ export default {
           from: { transform: "translateY(100%)" },
           to: { transform: "translateY(0)" },
         },
+        fadeIn: {
+          from: { opacity: "0" },
+          to: { opacity: "1" },
+        },
+        modalIn: {
+          from: { opacity: "0", transform: "translateY(8px) scale(0.97)" },
+          to: { opacity: "1", transform: "translateY(0) scale(1)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
         "slide-up": "slide-up 0.3s ease-out",
+        fadeIn: "fadeIn 0.15s ease-out",
+        modalIn: "modalIn 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
       },
     },
   },
