@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAuthStore } from '@app/store/authStore';
+import { useHeaderStore } from '@app/store/headerStore';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { User, ChevronDown, LogOut } from 'lucide-react';
+import { User, ChevronDown, LogOut, ArrowLeft } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { NotificationCenter } from './NotificationCenter';
 
@@ -34,7 +35,10 @@ export const Header = () => {
   const [showProfile, setShowProfile] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const { title, subtitle } = getPageMeta(location.pathname);
+  const { title: pageTitle, subtitle: pageSubtitle } = getPageMeta(location.pathname);
+  const override = useHeaderStore((s) => s.override);
+  const title = override?.title ?? pageTitle;
+  const subtitle = override?.subtitle ?? pageSubtitle;
 
   useEffect(() => {
     if (!showProfile) return;
@@ -49,14 +53,32 @@ export const Header = () => {
 
   return (
     <header className="sticky top-0 z-30 bg-white border-b border-gray-200 px-4 py-2.5 pl-[4.5rem] md:pl-6">
-      <div className="flex items-center justify-between">
-        {/* Page Title */}
-        <div>
-          <h1 className="text-lg font-semibold text-gray-900">{title}</h1>
+      <div className="flex items-center justify-between gap-3">
+        {/* Page Title (optional back button + subtitle) */}
+        <div className="flex items-center gap-2 min-w-0">
+          {override?.onBack && (
+            <button
+              type="button"
+              onClick={override.onBack}
+              className="flex-shrink-0 p-1.5 rounded-md hover:bg-gray-100 text-gray-600 hover:text-gray-900"
+              aria-label="Volver"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+          )}
+          <div className="min-w-0">
+            <h1 className="text-lg font-semibold text-gray-900 truncate">{title}</h1>
+            {subtitle && (
+              <p className="text-xs text-gray-500 truncate">{subtitle}</p>
+            )}
+          </div>
         </div>
 
-        {/* Right Side: Notifications + Profile */}
+        {/* Right Side: page actions + Notifications + Profile */}
         <div className="flex items-center space-x-2 md:space-x-4">
+          {override?.actions && (
+            <div className="flex items-center gap-2">{override.actions}</div>
+          )}
           {/* Notifications - Real-time component */}
           <NotificationCenter />
 
