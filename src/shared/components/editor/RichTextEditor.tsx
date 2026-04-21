@@ -121,7 +121,7 @@ export default function RichTextEditor({
       Link.configure({
         openOnClick: false,
         HTMLAttributes: {
-          class: 'text-blue-600 underline hover:text-blue-800'
+          class: 'text-red-600 underline hover:text-red-800'
         }
       }),
       TextAlign.configure({
@@ -209,7 +209,7 @@ export default function RichTextEditor({
         disabled={disabled}
         aria-label={title}
         className={`p-2 rounded hover:bg-gray-100 transition-colors ${
-          active ? 'bg-gray-200 text-blue-600' : 'text-gray-600'
+          active ? 'bg-red-100 text-red-600' : 'text-gray-600'
         } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
       >
         {children}
@@ -552,7 +552,7 @@ function FontDropdown({ editor }: { editor: ReturnType<typeof useEditor> }) {
                 setOpen(false);
               }}
               style={{ fontFamily: f.value }}
-              className={`block w-full text-left px-3 py-2 text-sm hover:bg-gray-50 ${current === f.value ? 'bg-blue-50 text-blue-700' : 'text-gray-700'}`}
+              className={`block w-full text-left px-3 py-2 text-sm hover:bg-gray-50 ${current === f.value ? 'bg-red-50 text-red-700' : 'text-gray-700'}`}
             >
               {f.label}
             </button>
@@ -618,7 +618,7 @@ function FontSizeDropdown({ editor }: { editor: ReturnType<typeof useEditor> }) 
                 (editor as any).chain().focus().setFontSize(f.value).run();
                 setOpen(false);
               }}
-              className={`block w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 ${current === f.value ? 'bg-blue-50 text-blue-700' : 'text-gray-700'}`}
+              className={`block w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 ${current === f.value ? 'bg-red-50 text-red-700' : 'text-gray-700'}`}
               style={{ fontSize: f.value }}
             >
               {f.label}
@@ -697,14 +697,14 @@ function ColorPicker({ editor }: { editor: ReturnType<typeof useEditor> }) {
                 onChange={(e) => setHexInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); applyHex(); } }}
                 placeholder="#111827"
-                className={`flex-1 px-2 py-1.5 text-sm font-mono border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 ${isValidHex(hexInput) ? 'border-gray-300' : 'border-red-300'}`}
+                className={`flex-1 px-2 py-1.5 text-sm font-mono border rounded focus:outline-none focus:ring-2 focus:ring-red-500 ${isValidHex(hexInput) ? 'border-gray-300' : 'border-red-300'}`}
               />
               <button
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={applyHex}
                 disabled={!isValidHex(hexInput)}
-                className="px-2 py-1.5 text-xs font-medium bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-2 py-1.5 text-xs font-medium bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Aplicar
               </button>
