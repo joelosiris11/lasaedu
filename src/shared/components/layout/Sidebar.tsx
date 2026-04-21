@@ -4,7 +4,6 @@ import { useAuthStore } from '@app/store/authStore';
 import {
   Home,
   BookOpen,
-  Users,
   Settings,
   HelpCircle,
   Menu,

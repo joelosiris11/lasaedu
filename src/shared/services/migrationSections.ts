@@ -10,11 +10,7 @@
 
 import { firebaseDB } from './firebaseDataService';
 import type {
-  DBCourse,
-  DBSection,
-  DBEnrollment,
   DBGrade,
-  DBTaskSubmission,
   DBDeadlineExtension,
   DBEvaluationAttempt,
 } from './firebaseDataService';

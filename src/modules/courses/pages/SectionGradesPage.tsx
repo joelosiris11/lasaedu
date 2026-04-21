@@ -7,13 +7,8 @@ import {
   gradeService,
   taskSubmissionService,
   type DBSection,
-  type DBGrade,
-  type DBLesson,
-  type DBEnrollment,
-  type DBTaskSubmission,
 } from '@shared/services/dataService';
 import { firebaseDB } from '@shared/services/firebaseDataService';
-import type { DBEvaluationAttempt, DBUser } from '@shared/services/firebaseDataService';
 import {
   ArrowLeft,
   Users,

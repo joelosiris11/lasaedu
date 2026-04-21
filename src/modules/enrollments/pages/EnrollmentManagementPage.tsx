@@ -152,9 +152,6 @@ function StudentDetailModal({
   open,
   onClose,
   allSections,
-  allCourses,
-  currentUserId,
-  isTeacher,
   readOnly,
   onEnrollmentCancelled,
   onEnrollmentCreated,
@@ -895,7 +892,10 @@ export default function EnrollmentManagementPage() {
       const completedCount = userEnrollments.filter(e => e.status === 'completed').length;
       const grades = userEnrollments.filter(e => e.grade != null).map(e => e.grade as number);
       const avgGrade = grades.length > 0 ? Math.round(grades.reduce((s, g) => s + g, 0) / grades.length) : null;
-      const accesses = userEnrollments.filter(e => e.lastAccessedAt != null).map(e => e.lastAccessedAt as number);
+      const accesses = userEnrollments
+        .filter(e => e.lastAccessedAt != null)
+        .map(e => new Date(e.lastAccessedAt as string).getTime())
+        .filter(n => Number.isFinite(n));
       const lastAccess = accesses.length > 0 ? Math.max(...accesses) : null;
       return { user: u, enrollments: userEnrollments, certificates: certs, activeCount, completedCount, avgGrade, lastAccess };
     });

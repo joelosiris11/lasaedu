@@ -34,7 +34,7 @@ const AdminDashboard = () => {
   const isSupervisor = user?.role === 'supervisor';
   const { stats, loading: statsLoading } = useSystemStats();
   const { data: overview, loading: overviewLoading } = useAdminOverview();
-  const { snapshots, loading: snapshotsLoading, saveSnapshot, rollback, refetch } = useCourseSnapshots();
+  const { snapshots, loading: snapshotsLoading, saveSnapshot, rollback } = useCourseSnapshots();
 
   const [savingCourse, setSavingCourse] = useState<string | null>(null);
   const [rollingBack, setRollingBack] = useState<string | null>(null);

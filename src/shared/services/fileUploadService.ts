@@ -31,14 +31,6 @@ class FileUploadService {
     return '';
   }
 
-  private generateUniqueFilename(originalName: string): string {
-    const timestamp = Date.now();
-    const random = Math.random().toString(36).substring(2);
-    const extension = originalName.split('.').pop();
-    const nameWithoutExtension = originalName.replace(/\.[^/.]+$/, '');
-    return `${nameWithoutExtension}_${timestamp}_${random}.${extension}`;
-  }
-
   private validateFile(file: File, type: 'image' | 'video' | 'audio' | 'document'): void {
     const maxSizes = {
       image: 10 * 1024 * 1024,
@@ -189,6 +181,23 @@ class FileUploadService {
     if (['mp3', 'wav', 'ogg', 'm4a'].includes(extension || '')) return 'audio';
     if (['pdf', 'doc', 'docx'].includes(extension || '')) return 'document';
     return 'unknown';
+  }
+
+  async getMediaDuration(file: File): Promise<number> {
+    return new Promise((resolve, reject) => {
+      const isVideo = file.type.startsWith('video/');
+      const element = isVideo ? document.createElement('video') : document.createElement('audio');
+      element.preload = 'metadata';
+      element.onloadedmetadata = () => {
+        URL.revokeObjectURL(element.src);
+        resolve(element.duration);
+      };
+      element.onerror = () => {
+        URL.revokeObjectURL(element.src);
+        reject(new Error('Failed to load media metadata'));
+      };
+      element.src = URL.createObjectURL(file);
+    });
   }
 
   formatFileSize(bytes: number): string {

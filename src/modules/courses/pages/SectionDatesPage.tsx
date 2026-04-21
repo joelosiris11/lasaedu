@@ -5,8 +5,6 @@ import {
   moduleService,
   lessonService,
   type DBSection,
-  type DBLesson,
-  type DBSectionLessonOverride,
 } from '@shared/services/dataService';
 import {
   ArrowLeft,

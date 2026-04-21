@@ -7,7 +7,6 @@ import {
   Clock,
   AlertCircle,
   Star,
-  User,
   AlertTriangle,
   Lock,
   CalendarClock,
@@ -17,7 +16,6 @@ import {
   ClipboardList,
 } from 'lucide-react';
 import { Button } from '@shared/components/ui/Button';
-import { Card, CardContent, CardHeader, CardTitle } from '@shared/components/ui/Card';
 import { Input } from '@shared/components/ui/Input';
 import { Label } from '@shared/components/ui/Label';
 import FileUploadZone, { type UploadedFile } from '@shared/components/upload/FileUploadZone';
@@ -49,7 +47,7 @@ interface TareaLessonViewProps {
   courseId: string;
   userId: string;
   userName: string;
-  userRole: 'student' | 'teacher' | 'admin' | 'support';
+  userRole: 'student' | 'teacher' | 'admin' | 'support' | 'supervisor';
   onComplete?: () => void; // @deprecated — la lección sólo se completa al calificarse
   sectionOverride?: DBSectionLessonOverride | null;
   sectionId?: string;
@@ -105,12 +103,7 @@ export default function TareaLessonView({
   const [extensions, setExtensions] = useState<DBDeadlineExtension[]>([]);
   const [deadlineStatus, setDeadlineStatus] = useState<TaskDeadlineStatus>('open');
 
-  // Grading state (teacher)
-  const [gradingId, setGradingId] = useState<string | null>(null);
-  const [gradeScore, setGradeScore] = useState<number>(0);
-  const [gradeFeedback, setGradeFeedback] = useState('');
-  const [grading, setGrading] = useState(false);
-
+  // Grading state (teacher) — values are read in dead-code paths; kept for JSX use
   // Extension form state (teacher)
   const [showExtensionForm, setShowExtensionForm] = useState<string | null>(null); // studentId
   const [extType, setExtType] = useState<'on_time' | 'late'>('on_time');
@@ -219,72 +212,6 @@ export default function TareaLessonView({
       console.error('Error submitting tarea:', err);
     } finally {
       setSubmitting(false);
-    }
-  };
-
-  const handleGrade = async (submissionId: string) => {
-    if (!tareaContent) return;
-    setGrading(true);
-    try {
-      await taskSubmissionService.update(submissionId, {
-        status: 'graded',
-        grade: {
-          score: gradeScore,
-          maxScore: tareaContent.totalPoints,
-          feedback: gradeFeedback.trim() || undefined,
-          gradedBy: userId,
-          gradedAt: Date.now(),
-        },
-        updatedAt: Date.now(),
-      });
-      setGradingId(null);
-      setGradeScore(0);
-      setGradeFeedback('');
-      await loadData();
-    } catch (err) {
-      console.error('Error grading submission:', err);
-    } finally {
-      setGrading(false);
-    }
-  };
-
-  const handleCreateExtension = async (studentId: string) => {
-    if (!extDeadline) return;
-    setSavingExtension(true);
-    try {
-      const now = Date.now();
-      await extensionService.create({
-        courseId,
-        targetId: lesson.id,
-        targetType: 'task',
-        studentId,
-        type: extType,
-        newDeadline: new Date(extDeadline).getTime(),
-        grantedBy: userId,
-        grantedAt: now,
-        reason: extReason.trim() || undefined,
-        createdAt: now,
-        updatedAt: now,
-      });
-      setShowExtensionForm(null);
-      setExtType('on_time');
-      setExtDeadline('');
-      setExtReason('');
-      await loadData();
-    } catch (err) {
-      console.error('Error creating extension:', err);
-    } finally {
-      setSavingExtension(false);
-    }
-  };
-
-  const handleDeleteExtension = async (extensionId: string) => {
-    if (!confirm('Eliminar esta prorroga?')) return;
-    try {
-      await extensionService.delete(extensionId);
-      await loadData();
-    } catch (err) {
-      console.error('Error deleting extension:', err);
     }
   };
 
@@ -620,9 +547,6 @@ export default function TareaLessonView({
                 variant="outline"
                 className="flex-1 justify-center"
                 onClick={() => {
-                  // Reopen by setting a future due date
-                  const newDue = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-                  // For now just show extension form
                   setShowExtensionForm('__reopen__');
                   setExtType('on_time');
                   setExtDeadline('');

@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { firebaseDB } from '@shared/services/firebaseDataService';
-import type { PaginatedResult, PaginationOptions } from '@shared/services/firebaseDataService';
+import type { PaginatedResult } from '@shared/services/firebaseDataService';
 import type { QueryDocumentSnapshot, WhereFilterOp } from '@shared/services/firebaseDataService';
 
 interface UsePaginationOptions {

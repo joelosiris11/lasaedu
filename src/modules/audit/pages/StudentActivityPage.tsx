@@ -180,7 +180,6 @@ export default function StudentActivityPage() {
   const [searchTerm, setSearchTerm] = useState<string>('');
 
   const isTeacher = user?.role === 'teacher';
-  const isAdminOrSupervisor = user?.role === 'admin' || user?.role === 'supervisor';
 
   useEffect(() => {
     (async () => {

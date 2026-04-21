@@ -46,14 +46,6 @@ function formatTime(minutes: number): string {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
-function formatFileSize(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-}
-
 function isPreviewable(file: { url: string; contentType?: string; name?: string }): 'pdf' | 'image' | null {
   const ct = file.contentType || '';
   const url = file.url || '';

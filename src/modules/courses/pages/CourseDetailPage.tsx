@@ -24,7 +24,6 @@ import {
   Target,
   MessageSquare,
   CheckCircle,
-  Circle,
   Layers
 } from 'lucide-react';
 import { Card, CardContent } from '@shared/components/ui/Card';

@@ -1,4 +1,4 @@
-import { Clock, AlertTriangle, Lock, CheckCircle } from 'lucide-react';
+import { Clock, AlertTriangle, Lock } from 'lucide-react';
 import { getTaskDeadlineStatus, getTimeRemaining, parseTimestamp } from '@shared/utils/deadlines';
 
 interface DeadlineBadgeProps {

@@ -23,7 +23,6 @@ import {
   EyeOff,
   Eye,
   StarOff,
-  CheckCircle2,
   Search,
 } from 'lucide-react';
 import { Card, CardContent } from '@shared/components/ui/Card';

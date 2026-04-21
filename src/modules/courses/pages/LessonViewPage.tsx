@@ -19,7 +19,7 @@ import {
 } from '@shared/services/dataService';
 import { firebaseDB } from '@shared/services/firebaseDataService';
 import type { DBEvaluationAttempt } from '@shared/services/firebaseDataService';
-import { isAvailable, resolveDeadlines } from '@shared/utils/deadlines';
+import { isAvailable } from '@shared/utils/deadlines';
 import { logStudent } from '@shared/services/auditLogService';
 import {
   ArrowLeft,
@@ -93,7 +93,7 @@ export default function LessonViewPage() {
   const [studentData, setStudentData] = useState<StudentLessonData[]>([]);
   const [loadingStudents, setLoadingStudents] = useState(false);
   const [reviewingSubmission, setReviewingSubmission] = useState<DBTaskSubmission | null>(null);
-  const [expandedQuizStudent, setExpandedQuizStudent] = useState<string | null>(null);
+  const [expandedQuizStudent] = useState<string | null>(null);
   const [selectedStudent, setSelectedStudent] = useState<{ id: string; name: string } | null>(null);
   const [showDeadlineModal, setShowDeadlineModal] = useState(false);
   const [deadlineForm, setDeadlineForm] = useState({ dueDate: '', lateSubmissionDeadline: '', availableFrom: '', timeLimit: '' });

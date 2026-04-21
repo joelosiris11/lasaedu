@@ -36,8 +36,6 @@ import {
   deleteDoc,
   query,
   where,
-  setDoc,
-  writeBatch,
   orderBy as firestoreOrderBy,
   limit as firestoreLimit,
   startAfter,

@@ -223,9 +223,7 @@ export const dashboardService = {
       active: enrollments.filter((e: DBEnrollment) => e.status === 'active').length,
       completed: enrollments.filter((e: DBEnrollment) => e.status === 'completed').length,
       paused: enrollments.filter((e: DBEnrollment) => e.status === 'paused').length,
-      cancelled: enrollments.filter((e: DBEnrollment) =>
-        e.status === 'cancelled' || e.status === 'dropped' || e.status === 'withdrawn'
-      ).length,
+      cancelled: enrollments.filter((e: DBEnrollment) => e.status === 'cancelled').length,
     };
 
     const topCourses = courses.map((c: DBCourse) => {
