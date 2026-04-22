@@ -179,6 +179,16 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // ---- AI assistant prompt versions (admin-only) ----
+    match /aiAssistantPrompts/{id} {
+      allow read, write: if hasRole('admin');
+    }
+
+    // ---- AI assistant chat sessions (admin-only, per-user) ----
+    match /aiAssistantSessions/{id} {
+      allow read, write: if hasRole('admin');
+    }
+
     // ---- default deny ----
     match /{document=**} {
       allow read, write: if false;
