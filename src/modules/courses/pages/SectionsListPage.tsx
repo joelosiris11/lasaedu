@@ -19,6 +19,7 @@ import {
   Globe,
   Lock,
   ShieldCheck,
+  Trash2,
 } from 'lucide-react';
 import { Card, CardContent } from '@shared/components/ui/Card';
 import { Button } from '@shared/components/ui/Button';
@@ -106,7 +107,19 @@ export default function SectionsListPage() {
     }
   };
 
+  const handleDelete = async (sectionId: string, title: string) => {
+    if (!confirm(`¿Eliminar la sección "${title}"?\n\nEsta acción es permanente y borra la sección de la base de datos.`)) return;
+    try {
+      await sectionService.delete(sectionId);
+      setSections(prev => prev.filter(s => s.id !== sectionId));
+    } catch (err) {
+      console.error('Error deleting section:', err);
+      alert('No se pudo eliminar la sección. Intenta de nuevo.');
+    }
+  };
+
   const canEdit = user?.role === 'admin' || user?.role === 'teacher';
+  const isAdmin = user?.role === 'admin';
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -294,6 +307,17 @@ export default function SectionsListPage() {
                             title="Archivar"
                           >
                             <Archive className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {isAdmin && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-red-600 hover:bg-red-50 border-red-200"
+                            onClick={() => handleDelete(section.id, section.title)}
+                            title="Eliminar sección"
+                          >
+                            <Trash2 className="h-4 w-4" />
                           </Button>
                         )}
                       </div>

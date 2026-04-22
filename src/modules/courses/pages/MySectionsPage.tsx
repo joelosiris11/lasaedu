@@ -1,4 +1,5 @@
-import { useCallback, useState, useEffect, useMemo } from 'react';
+import { useCallback, useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '@app/store/authStore';
 import {
@@ -24,6 +25,7 @@ import {
   Eye,
   StarOff,
   Search,
+  Trash2,
 } from 'lucide-react';
 import { Card, CardContent } from '@shared/components/ui/Card';
 import { Button } from '@shared/components/ui/Button';
@@ -151,18 +153,53 @@ function SectionKebab({
   flag,
   onSetFlag,
   darkBg = false,
+  onDelete,
 }: {
   flag: SectionFlag;
   onSetFlag: (next: SectionFlag) => void;
   darkBg?: boolean;
+  // When provided, renders an "Eliminar" entry. Caller is responsible for
+  // gating on role (admin only) — the kebab just renders what's passed.
+  onDelete?: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
   const isFeatured = flag === 'featured';
   const isHidden = flag === 'hidden';
 
+  // Portal-based menu: positioning via fixed coords from the button rect
+  // keeps the dropdown from being clipped by the card's `overflow-hidden`
+  // banner wrapper. Uses useLayoutEffect to measure synchronously after open
+  // so the menu never flashes at (0,0).
+  const MENU_WIDTH = 176; // ~= w-44
+
+  useLayoutEffect(() => {
+    if (!open || !buttonRef.current) return;
+    const rect = buttonRef.current.getBoundingClientRect();
+    const top = rect.bottom + 4; // 4px below the button
+    // Align right edges; fallback to left-align if it would spill off-screen.
+    const preferredLeft = rect.right - MENU_WIDTH;
+    const left = Math.max(8, Math.min(preferredLeft, window.innerWidth - MENU_WIDTH - 8));
+    setPos({ top, left });
+  }, [open]);
+
+  // Close on scroll/resize (the fixed coords would otherwise detach from the button).
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [open]);
+
   return (
-    <div className="relative">
+    <>
       <button
+        ref={buttonRef}
         onClick={(e) => {
           e.stopPropagation();
           setOpen((v) => !v);
@@ -176,17 +213,19 @@ function SectionKebab({
       >
         <MoreHorizontal className="h-4 w-4" />
       </button>
-      {open && (
+      {open && pos && createPortal(
         <>
           <div
-            className="fixed inset-0 z-40"
+            className="fixed inset-0 z-[60]"
             onClick={(e) => {
               e.stopPropagation();
               setOpen(false);
             }}
           />
           <div
-            className="absolute right-0 mt-1 w-44 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1"
+            role="menu"
+            className="fixed w-44 bg-white border border-gray-200 rounded-lg shadow-lg z-[61] py-1"
+            style={{ top: pos.top, left: pos.left }}
             onClick={(e) => e.stopPropagation()}
           >
             <button
@@ -209,10 +248,26 @@ function SectionKebab({
               {isHidden ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
               {isHidden ? 'Mostrar' : 'Ocultar'}
             </button>
+            {onDelete && (
+              <>
+                <div className="my-1 border-t border-gray-100" />
+                <button
+                  onClick={() => {
+                    setOpen(false);
+                    onDelete();
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Eliminar
+                </button>
+              </>
+            )}
           </div>
-        </>
+        </>,
+        document.body,
       )}
-    </div>
+    </>
   );
 }
 
@@ -223,11 +278,13 @@ function SectionGridCard({
   flag,
   onOpen,
   onSetFlag,
+  onDelete,
 }: {
   section: SectionWithMetrics;
   flag: SectionFlag;
   onOpen: () => void;
   onSetFlag: (next: SectionFlag) => void;
+  onDelete?: () => void;
 }) {
   const statusStyle = STATUS_STYLES[section.status] ?? 'bg-gray-100 text-gray-500 border-gray-200';
   const statusLabel = STATUS_LABELS[section.status] ?? section.status;
@@ -273,7 +330,7 @@ function SectionGridCard({
         </div>
         {/* Kebab top-right */}
         <div className="absolute top-2 right-2">
-          <SectionKebab flag={flag} onSetFlag={onSetFlag} darkBg />
+          <SectionKebab flag={flag} onSetFlag={onSetFlag} darkBg onDelete={onDelete} />
         </div>
       </div>
 
@@ -435,11 +492,13 @@ function SectionListRow({
   flag,
   onOpen,
   onSetFlag,
+  onDelete,
 }: {
   section: SectionWithMetrics;
   flag: SectionFlag;
   onOpen: () => void;
   onSetFlag: (next: SectionFlag) => void;
+  onDelete?: () => void;
 }) {
   const progress = Math.min(section.avgProgress, 100);
 
@@ -504,7 +563,7 @@ function SectionListRow({
         className="shrink-0"
         onClick={(e) => e.stopPropagation()}
       >
-        <SectionKebab flag={flag} onSetFlag={onSetFlag} />
+        <SectionKebab flag={flag} onSetFlag={onSetFlag} onDelete={onDelete} />
       </div>
     </div>
   );
@@ -711,6 +770,7 @@ export default function MySectionsPage() {
   const { user } = useAuthStore();
 
   const isStudent = user?.role === 'student';
+  const isAdmin = user?.role === 'admin';
 
   // ── Data state ───────────────────────────────────────────────────────────
   const [sections, setSections] = useState<SectionWithMetrics[]>([]);
@@ -750,6 +810,24 @@ export default function MySectionsPage() {
       });
     },
     [user?.id]
+  );
+
+  // Admin-only: delete a section permanently. Double-confirm + optimistic
+  // removal. Teachers/supervisors/students never reach this path because the
+  // onDelete prop is only passed when isAdmin is true.
+  const handleDeleteSection = useCallback(
+    async (sectionId: string, title: string) => {
+      if (!isAdmin) return;
+      if (!confirm(`¿Eliminar la sección "${title}"?\n\nEsta acción es permanente y borra la sección de la base de datos.`)) return;
+      try {
+        await sectionService.delete(sectionId);
+        setSections((prev) => prev.filter((s) => s.id !== sectionId));
+      } catch (err) {
+        console.error('Error deleting section:', err);
+        alert('No se pudo eliminar la sección. Intenta de nuevo.');
+      }
+    },
+    [isAdmin]
   );
 
   // Sync URL ?status with studentFilter
@@ -1298,6 +1376,7 @@ export default function MySectionsPage() {
                   flag={flags[section.id] ?? null}
                   onOpen={() => navigate(`/sections/${section.id}`)}
                   onSetFlag={(next) => setFlag(section.id, next)}
+                  onDelete={isAdmin ? () => handleDeleteSection(section.id, section.title) : undefined}
                 />
               ))}
             </div>
@@ -1313,6 +1392,7 @@ export default function MySectionsPage() {
                   flag={flags[section.id] ?? null}
                   onOpen={() => navigate(`/sections/${section.id}`)}
                   onSetFlag={(next) => setFlag(section.id, next)}
+                  onDelete={isAdmin ? () => handleDeleteSection(section.id, section.title) : undefined}
                 />
               ))}
             </div>
