@@ -26,6 +26,8 @@ import {
   Loader2,
   AlertTriangle,
   Trash2,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@shared/components/ui/Card';
 import { Button } from '@shared/components/ui/Button';
@@ -108,6 +110,7 @@ export default function LessonBuilderPage() {
 
   const [_lesson, setLesson] = useState<DBLesson | null>(null);
   const [module, setModule] = useState<DBModule | null>(null);
+  const [siblingLessons, setSiblingLessons] = useState<DBLesson[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<'content' | 'settings'>('content');
@@ -135,12 +138,22 @@ export default function LessonBuilderPage() {
 
   const loadData = async () => {
     if (!courseId || !moduleId) return;
-    
+
     setLoading(true);
+    // Reset the dirty-tracking baseline so the new lesson establishes a fresh
+    // snapshot once it finishes loading. Otherwise sibling-nav would leak the
+    // previous lesson's baseline and immediately appear "dirty".
+    snapshotRef.current = null;
+    setErrors({});
     try {
       // Load module info
       const moduleData = await moduleService.getById(moduleId);
       setModule(moduleData);
+
+      // Load sibling lessons (for prev/next navigation)
+      const lessonsInModule = await lessonService.getByModule(moduleId);
+      const sorted = [...lessonsInModule].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      setSiblingLessons(sorted);
 
       // Load lesson if editing
       if (lessonId) {
@@ -411,6 +424,25 @@ export default function LessonBuilderPage() {
     }
     setConfirmLeave({ onDiscard: () => navigate(`/courses/${courseId}`) });
   }, [dirty, navigate, courseId]);
+
+  // Sibling navigation (prev/next lesson within the same module).
+  const currentIndex = useMemo(
+    () => (lessonId ? siblingLessons.findIndex((l) => l.id === lessonId) : -1),
+    [siblingLessons, lessonId]
+  );
+  const prevLesson = currentIndex > 0 ? siblingLessons[currentIndex - 1] : null;
+  const nextLesson =
+    currentIndex >= 0 && currentIndex < siblingLessons.length - 1
+      ? siblingLessons[currentIndex + 1]
+      : null;
+
+  const goToLesson = useCallback(
+    (targetId: string) => {
+      if (!courseId || !moduleId) return;
+      navigate(`/courses/${courseId}/modules/${moduleId}/lessons/${targetId}/edit`);
+    },
+    [courseId, moduleId, navigate]
+  );
 
   const handleSaveFromModal = async () => {
     const ok = await handleSave();
@@ -823,6 +855,49 @@ export default function LessonBuilderPage() {
             )}
           </CardContent>
         </Card>
+      )}
+
+      {/* Bottom nav — move sequentially through lessons in this module.
+          Navigation goes through the same useBlocker guard, so if there are
+          unsaved changes the "Cambios sin guardar" modal appears. */}
+      {lessonId && siblingLessons.length > 1 && (
+        <div className="sticky bottom-0 -mx-6 -mb-6 mt-10 bg-white/95 backdrop-blur border-t border-gray-200 px-6 py-3 z-20">
+          <div className="flex items-center justify-between gap-3">
+            <Button
+              variant="outline"
+              onClick={() => prevLesson && goToLesson(prevLesson.id)}
+              disabled={!prevLesson}
+              className="group h-auto py-2 px-3 max-w-[45%]"
+            >
+              <ChevronLeft className="w-4 h-4 mr-2 flex-shrink-0 transition-transform duration-200 group-hover:-translate-x-0.5" />
+              <div className="flex flex-col items-start leading-tight min-w-0">
+                <span className="text-[10px] uppercase tracking-wide text-gray-400">Anterior</span>
+                <span className="text-sm truncate max-w-[14rem] sm:max-w-[18rem]">
+                  {prevLesson?.title ?? '—'}
+                </span>
+              </div>
+            </Button>
+
+            <div className="hidden sm:block text-xs text-gray-500 whitespace-nowrap">
+              Lección {currentIndex >= 0 ? currentIndex + 1 : '—'} de {siblingLessons.length}
+            </div>
+
+            <Button
+              variant="outline"
+              onClick={() => nextLesson && goToLesson(nextLesson.id)}
+              disabled={!nextLesson}
+              className="group h-auto py-2 px-3 max-w-[45%]"
+            >
+              <div className="flex flex-col items-end leading-tight min-w-0">
+                <span className="text-[10px] uppercase tracking-wide text-gray-400">Siguiente</span>
+                <span className="text-sm truncate max-w-[14rem] sm:max-w-[18rem]">
+                  {nextLesson?.title ?? '—'}
+                </span>
+              </div>
+              <ChevronRight className="w-4 h-4 ml-2 flex-shrink-0 transition-transform duration-200 group-hover:translate-x-0.5" />
+            </Button>
+          </div>
+        </div>
       )}
 
       {/* Unsaved-changes confirm modal */}
