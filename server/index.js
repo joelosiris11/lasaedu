@@ -89,9 +89,10 @@ const storage = multer.diskStorage({
   },
 });
 
+const MAX_UPLOAD_MB = parseInt(process.env.MAX_UPLOAD_MB || '500', 10);
 const upload = multer({
   storage,
-  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB max
+  limits: { fileSize: MAX_UPLOAD_MB * 1024 * 1024 },
 });
 
 // Health check

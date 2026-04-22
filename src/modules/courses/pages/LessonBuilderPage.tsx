@@ -604,7 +604,7 @@ export default function LessonBuilderPage() {
               ) : lessonType === 'quiz' ? (
                 <QuizLessonEditor content={quizContent} onChange={setQuizContent} />
               ) : lessonType === 'video' ? (
-                <VideoLessonEditor content={videoContent} onChange={setVideoContent} />
+                <VideoLessonEditor content={videoContent} onChange={setVideoContent} courseId={courseId} lessonId={lessonId} />
               ) : lessonType === 'recurso' ? (
                 <ResourceLessonEditor content={resourceContent} onChange={setResourceContent} courseId={courseId} lessonId={lessonId} />
               ) : lessonType === 'tarea' ? (
