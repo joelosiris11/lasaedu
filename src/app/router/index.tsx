@@ -41,6 +41,9 @@ import SectionGradesPage from '@modules/courses/pages/SectionGradesPage';
 // Quiz popup (standalone, no layout)
 import QuizPopupPage from '@modules/courses/pages/QuizPopupPage';
 
+// AI assistant (admin-only content editor)
+import AIAssistantPage from '@modules/ai-assistant/pages/AIAssistantPage';
+
 // Componente para página no encontrada
 const NotFoundPage = () => (
   <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50">
@@ -286,6 +289,14 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute allowedRoles={['admin', 'supervisor', 'teacher', 'student', 'support']}>
             <SettingsPage />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: 'ai-assistant',
+        element: (
+          <ProtectedRoute allowedRoles={['admin']}>
+            <AIAssistantPage />
           </ProtectedRoute>
         )
       },

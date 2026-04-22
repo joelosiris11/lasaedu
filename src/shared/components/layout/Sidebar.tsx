@@ -19,6 +19,7 @@ import {
   Layers,
   History,
   Activity,
+  Sparkles,
 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import type { UserRole } from '@shared/types';
@@ -65,6 +66,14 @@ const sidebarSections: SidebarSection[] = [
       { icon: Award, label: 'Certificados', path: '/certificates', roles: ['teacher'] },
       { icon: History, label: 'Actividad Prof.', path: '/audit-logs', roles: ['teacher'] },
       { icon: Activity, label: 'Actividad Estu.', path: '/student-activity', roles: ['teacher'] },
+    ],
+  },
+  // Admin-only: AI content assistant
+  {
+    label: 'Asistente',
+    roles: ['admin'],
+    items: [
+      { icon: Sparkles, label: 'Asistente IA', path: '/ai-assistant', roles: ['admin'] },
     ],
   },
   // Admin: "Gestión" section - no duplicates, no reportes
