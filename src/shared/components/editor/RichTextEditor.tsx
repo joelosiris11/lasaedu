@@ -1,6 +1,6 @@
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import Image from '@tiptap/extension-image';
+import { ResizableImage } from './ResizableImage';
 import Youtube from '@tiptap/extension-youtube';
 import Link from '@tiptap/extension-link';
 import TextAlign from '@tiptap/extension-text-align';
@@ -109,7 +109,7 @@ export default function RichTextEditor({
       Color.configure({ types: ['textStyle'] }),
       FontFamily.configure({ types: ['textStyle'] }),
       FontSize,
-      Image.configure({
+      ResizableImage.configure({
         inline: false,
         allowBase64: true
       }),
