@@ -101,6 +101,39 @@ export const ALLOWED_FILE_TYPES: Record<string, FileTypeDefinition> = {
     mimeTypes: ['text/plain'],
     // No magic bytes - extension-only validation
   },
+  mp4: {
+    extensions: ['.mp4', '.m4v', '.mov'],
+    mimeTypes: ['video/mp4', 'video/quicktime', 'video/x-m4v'],
+    magicBytes: [{ bytes: [0x66, 0x74, 0x79, 0x70], offset: 4 }], // ftyp at offset 4 (ISO-BMFF)
+  },
+  webm: {
+    extensions: ['.webm'],
+    mimeTypes: ['video/webm'],
+    magicBytes: [{ bytes: [0x1A, 0x45, 0xDF, 0xA3] }], // EBML
+  },
+  mp3: {
+    extensions: ['.mp3'],
+    mimeTypes: ['audio/mpeg', 'audio/mp3'],
+    // No magic bytes - MP3 has multiple valid starts (ID3v2 or frame sync), hard to validate uniformly
+  },
+  wav: {
+    extensions: ['.wav'],
+    mimeTypes: ['audio/wav', 'audio/x-wav'],
+    magicBytes: [{
+      bytes: [0x52, 0x49, 0x46, 0x46], // RIFF
+      secondary: { bytes: [0x57, 0x41, 0x56, 0x45], offset: 8 }, // WAVE
+    }],
+  },
+  ogg: {
+    extensions: ['.ogg', '.ogv', '.oga'],
+    mimeTypes: ['audio/ogg', 'video/ogg', 'application/ogg'],
+    magicBytes: [{ bytes: [0x4F, 0x67, 0x67, 0x53] }], // OggS
+  },
+  m4a: {
+    extensions: ['.m4a'],
+    mimeTypes: ['audio/mp4', 'audio/x-m4a'],
+    magicBytes: [{ bytes: [0x66, 0x74, 0x79, 0x70], offset: 4 }],
+  },
 };
 
 const ALL_ALLOWED_EXTENSIONS = Object.values(ALLOWED_FILE_TYPES)

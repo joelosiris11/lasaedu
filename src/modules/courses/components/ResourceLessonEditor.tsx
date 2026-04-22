@@ -33,6 +33,8 @@ const RESOURCE_EXTENSIONS = [
   '.zip', '.rar',
   '.jpg', '.jpeg', '.png', '.gif', '.webp',
   '.csv', '.txt',
+  '.mp4', '.mov', '.m4v', '.webm',
+  '.mp3', '.wav', '.ogg', '.oga', '.m4a',
 ];
 
 export default function ResourceLessonEditor({
@@ -80,14 +82,14 @@ export default function ResourceLessonEditor({
       <div>
         <Label>Archivos Adjuntos</Label>
         <p className="text-sm text-gray-500 mb-2">
-          Sube documentos, imagenes u otros archivos para los estudiantes
+          Sube documentos, imagenes, audio o video para los estudiantes
         </p>
         <FileUploadZone
           files={uploadedFiles}
           onFilesChange={handleFilesChange}
           maxFiles={10}
           allowedExtensions={RESOURCE_EXTENSIONS}
-          maxFileSize={25 * 1024 * 1024}
+          maxFileSize={500 * 1024 * 1024}
           courseId={courseId}
           lessonId={lessonId}
           storagePath="attachment"

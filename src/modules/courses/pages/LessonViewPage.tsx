@@ -33,7 +33,6 @@ import {
   HelpCircle,
   Trophy,
   MessageSquare,
-  Download,
   Users,
   Circle,
   X,
@@ -48,6 +47,7 @@ import LessonForumView from '../components/LessonForumView';
 import QuizLessonView from '../components/QuizLessonView';
 import VideoLessonView from '../components/VideoLessonView';
 import TareaLessonView from '../components/TareaLessonView';
+import FileViewer from '@shared/components/media/FileViewer';
 import { blocksToHtml, type LegacyContentBlock } from '../utils/blocksToHtml';
 import SubmissionReviewView from '../components/SubmissionReviewView';
 import StudentLessonDetail from '../components/StudentLessonDetail';
@@ -938,24 +938,15 @@ export default function LessonViewPage() {
                   {resourceContent.files.length > 0 && (
                     <div>
                       <h4 className="text-sm font-medium text-gray-700 mb-3">Archivos Adjuntos</h4>
-                      <div className="space-y-2">
+                      <div className="space-y-3">
                         {resourceContent.files.map(file => (
-                          <a
+                          <FileViewer
                             key={file.id}
-                            href={file.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-                          >
-                            <FileText className="w-5 h-5 text-red-500 flex-shrink-0" />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-gray-700 truncate">{file.name}</p>
-                              <p className="text-xs text-gray-400">
-                                {file.size ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : ''}
-                              </p>
-                            </div>
-                            <Download className="w-4 h-4 text-gray-400" />
-                          </a>
+                            url={file.url}
+                            name={file.name}
+                            contentType={file.contentType}
+                            size={file.size}
+                          />
                         ))}
                       </div>
                     </div>
