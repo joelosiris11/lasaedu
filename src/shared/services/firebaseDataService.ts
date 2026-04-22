@@ -48,6 +48,13 @@ import {
 // INTERFACES DE DATOS - Todas las colecciones
 // ============================================
 
+// Scope that restricts which courses/sections a supervisor can see.
+// Undefined = full access (default / backwards compat).
+export interface DBSupervisorScope {
+  courses: { mode: 'all' } | { mode: 'selected'; ids: string[] };
+  sections: { mode: 'all' } | { mode: 'selected'; ids: string[] };
+}
+
 // Usuario
 export interface DBUser {
   id: string;
@@ -57,6 +64,7 @@ export interface DBUser {
   lastName?: string;
   name: string;
   role: 'student' | 'teacher' | 'admin' | 'support' | 'supervisor';
+  supervisorScope?: DBSupervisorScope;
   emailVerified: boolean;
   emailVerificationToken?: string | null;
   passwordResetToken?: string | null;

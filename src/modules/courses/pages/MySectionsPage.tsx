@@ -31,6 +31,7 @@ import { Card, CardContent } from '@shared/components/ui/Card';
 import { Button } from '@shared/components/ui/Button';
 import { CoursePattern } from '@shared/components/ui/CoursePattern';
 import { getSectionBanner } from '@shared/utils/sectionBanner';
+import { useSupervisorScope } from '@shared/hooks/useSupervisorScope';
 import CourseWizardModal from '@modules/courses/components/CourseWizardModal';
 import SectionWizardModal from '@modules/courses/components/SectionWizardModal';
 
@@ -771,6 +772,7 @@ export default function MySectionsPage() {
 
   const isStudent = user?.role === 'student';
   const isAdmin = user?.role === 'admin';
+  const { filterSections, filterCourses } = useSupervisorScope();
 
   // ── Data state ───────────────────────────────────────────────────────────
   const [sections, setSections] = useState<SectionWithMetrics[]>([]);
@@ -896,7 +898,7 @@ export default function MySectionsPage() {
             bySection.set(e.sectionId, bucket);
           }
 
-          const enriched: SectionWithMetrics[] = allSections
+          const enriched: SectionWithMetrics[] = filterSections(allSections)
             .sort((a, b) => b.createdAt - a.createdAt)
             .map((section) => {
               const sectionEnrollments = bySection.get(section.id) ?? [];
@@ -929,7 +931,7 @@ export default function MySectionsPage() {
             });
 
           setSections(enriched);
-          setTeacherCourses(courses);
+          setTeacherCourses(filterCourses(courses));
         }
       } catch (err) {
         console.error('Error loading sections:', err);
@@ -938,7 +940,7 @@ export default function MySectionsPage() {
       }
     };
     load();
-  }, [user?.id, isStudent, reloadKey]);
+  }, [user?.id, user?.role, isStudent, reloadKey, filterCourses, filterSections]);
 
   // ── KPI derivations ───────────────────────────────────────────────────────
   const kpis = useMemo(() => {

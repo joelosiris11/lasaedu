@@ -212,6 +212,7 @@ export const useAuthStore = create<AuthStore>()(
                         }
                       },
                       refreshTokens: {},
+                      supervisorScope: dbUser.supervisorScope,
                       createdAt: dbUser.createdAt,
                       lastActive: Date.now()
                     };

@@ -21,6 +21,7 @@ import { firebaseDB } from '@shared/services/firebaseDataService';
 import type { DBEvaluationAttempt } from '@shared/services/firebaseDataService';
 import { isAvailable } from '@shared/utils/deadlines';
 import { logStudent } from '@shared/services/auditLogService';
+import { useSupervisorScope } from '@shared/hooks/useSupervisorScope';
 import {
   ArrowLeft,
   ArrowRight,
@@ -89,6 +90,13 @@ export default function LessonViewPage() {
 
   // Teacher panel state
   const isTeacherOrAdmin = user?.role === 'teacher' || user?.role === 'admin' || user?.role === 'supervisor';
+  const { canSeeCourse, canSeeSection } = useSupervisorScope();
+  const supervisorDenied =
+    user?.role === 'supervisor' &&
+    (
+      (!!courseId && !canSeeCourse(courseId)) ||
+      (!!sectionId && !canSeeSection({ id: sectionId, courseId: courseId || '' }))
+    );
   const [showStudentPanel, setShowStudentPanel] = useState(false);
   const [studentData, setStudentData] = useState<StudentLessonData[]>([]);
   const [loadingStudents, setLoadingStudents] = useState(false);
@@ -513,6 +521,21 @@ export default function LessonViewPage() {
         <h2 className="text-xl font-semibold text-gray-900">Lección no encontrada</h2>
         <Button onClick={() => navigate(sectionId ? `/sections/${sectionId}` : `/courses/${effectiveCourseId}`)} className="mt-4">
           Volver al curso
+        </Button>
+      </div>
+    );
+  }
+
+  if (supervisorDenied) {
+    return (
+      <div className="text-center py-12">
+        <BookOpen className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+        <h2 className="text-xl font-semibold text-gray-900">Fuera de tu ámbito de supervisión</h2>
+        <p className="text-sm text-gray-500 mt-1">
+          Esta lección pertenece a un curso o sección fuera de tu asignación.
+        </p>
+        <Button onClick={() => navigate('/courses')} className="mt-4">
+          Volver a cursos
         </Button>
       </div>
     );
@@ -945,7 +968,6 @@ export default function LessonViewPage() {
                             url={file.url}
                             name={file.name}
                             contentType={file.contentType}
-                            size={file.size}
                           />
                         ))}
                       </div>
@@ -1066,6 +1088,20 @@ export default function LessonViewPage() {
               <ArrowLeft className="h-4 w-4 sm:mr-2" />
               <span className="hidden sm:inline">Anterior</span>
             </Button>
+
+            {/* Admin edit button (course context, no section) — centered */}
+            {isTeacherOrAdmin && !sectionId && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate(`/courses/${effectiveCourseId}/modules/${currentLesson.moduleId}/lessons/${currentLesson.id}/edit`)}
+                title="Ir al editor de esta lección"
+              >
+                <Edit3 className="h-4 w-4 sm:mr-1.5" />
+                <span className="hidden sm:inline">Editar lección</span>
+                <span className="sm:hidden">Editar</span>
+              </Button>
+            )}
 
             {/* Teacher action buttons (section context only) */}
             {isTeacherOrAdmin && sectionId && (

@@ -86,6 +86,7 @@ export const authService = {
         }
       },
       refreshTokens: {},
+      supervisorScope: dbUser.supervisorScope,
       createdAt: dbUser.createdAt,
       lastActive: Date.now()
     };

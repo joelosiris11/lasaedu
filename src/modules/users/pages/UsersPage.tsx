@@ -1,7 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useAuthStore } from '@app/store/authStore';
-import { userService } from '@shared/services/dataService';
-import type { DBUser } from '@shared/services/firebaseDataService';
+import { userService, courseService, sectionService } from '@shared/services/dataService';
+import type { DBUser, DBCourse, DBSection, DBSupervisorScope } from '@shared/services/firebaseDataService';
 import { usePagination } from '@shared/hooks/usePagination';
 import { Pagination } from '@shared/components/ui/Pagination';
 import {
@@ -24,6 +24,7 @@ import {
   KeyRound,
   Activity,
   Eye,
+  Layers,
 } from 'lucide-react';
 import { Card, CardContent } from '@shared/components/ui/Card';
 import { Button } from '@shared/components/ui/Button';
@@ -402,6 +403,88 @@ function UserFormModal({
     birthDate: user?.profile?.birthDate || '',
   });
 
+  // Supervisor scope state (only used when role === 'supervisor')
+  const initialScope = user?.supervisorScope;
+  const [coursesMode, setCoursesMode] = useState<'all' | 'selected'>(
+    initialScope?.courses?.mode === 'selected' ? 'selected' : 'all'
+  );
+  const [selectedCourseIds, setSelectedCourseIds] = useState<string[]>(
+    initialScope?.courses?.mode === 'selected' ? initialScope.courses.ids : []
+  );
+  const [sectionsMode, setSectionsMode] = useState<'all' | 'selected'>(
+    initialScope?.sections?.mode === 'selected' ? 'selected' : 'all'
+  );
+  const [selectedSectionIds, setSelectedSectionIds] = useState<string[]>(
+    initialScope?.sections?.mode === 'selected' ? initialScope.sections.ids : []
+  );
+
+  // Load available courses/sections lazily when the user is (or becomes) a supervisor
+  const [availableCourses, setAvailableCourses] = useState<DBCourse[]>([]);
+  const [availableSections, setAvailableSections] = useState<DBSection[]>([]);
+  const [scopeLoading, setScopeLoading] = useState(false);
+
+  useEffect(() => {
+    if (form.role !== 'supervisor') return;
+    if (availableCourses.length > 0 || availableSections.length > 0) return;
+    let cancelled = false;
+    setScopeLoading(true);
+    Promise.all([courseService.getAll(), sectionService.getAll()])
+      .then(([courses, sections]) => {
+        if (cancelled) return;
+        setAvailableCourses(courses.sort((a, b) => a.title.localeCompare(b.title)));
+        setAvailableSections(sections);
+      })
+      .catch(err => console.error('Error loading scope data:', err))
+      .finally(() => {
+        if (!cancelled) setScopeLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [form.role, availableCourses.length, availableSections.length]);
+
+  // When course selection shrinks, drop section ids whose course is no longer allowed
+  useEffect(() => {
+    if (form.role !== 'supervisor') return;
+    if (coursesMode !== 'selected') return;
+    if (availableSections.length === 0) return;
+    const allowedCourseIds = new Set(selectedCourseIds);
+    setSelectedSectionIds(prev =>
+      prev.filter(id => {
+        const section = availableSections.find(s => s.id === id);
+        return section ? allowedCourseIds.has(section.courseId) : false;
+      })
+    );
+  }, [coursesMode, selectedCourseIds, availableSections, form.role]);
+
+  const visibleSections = useMemo(() => {
+    if (coursesMode !== 'selected') return availableSections;
+    const allowed = new Set(selectedCourseIds);
+    return availableSections.filter(s => allowed.has(s.courseId));
+  }, [availableSections, coursesMode, selectedCourseIds]);
+
+  const buildSupervisorScope = (): DBSupervisorScope | undefined => {
+    if (form.role !== 'supervisor') return undefined;
+    return {
+      courses: coursesMode === 'selected'
+        ? { mode: 'selected', ids: selectedCourseIds }
+        : { mode: 'all' },
+      sections: sectionsMode === 'selected'
+        ? { mode: 'selected', ids: selectedSectionIds }
+        : { mode: 'all' },
+    };
+  };
+
+  const toggleCourse = (id: string) => {
+    setSelectedCourseIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSection = (id: string) => {
+    setSelectedSectionIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
   const generatedCred = birthDateToCredential(form.birthDate);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -410,12 +493,30 @@ function UserFormModal({
     setSaving(true);
 
     try {
+      // Validate supervisor scope selections
+      if (form.role === 'supervisor') {
+        if (coursesMode === 'selected' && selectedCourseIds.length === 0) {
+          setError('Selecciona al menos un curso o cambia a "Todos los cursos"');
+          setSaving(false);
+          return;
+        }
+        if (sectionsMode === 'selected' && selectedSectionIds.length === 0) {
+          setError('Selecciona al menos una sección o cambia a "Todas las secciones"');
+          setSaving(false);
+          return;
+        }
+      }
+
+      const supervisorScope = buildSupervisorScope();
+
       if (isEdit) {
         const updated = await userService.update(user.id, {
           firstName: form.firstName,
           lastName: form.lastName,
           name: `${form.firstName} ${form.lastName}`.trim(),
           role: form.role,
+          // Clear scope when leaving supervisor role; otherwise persist the new scope.
+          supervisorScope: form.role === 'supervisor' ? supervisorScope : undefined,
           profile: {
             ...user.profile,
             phone: form.phone,
@@ -446,7 +547,13 @@ function UserFormModal({
           birthDate: form.birthDate,
           password: generatedCred,
         });
-        onSaved(created);
+        // Attach the supervisor scope on the freshly-created user, if applicable
+        if (form.role === 'supervisor' && supervisorScope) {
+          const withScope = await userService.update(created.id, { supervisorScope });
+          onSaved(withScope ?? created);
+        } else {
+          onSaved(created);
+        }
       }
     } catch (err: any) {
       console.error('Error saving user:', err);
@@ -565,6 +672,152 @@ function UserFormModal({
               <option value="admin">Administrador</option>
             </select>
           </div>
+
+          {/* Ámbito de supervisión (solo rol supervisor) */}
+          {form.role === 'supervisor' && (
+            <div className="rounded-lg border border-orange-200 bg-orange-50/40 p-4 space-y-4">
+              <div className="flex items-start gap-2">
+                <Eye className="h-4 w-4 text-orange-600 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold text-orange-900">Ámbito de supervisión</p>
+                  <p className="text-xs text-orange-700/80">
+                    Define qué cursos y secciones podrá ver este supervisor. Si eliges “Todos”, tendrá acceso completo.
+                  </p>
+                </div>
+              </div>
+
+              {/* Cursos */}
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <BookOpen className="h-3.5 w-3.5 text-gray-500" />
+                  <Label className="text-xs font-semibold text-gray-700">Cursos</Label>
+                </div>
+                <div className="flex items-center gap-4 mb-2 text-sm">
+                  <label className="inline-flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="coursesMode"
+                      checked={coursesMode === 'all'}
+                      onChange={() => setCoursesMode('all')}
+                      className="text-red-600 focus:ring-red-500"
+                    />
+                    <span>Todos los cursos</span>
+                  </label>
+                  <label className="inline-flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="coursesMode"
+                      checked={coursesMode === 'selected'}
+                      onChange={() => setCoursesMode('selected')}
+                      className="text-red-600 focus:ring-red-500"
+                    />
+                    <span>Seleccionar cursos</span>
+                  </label>
+                </div>
+
+                {coursesMode === 'selected' && (
+                  <div className="rounded-md border border-gray-200 bg-white max-h-44 overflow-y-auto divide-y divide-gray-100">
+                    {scopeLoading ? (
+                      <div className="p-3 text-xs text-gray-500 flex items-center gap-2">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Cargando cursos…
+                      </div>
+                    ) : availableCourses.length === 0 ? (
+                      <div className="p-3 text-xs text-gray-500">No hay cursos disponibles.</div>
+                    ) : (
+                      availableCourses.map(course => (
+                        <label
+                          key={course.id}
+                          className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-gray-50"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedCourseIds.includes(course.id)}
+                            onChange={() => toggleCourse(course.id)}
+                            className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+                          />
+                          <span className="truncate text-gray-800">{course.title}</span>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                )}
+                {coursesMode === 'selected' && (
+                  <p className="text-[11px] text-gray-500 mt-1">
+                    {selectedCourseIds.length} curso{selectedCourseIds.length === 1 ? '' : 's'} seleccionado{selectedCourseIds.length === 1 ? '' : 's'}
+                  </p>
+                )}
+              </div>
+
+              {/* Secciones */}
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <Layers className="h-3.5 w-3.5 text-gray-500" />
+                  <Label className="text-xs font-semibold text-gray-700">Secciones</Label>
+                </div>
+                <div className="flex items-center gap-4 mb-2 text-sm">
+                  <label className="inline-flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="sectionsMode"
+                      checked={sectionsMode === 'all'}
+                      onChange={() => setSectionsMode('all')}
+                      className="text-red-600 focus:ring-red-500"
+                    />
+                    <span>Todas las secciones</span>
+                  </label>
+                  <label className="inline-flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="sectionsMode"
+                      checked={sectionsMode === 'selected'}
+                      onChange={() => setSectionsMode('selected')}
+                      className="text-red-600 focus:ring-red-500"
+                    />
+                    <span>Seleccionar secciones</span>
+                  </label>
+                </div>
+
+                {sectionsMode === 'selected' && (
+                  <div className="rounded-md border border-gray-200 bg-white max-h-44 overflow-y-auto divide-y divide-gray-100">
+                    {scopeLoading ? (
+                      <div className="p-3 text-xs text-gray-500 flex items-center gap-2">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Cargando secciones…
+                      </div>
+                    ) : visibleSections.length === 0 ? (
+                      <div className="p-3 text-xs text-gray-500">
+                        {coursesMode === 'selected' && selectedCourseIds.length === 0
+                          ? 'Primero selecciona al menos un curso.'
+                          : 'No hay secciones disponibles.'}
+                      </div>
+                    ) : (
+                      visibleSections.map(section => (
+                        <label
+                          key={section.id}
+                          className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-gray-50"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedSectionIds.includes(section.id)}
+                            onChange={() => toggleSection(section.id)}
+                            className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+                          />
+                          <div className="min-w-0">
+                            <p className="truncate text-gray-800">{section.title}</p>
+                            <p className="truncate text-[11px] text-gray-500">{section.courseTitle}</p>
+                          </div>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                )}
+                {sectionsMode === 'selected' && (
+                  <p className="text-[11px] text-gray-500 mt-1">
+                    {selectedSectionIds.length} sección{selectedSectionIds.length === 1 ? '' : 'es'} seleccionada{selectedSectionIds.length === 1 ? '' : 's'}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Actions */}
           <div className="flex gap-3 pt-2">

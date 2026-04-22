@@ -14,11 +14,20 @@ export interface User {
   profile: UserProfile;
   preferences: UserPreferences;
   refreshTokens: Record<string, RefreshToken>;
+  supervisorScope?: SupervisorScope;
   createdAt: number;
   lastActive: number;
 }
 
 export type UserRole = 'student' | 'teacher' | 'admin' | 'support' | 'supervisor';
+
+// Scope that restricts which courses/sections a supervisor can see.
+// Default (undefined) = full access to everything (backwards compatible).
+// `mode: 'all'` behaves the same as undefined; `mode: 'selected'` restricts to `ids`.
+export interface SupervisorScope {
+  courses: { mode: 'all' } | { mode: 'selected'; ids: string[] };
+  sections: { mode: 'all' } | { mode: 'selected'; ids: string[] };
+}
 
 export interface UserProfile {
   avatar?: string;

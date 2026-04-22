@@ -36,6 +36,7 @@ import { RichTextEditor } from '@shared/components/editor';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import SectionWizardModal from '@modules/courses/components/SectionWizardModal';
+import { useSupervisorScope } from '@shared/hooks/useSupervisorScope';
 
 // Tipos locales extendidos para la UI
 interface CourseModuleWithLessons extends DBModule {
@@ -380,6 +381,8 @@ export default function CourseDetailPage() {
 
   const isInstructor = user?.role === 'teacher' || user?.role === 'admin' || user?.role === 'supervisor';
   const canEdit = isInstructor && user?.role !== 'supervisor' && (course?.instructorId === user?.id || user?.role === 'admin');
+  const { canSeeCourse, filterSections } = useSupervisorScope();
+  const supervisorDenied = user?.role === 'supervisor' && !!courseId && !canSeeCourse(courseId);
 
   useEffect(() => {
     loadCourseData();
@@ -415,14 +418,18 @@ export default function CourseDetailPage() {
         setExpandedModules(new Set([modulesWithLessons[0].id]));
       }
 
-      // Load sections of this course — teachers/admins navigate to them from here
+      // Load sections of this course — teachers/admins/supervisors navigate to them from here
       if (isInstructor) {
         try {
           const allSections = await sectionService.getByCourse(courseId);
-          const visible =
-            user?.role === 'admin' || user?.role === 'supervisor'
-              ? allSections
-              : allSections.filter((s) => s.instructorId === user?.id);
+          let visible: DBSection[];
+          if (user?.role === 'admin') {
+            visible = allSections;
+          } else if (user?.role === 'supervisor') {
+            visible = filterSections(allSections);
+          } else {
+            visible = allSections.filter((s) => s.instructorId === user?.id);
+          }
           setCourseSections(visible.sort((a, b) => b.startDate - a.startDate));
         } catch (err) {
           console.error('Error loading sections for course:', err);
@@ -681,6 +688,21 @@ export default function CourseDetailPage() {
       <div className="text-center py-12">
         <BookOpen className="h-12 w-12 text-gray-400 mx-auto mb-4" />
         <h3 className="text-lg font-medium text-gray-900">Curso no encontrado</h3>
+        <Button onClick={() => navigate('/courses')} className="mt-4">
+          Volver a cursos
+        </Button>
+      </div>
+    );
+  }
+
+  if (supervisorDenied) {
+    return (
+      <div className="text-center py-12">
+        <BookOpen className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+        <h3 className="text-lg font-medium text-gray-900">Fuera de tu ámbito de supervisión</h3>
+        <p className="text-sm text-gray-500 mt-1">
+          Este curso no está asignado a tu perfil de supervisor.
+        </p>
         <Button onClick={() => navigate('/courses')} className="mt-4">
           Volver a cursos
         </Button>
@@ -1102,10 +1124,14 @@ export default function CourseDetailPage() {
           if (!courseId) return;
           try {
             const allSections = await sectionService.getByCourse(courseId);
-            const visible =
-              user?.role === 'admin' || user?.role === 'supervisor'
-                ? allSections
-                : allSections.filter((s) => s.instructorId === user?.id);
+            let visible: DBSection[];
+            if (user?.role === 'admin') {
+              visible = allSections;
+            } else if (user?.role === 'supervisor') {
+              visible = filterSections(allSections);
+            } else {
+              visible = allSections.filter((s) => s.instructorId === user?.id);
+            }
             setCourseSections(visible.sort((a, b) => b.startDate - a.startDate));
           } catch (err) {
             console.error('Error reloading sections:', err);

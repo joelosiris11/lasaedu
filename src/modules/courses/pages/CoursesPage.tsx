@@ -1,7 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@app/store/authStore';
-import { courseService, type DBCourse } from '@shared/services/dataService';
+import {
+  courseService,
+  moduleService,
+  lessonService,
+  type DBCourse,
+} from '@shared/services/dataService';
+import { useSupervisorScope } from '@shared/hooks/useSupervisorScope';
 import {
   BookOpen,
   Plus,
@@ -12,10 +18,14 @@ import {
   Archive,
   Layers,
   X,
+  Trash2,
+  Loader2,
+  AlertTriangle,
 } from 'lucide-react';
 import { Card, CardContent } from '@shared/components/ui/Card';
 import { Button } from '@shared/components/ui/Button';
 import { CoursePattern } from '@shared/components/ui/CoursePattern';
+import { Modal } from '@shared/components/ui/Modal';
 import CourseWizardModal from '@modules/courses/components/CourseWizardModal';
 import SectionWizardModal from '@modules/courses/components/SectionWizardModal';
 
@@ -77,12 +87,16 @@ function CourseGridCard({
   course,
   onView,
   onNewSection,
+  onDelete,
   readOnly,
+  canDelete,
 }: {
   course: DBCourse;
   onView: () => void;
   onNewSection: () => void;
+  onDelete?: () => void;
   readOnly?: boolean;
+  canDelete?: boolean;
 }) {
   const statusStyle = STATUS_STYLES[course.status];
   const statusLabel = STATUS_LABELS[course.status];
@@ -151,6 +165,16 @@ function CourseGridCard({
             >
               <Plus className="h-4 w-4" />
             </button>
+            {canDelete && onDelete && (
+              <button
+                onClick={onDelete}
+                title="Eliminar curso"
+                aria-label="Eliminar curso"
+                className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-gray-200 bg-white hover:bg-red-50 hover:border-red-300 hover:text-red-600 text-gray-500 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 shrink-0 ml-auto"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -164,12 +188,18 @@ const CoursesPage = () => {
   const navigate = useNavigate();
   const { user } = useAuthStore();
   const isSupervisor = user?.role === 'supervisor';
+  const isAdmin = user?.role === 'admin';
+  const { filterCourses } = useSupervisorScope();
   const [courses, setCourses] = useState<DBCourse[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [courseWizardOpen, setCourseWizardOpen] = useState(false);
   const [sectionWizardCourseId, setSectionWizardCourseId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<DBCourse | null>(null);
+  const [deleteConfirmInput, setDeleteConfirmInput] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const loadCourses = async () => {
     setLoading(true);
@@ -187,9 +217,57 @@ const CoursesPage = () => {
     loadCourses();
   }, []);
 
-  // Role-scoped base list (admin & supervisor see all, teacher sees own)
-  const ownCourses = courses.filter(course =>
-    user?.role === 'teacher' ? course.instructorId === user.id : true
+  const openDeleteFor = (course: DBCourse) => {
+    setDeleteTarget(course);
+    setDeleteConfirmInput('');
+    setDeleteError(null);
+  };
+
+  const closeDelete = () => {
+    if (deleting) return;
+    setDeleteTarget(null);
+    setDeleteConfirmInput('');
+    setDeleteError(null);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+    if (deleteConfirmInput.trim() !== deleteTarget.title) {
+      setDeleteError('El texto no coincide con el título del curso.');
+      return;
+    }
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      // Cascade: remove lessons and modules so we don't leave orphans. Sections
+      // and enrollments are left as-is — those are handled separately in the
+      // sections UI and the audit trail keeps a reference to deleted courseIds.
+      const modules = await moduleService.getByCourse(deleteTarget.id);
+      for (const m of modules) {
+        const lessons = await lessonService.getByModule(m.id);
+        await Promise.all(lessons.map((l) => lessonService.delete(l.id)));
+        await moduleService.delete(m.id);
+      }
+      await courseService.delete(deleteTarget.id);
+      setDeleteTarget(null);
+      setDeleteConfirmInput('');
+      await loadCourses();
+    } catch (err) {
+      console.error('[courses] delete failed', err);
+      setDeleteError(err instanceof Error ? err.message : 'No se pudo eliminar el curso.');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  // Role-scoped base list:
+  // - teacher: only own courses
+  // - supervisor: restricted by supervisorScope.courses (if set)
+  // - admin: sees everything
+  const ownCourses = filterCourses(
+    courses.filter(course =>
+      user?.role === 'teacher' ? course.instructorId === user.id : true
+    )
   );
 
   const filteredCourses = ownCourses.filter(course => {
@@ -340,8 +418,10 @@ const CoursesPage = () => {
               key={course.id}
               course={course}
               readOnly={isSupervisor}
+              canDelete={isAdmin}
               onView={() => navigate(`/courses/${course.id}`)}
               onNewSection={() => setSectionWizardCourseId(course.id)}
+              onDelete={() => openDeleteFor(course)}
             />
           ))
         )}
@@ -362,6 +442,77 @@ const CoursesPage = () => {
         onClose={() => setSectionWizardCourseId(null)}
         onSaved={loadCourses}
       />
+
+      <Modal
+        open={!!deleteTarget}
+        onClose={closeDelete}
+        size="md"
+        disableBackdropClose={deleting}
+        title={
+          <span className="flex items-center gap-2 text-red-700">
+            <AlertTriangle className="h-5 w-5" />
+            Eliminar curso
+          </span>
+        }
+        subtitle="Esta acción no se puede deshacer."
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={closeDelete} disabled={deleting}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleConfirmDelete}
+              disabled={deleting || deleteConfirmInput.trim() !== deleteTarget?.title}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {deleting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                  Eliminando…
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4 mr-1.5" />
+                  Eliminar definitivamente
+                </>
+              )}
+            </Button>
+          </div>
+        }
+      >
+        {deleteTarget && (
+          <div className="space-y-3 text-sm">
+            <p className="text-gray-700">
+              Vas a eliminar el curso{' '}
+              <span className="font-semibold text-gray-900">"{deleteTarget.title}"</span>{' '}
+              junto con todos sus módulos y lecciones. Las secciones e inscripciones
+              vinculadas quedarán huérfanas y deberás limpiarlas aparte.
+            </p>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Escribe el título exacto para confirmar
+              </label>
+              <input
+                type="text"
+                autoFocus
+                value={deleteConfirmInput}
+                onChange={(e) => {
+                  setDeleteConfirmInput(e.target.value);
+                  if (deleteError) setDeleteError(null);
+                }}
+                placeholder={deleteTarget.title}
+                disabled={deleting}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/20 disabled:bg-gray-100"
+              />
+            </div>
+            {deleteError && (
+              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                {deleteError}
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };
