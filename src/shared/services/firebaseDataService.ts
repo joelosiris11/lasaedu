@@ -616,6 +616,29 @@ export interface PaginationOptions {
 // SERVICIO DE DATOS FIREBASE
 // ============================================
 
+// Recursively removes `undefined` values from objects and arrays so that the
+// payload is acceptable to Firestore, which rejects `undefined` at any depth.
+// Non-plain objects (Date, FieldValue sentinels, etc.) are passed through
+// unchanged.
+function stripUndefinedDeep(value: unknown): unknown {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (Array.isArray(value)) {
+    return value
+      .map(stripUndefinedDeep)
+      .filter(v => v !== undefined);
+  }
+  if (typeof value === 'object' && (value as object).constructor === Object) {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      const cleaned = stripUndefinedDeep(v);
+      if (cleaned !== undefined) out[k] = cleaned;
+    }
+    return out;
+  }
+  return value;
+}
+
 class FirebaseDataService {
   // ============================================
   // MÉTODOS GENÉRICOS CRUD
@@ -658,8 +681,8 @@ class FirebaseDataService {
       createdAt: timestamp,
       updatedAt: timestamp
     };
-    // Strip undefined values — Firestore rejects them
-    const record = Object.fromEntries(Object.entries(raw).filter(([_, v]) => v !== undefined));
+    // Strip undefined values deeply — Firestore rejects them at any nesting level
+    const record = stripUndefinedDeep(raw) as Record<string, unknown>;
 
     try {
       const docRef = await addDoc(collection(db, collectionName), record);
@@ -678,7 +701,7 @@ class FirebaseDataService {
       ...data,
       updatedAt: Date.now()
     };
-    const updateData = Object.fromEntries(Object.entries(raw).filter(([_, v]) => v !== undefined));
+    const updateData = stripUndefinedDeep(raw) as Record<string, unknown>;
 
     try {
       await updateDoc(doc(db, collectionName, id), updateData as any);
