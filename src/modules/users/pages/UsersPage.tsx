@@ -860,12 +860,8 @@ function ResetCredentialModal({
     setError('');
     setSaving(true);
     try {
-      const result = await adminResetPassword(user, newCred);
-      if (result.method === 'email') {
-        alert(`Se envió un correo de recuperación a ${user.email}`);
-      } else {
-        alert('Credenciales reseteadas. El usuario deberá cambiarlas al iniciar sesión.');
-      }
+      await adminResetPassword(user, newCred);
+      alert('Credenciales reseteadas. El usuario ya puede iniciar sesión con la nueva contraseña y deberá cambiarla al entrar.');
       onDone();
     } catch (err: any) {
       console.error('Error resetting:', err);

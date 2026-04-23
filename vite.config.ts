@@ -60,6 +60,10 @@ export default defineConfig({
         target: process.env.VITE_FILE_SERVER_INTERNAL || 'http://fileserver:3010',
         changeOrigin: true,
       },
+      '/admin': {
+        target: process.env.VITE_FILE_SERVER_INTERNAL || 'http://fileserver:3010',
+        changeOrigin: true,
+      },
     },
   },
 })

@@ -331,6 +331,17 @@ export const userService = {
     });
     return result;
   },
+  createWithId: async (id: string, data: Omit<DBUser, 'id'>) => {
+    const result = await firebaseDB.createUserWithId(id, data);
+    await logAudit({
+      action: 'create',
+      resourceType: 'user',
+      resourceId: result.id,
+      resourceName: result.name,
+      metadata: { email: result.email, role: result.role },
+    });
+    return result;
+  },
   update: async (id: string, data: Partial<DBUser>) => {
     const before = await firebaseDB.getUserById(id);
     const result = await firebaseDB.updateUser(id, data);

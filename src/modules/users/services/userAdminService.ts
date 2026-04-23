@@ -12,6 +12,11 @@ import { auth, isUsingEmulator } from '@app/config/firebase';
 import { userService } from '@shared/services/dataService';
 import type { DBUser } from '@shared/services/firebaseDataService';
 
+// Base URL for the backend (same server that handles file uploads). Empty
+// string → use the current origin so Vite's proxy forwards `/admin/*` to the
+// dev file-server. Set VITE_FILE_SERVER_URL in production.
+const API_BASE_URL = import.meta.env.VITE_FILE_SERVER_URL ?? '';
+
 // Reuse the same config as the main app
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'demo-api-key',
@@ -47,7 +52,13 @@ export async function createAuthUser(email: string, password: string): Promise<s
 /**
  * Reset a user's password.
  * - Emulator: uses the Identity Toolkit REST API to update directly.
- * - Production: sends a password-reset email via Firebase Auth.
+ * - Production: calls the backend `/admin/reset-password` endpoint, which uses
+ *   the Firebase Admin SDK to change the password instantly — no email
+ *   round-trip so the new credential works right away.
+ *
+ * Sends the email to the backend so it can resolve the Firebase Auth UID
+ * server-side. Legacy users have a Firestore doc id that does not match
+ * their Auth UID, which previously caused `auth/user-not-found` (HTTP 404).
  */
 export async function resetAuthPassword(
   uid: string,
@@ -72,11 +83,27 @@ export async function resetAuthPassword(
     return { method: 'direct' };
   }
 
-  // Production: can't change another user's password from client SDK.
-  // Send a password-reset email instead.
-  const { sendPasswordResetEmail } = await import('firebase/auth');
-  await sendPasswordResetEmail(auth, email);
-  return { method: 'email' };
+  // Production: call the backend, which verifies the caller is admin and uses
+  // Firebase Admin SDK to change the password. The new password is usable
+  // immediately.
+  const current = auth.currentUser;
+  if (!current) {
+    throw new Error('Debes iniciar sesión como admin para cambiar contraseñas.');
+  }
+  const token = await current.getIdToken();
+  const resp = await fetch(`${API_BASE_URL}/admin/reset-password`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ uid, email, password: newPassword }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.error || `Error ${resp.status} al resetear la contraseña`);
+  }
+  return { method: 'direct' };
 }
 
 /**
@@ -93,12 +120,15 @@ export async function adminCreateUser(data: {
   birthDate?: string;
   password: string;
 }): Promise<DBUser> {
-  // 1. Create Firebase Auth user (UID is auto-linked via email on login)
-  await createAuthUser(data.email, data.password);
+  // 1. Create the Firebase Auth user and capture its UID so we can mirror it
+  //    as the Firestore doc id. Matching ids is required for the users/{uid}
+  //    security rule (`request.auth.uid == uid`) to let the user later clear
+  //    their own `mustChangePassword` flag after the first login.
+  const authUid = await createAuthUser(data.email, data.password);
 
-  // 2. Create DB record
+  // 2. Create DB record keyed by the Auth UID.
   const now = Date.now();
-  const dbUser = await userService.create({
+  const dbUser = await userService.createWithId(authUid, {
     email: data.email,
     firstName: data.firstName,
     lastName: data.lastName,

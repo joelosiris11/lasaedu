@@ -32,6 +32,7 @@ import {
   getDoc,
   getDocs,
   addDoc,
+  setDoc,
   updateDoc,
   deleteDoc,
   query,
@@ -834,6 +835,28 @@ class FirebaseDataService {
 
   async createUser(user: Omit<DBUser, 'id'>): Promise<DBUser> {
     return this.create<DBUser>('users', user);
+  }
+
+  /**
+   * Create a user document with a specific Firestore id (e.g. the Firebase
+   * Auth UID). Needed so that `request.auth.uid == uid` checks in the
+   * Firestore security rules line up for admin-created users.
+   */
+  async createUserWithId(id: string, user: Omit<DBUser, 'id'>): Promise<DBUser> {
+    const timestamp = Date.now();
+    const raw = {
+      ...user,
+      createdAt: (user as any).createdAt ?? timestamp,
+      updatedAt: timestamp,
+    };
+    const record = stripUndefinedDeep(raw) as Record<string, unknown>;
+    try {
+      await setDoc(doc(db, 'users', id), record);
+      return { ...record, id } as unknown as DBUser;
+    } catch (error) {
+      console.error(`Error creating users/${id}:`, error);
+      throw error;
+    }
   }
 
   async updateUser(id: string, data: Partial<DBUser>): Promise<DBUser | null> {

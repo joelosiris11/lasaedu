@@ -103,16 +103,44 @@ export const authService = {
   },
 
   /**
-   * Change the current user's own credentials (requires recent sign-in)
+   * Change the current user's own credentials (requires recent sign-in).
+   *
+   * After updating the Auth password, we clear `mustChangePassword` twice:
+   *  1. A client-side Firestore update — works when `users/{authUid}` is
+   *     the caller's own doc (modern users) because the rules allow
+   *     `request.auth.uid == uid`.
+   *  2. A server-side admin-SDK fallback — needed for legacy users whose
+   *     Firestore doc id does not match their Auth UID; the client-side
+   *     update is silently rejected by the rules, which is why the
+   *     "cambiar clave" modal kept reappearing after each login.
    */
   async changeOwnCredential(newValue: string): Promise<void> {
     const currentUser = auth.currentUser;
     if (!currentUser) throw new Error('No user logged in');
     await firebaseUpdatePassword(currentUser, newValue);
-    // Clear the flag in DB
-    const dbUser = await firebaseDB.getUserByEmail(currentUser.email!);
+
+    const email = currentUser.email || '';
+    const dbUser = email ? await firebaseDB.getUserByEmail(email) : null;
     if (dbUser) {
       await firebaseDB.updateUser(dbUser.id, { mustChangePassword: false });
+    }
+
+    // Best-effort backend clear to cover the legacy-id case where the
+    // client-side update is blocked by security rules.
+    try {
+      const token = await currentUser.getIdToken();
+      const apiBase = import.meta.env.VITE_FILE_SERVER_URL ?? '';
+      await fetch(`${apiBase}/user/clear-must-change-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+    } catch (err) {
+      // Non-fatal: the client-side update above will have already cleared
+      // the flag for modern users.
+      console.warn('clear-must-change-password backend call failed:', err);
     }
   },
 
