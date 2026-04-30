@@ -222,6 +222,11 @@ service cloud.firestore {
       allow read, write: if hasRole('admin');
     }
 
+    // ---- course snapshots (admin-only — used for rollback in AdminDashboard) ----
+    match /courseSnapshots/{id} {
+      allow read, write: if isAdmin();
+    }
+
     // ---- default deny ----
     match /{document=**} {
       allow read, write: if false;
