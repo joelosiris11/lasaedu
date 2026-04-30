@@ -1,0 +1,237 @@
+/*
+  Departamentos — árbol jerárquico. Cada nodo es una caja con cabecera
+  clickeable que se expande para mostrar el sub-árbol de puestos del depto.
+*/
+
+.dept-chart-root {
+  padding: 32px 24px;
+  background: #fff;
+  display: inline-block;
+  min-width: max-content;
+}
+
+.dept-chart-root > .dept-chart {
+  display: inline-flex;
+  justify-content: center;
+}
+
+.dept-chart,
+.dept-chart-root .dept-chart {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  position: relative;
+}
+
+.dept-chart > li > .dept-chart {
+  padding-top: 32px;
+}
+
+/* Línea vertical del padre hacia los hijos */
+.dept-chart > li > .dept-chart::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  height: 32px;
+  border-left: 1px solid #E5E7EB;
+}
+
+.dept-chart > li {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 32px 16px 0 16px;
+  position: relative;
+}
+
+/* Conectores horizontales entre hermanos */
+.dept-chart > li::before,
+.dept-chart > li::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  width: 50%;
+  height: 32px;
+  border-top: 1px solid #E5E7EB;
+}
+.dept-chart > li::before { right: 50%; }
+.dept-chart > li::after  { left:  50%; }
+
+.dept-chart > li:first-child::before,
+.dept-chart > li:last-child::after { border: 0; }
+
+.dept-chart > li:only-child::before,
+.dept-chart > li:only-child::after { display: none; }
+
+/* Las raíces no llevan línea hacia arriba */
+.dept-chart-root > .dept-chart > li::before,
+.dept-chart-root > .dept-chart > li::after { display: none; }
+.dept-chart-root > .dept-chart > li { padding-top: 0; }
+
+/* ── Caja del departamento ─────────────────────────────────────────────── */
+
+.dept-node {
+  position: relative;
+  min-width: 240px;
+  max-width: 320px;
+  border: 1px solid var(--dept-accent, #E5E7EB);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+  transition: box-shadow 120ms ease, border-color 120ms ease;
+}
+.dept-node:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+.dept-node.is-root {
+  min-width: 260px;
+  border-width: 2px;
+}
+
+.dept-node-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+  color: #111827;
+}
+.dept-node-header:hover {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.dept-node-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  width: 32px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.dept-node-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.dept-node-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #111827;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dept-node-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #6B7280;
+  margin-top: 2px;
+}
+.dept-node-meta-sep {
+  margin: 0 2px;
+  color: #D1D5DB;
+}
+
+.dept-node-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #6B7280;
+  flex-shrink: 0;
+  margin-left: 4px;
+}
+
+.dept-node-actions {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+  pointer-events: none;
+}
+.dept-node:hover .dept-node-actions,
+.dept-node:focus-within .dept-node-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+.dept-node-action {
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  padding: 3px;
+  border-radius: 4px;
+  color: #374151;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.dept-node-action:hover { background: #fff; color: #111827; }
+
+.dept-node-lock {
+  display: inline-flex;
+  align-items: center;
+  color: rgba(17, 24, 39, 0.35);
+  background: rgba(255, 255, 255, 0.8);
+  padding: 3px;
+  border-radius: 4px;
+}
+
+/* Cuerpo expandido — puestos del depto */
+.dept-node-body {
+  border-top: 1px solid #F3F4F6;
+  padding: 12px 8px;
+  background: rgba(0, 0, 0, 0.015);
+}
+.dept-node-body .org-chart {
+  padding: 0;
+}
+
+.dept-node-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 4px;
+  font-size: 12px;
+  color: #6B7280;
+}
+.dept-node-add,
+.dept-node-add-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: #DC2626;
+  background: transparent;
+  border: 1px dashed #FCA5A5;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.dept-node-add:hover,
+.dept-node-add-row:hover {
+  background: rgba(254, 226, 226, 0.4);
+}
+.dept-node-add-row {
+  margin-top: 8px;
+}

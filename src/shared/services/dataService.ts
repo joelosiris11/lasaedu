@@ -31,6 +31,9 @@ import type {
   DBDeadlineExtension,
   DBSection,
   DBSectionLessonOverride,
+  DBDepartment,
+  DBPosition,
+  DBSectionAudience,
   PaginatedResult,
   PaginationOptions,
 } from './firebaseDataService';
@@ -58,6 +61,9 @@ export type {
   DBDeadlineExtension,
   DBSection,
   DBSectionLessonOverride,
+  DBDepartment,
+  DBPosition,
+  DBSectionAudience,
   PaginatedResult,
   PaginationOptions,
 };
@@ -483,6 +489,127 @@ export const sectionService = {
 
   subscribe: (callback: (sections: DBSection[]) => void) =>
     firebaseDB.subscribe<DBSection>('sections', callback),
+};
+
+// ============================================
+// DEPARTMENT SERVICE
+// ============================================
+
+export const departmentService = {
+  getAll: () => firebaseDB.getDepartments(),
+  getById: (id: string) => firebaseDB.getDepartmentById(id),
+  create: async (data: Omit<DBDepartment, 'id'>) => {
+    const now = Date.now();
+    const result = await firebaseDB.createDepartment({
+      ...data,
+      createdAt: data.createdAt ?? now,
+      updatedAt: data.updatedAt ?? now,
+    });
+    await logAudit({
+      action: 'create',
+      resourceType: 'department',
+      resourceId: result.id,
+      resourceName: result.name,
+    });
+    return result;
+  },
+  update: async (id: string, data: Partial<DBDepartment>) => {
+    const before = await firebaseDB.getDepartmentById(id);
+    const result = await firebaseDB.updateDepartment(id, { ...data, updatedAt: Date.now() });
+    const changes = diff(before as unknown as Record<string, unknown> | undefined, data as Record<string, unknown>);
+    await logAudit({
+      action: 'update',
+      resourceType: 'department',
+      resourceId: id,
+      resourceName: result?.name ?? before?.name ?? id,
+      changes,
+    });
+    return result;
+  },
+  delete: async (id: string) => {
+    const before = await firebaseDB.getDepartmentById(id);
+    // Guardas: no borrar si tiene puestos asociados.
+    const positions = await firebaseDB.getPositionsByDepartment(id);
+    if (positions.length > 0) {
+      throw new Error(`No se puede eliminar: el departamento tiene ${positions.length} puesto(s) asociado(s).`);
+    }
+    const result = await firebaseDB.deleteDepartment(id);
+    await logAudit({
+      action: 'delete',
+      resourceType: 'department',
+      resourceId: id,
+      resourceName: before?.name ?? id,
+    });
+    return result;
+  },
+  subscribe: (callback: (items: DBDepartment[]) => void) =>
+    firebaseDB.subscribe<DBDepartment>('departments', callback),
+};
+
+// ============================================
+// POSITION SERVICE (organigrama)
+// ============================================
+
+export const positionService = {
+  getAll: () => firebaseDB.getPositions(),
+  getById: (id: string) => firebaseDB.getPositionById(id),
+  getByDepartment: (departmentId: string) => firebaseDB.getPositionsByDepartment(departmentId),
+  getRoots: () => firebaseDB.getPositionsByParent(null),
+  getChildren: (parentPositionId: string) => firebaseDB.getPositionsByParent(parentPositionId),
+  getUsers: (positionId: string) => firebaseDB.getUsersByPosition(positionId),
+
+  create: async (data: Omit<DBPosition, 'id'>) => {
+    const now = Date.now();
+    const result = await firebaseDB.createPosition({
+      ...data,
+      parentPositionId: data.parentPositionId ?? null,
+      onLeavePolicy: data.onLeavePolicy ?? 'keep',
+      createdAt: data.createdAt ?? now,
+      updatedAt: data.updatedAt ?? now,
+    });
+    await logAudit({
+      action: 'create',
+      resourceType: 'position',
+      resourceId: result.id,
+      resourceName: result.title,
+    });
+    return result;
+  },
+  update: async (id: string, data: Partial<DBPosition>) => {
+    const before = await firebaseDB.getPositionById(id);
+    const result = await firebaseDB.updatePosition(id, { ...data, updatedAt: Date.now() });
+    const changes = diff(before as unknown as Record<string, unknown> | undefined, data as Record<string, unknown>);
+    await logAudit({
+      action: 'update',
+      resourceType: 'position',
+      resourceId: id,
+      resourceName: result?.title ?? before?.title ?? id,
+      changes,
+    });
+    return result;
+  },
+  delete: async (id: string) => {
+    const before = await firebaseDB.getPositionById(id);
+    // Guardas: no borrar si tiene puestos hijos o usuarios.
+    const children = await firebaseDB.getPositionsByParent(id);
+    if (children.length > 0) {
+      throw new Error(`No se puede eliminar: el puesto tiene ${children.length} puesto(s) subordinado(s).`);
+    }
+    const users = await firebaseDB.getUsersByPosition(id);
+    if (users.length > 0) {
+      throw new Error(`No se puede eliminar: hay ${users.length} usuario(s) asignado(s) a este puesto.`);
+    }
+    const result = await firebaseDB.deletePosition(id);
+    await logAudit({
+      action: 'delete',
+      resourceType: 'position',
+      resourceId: id,
+      resourceName: before?.title ?? id,
+    });
+    return result;
+  },
+  subscribe: (callback: (items: DBPosition[]) => void) =>
+    firebaseDB.subscribe<DBPosition>('positions', callback),
 };
 
 // ============================================

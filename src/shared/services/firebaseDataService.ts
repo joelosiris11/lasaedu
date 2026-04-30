@@ -56,6 +56,45 @@ export interface DBSupervisorScope {
   sections: { mode: 'all' } | { mode: 'selected'; ids: string[] };
 }
 
+// Departamento — nodo del árbol organizacional (Marketing, Operaciones, TI, etc.)
+// Los departamentos forman su propia jerarquía vía parentDepartmentId.
+export interface DBDepartment {
+  id: string;
+  name: string;
+  description?: string;
+  color?: string;
+  parentDepartmentId?: string | null; // null/undefined = raíz
+  order?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+// Puesto — nodo del organigrama. Cada usuario se asigna a UN puesto.
+// El árbol se forma con parentPositionId (línea de reporte).
+// platformRole define el rol de plataforma que hereda el usuario al ocupar este puesto.
+export interface DBPosition {
+  id: string;
+  title: string;
+  description?: string;
+  departmentId: string;
+  parentPositionId?: string | null; // null/undefined = raíz del organigrama
+  platformRole: 'student' | 'teacher' | 'admin' | 'support' | 'supervisor';
+  // Política cuando un usuario deja este puesto:
+  //   'keep'    → se conservan sus inscripciones actuales
+  //   'discard' → se retiran automáticamente las inscripciones de auto-enrollment
+  onLeavePolicy: 'keep' | 'discard';
+  order?: number; // orden visual entre hermanos
+  createdAt: number;
+  updatedAt: number;
+}
+
+// Audiencia de una sección — qué usuarios serán auto-inscritos.
+// Si ambas listas están vacías, la sección es manual (comportamiento legacy).
+export interface DBSectionAudience {
+  departmentIds?: string[]; // todos los usuarios de estos departamentos
+  positionIds?: string[];   // todos los usuarios con estos puestos
+}
+
 // Usuario
 export interface DBUser {
   id: string;
@@ -65,6 +104,11 @@ export interface DBUser {
   lastName?: string;
   name: string;
   role: 'student' | 'teacher' | 'admin' | 'support' | 'supervisor';
+  // Organigrama — ubicación del usuario dentro de la empresa.
+  // departmentId/positionId pueden ser undefined para usuarios legacy
+  // que aún no han sido migrados al nuevo modelo.
+  departmentId?: string;
+  positionId?: string;
   supervisorScope?: DBSupervisorScope;
   emailVerified: boolean;
   emailVerificationToken?: string | null;
@@ -540,6 +584,10 @@ export interface DBSection {
   image?: string;
   studentsCount: number;
   status: 'activa' | 'finalizada' | 'archivada' | 'borrador';
+  // Audiencia automática — si está definida, al activar la sección se inscriben
+  // todos los usuarios cuyo depto/puesto coincida. Si está vacía/undefined,
+  // la sección sigue siendo 100% manual (legacy).
+  audience?: DBSectionAudience;
   createdAt: number;
   updatedAt: number;
 }
@@ -1234,6 +1282,70 @@ class FirebaseDataService {
     return this.query<DBEnrollment>('enrollments', 'sectionId', sectionId);
   }
 
+  // --- DEPARTAMENTOS ---
+  async getDepartments(): Promise<DBDepartment[]> {
+    return this.getAll<DBDepartment>('departments');
+  }
+
+  async getDepartmentById(id: string): Promise<DBDepartment | null> {
+    return this.getById<DBDepartment>('departments', id);
+  }
+
+  async createDepartment(dept: Omit<DBDepartment, 'id'>): Promise<DBDepartment> {
+    return this.create<DBDepartment>('departments', dept);
+  }
+
+  async updateDepartment(id: string, data: Partial<DBDepartment>): Promise<DBDepartment | null> {
+    return this.update<DBDepartment>('departments', id, data);
+  }
+
+  async deleteDepartment(id: string): Promise<boolean> {
+    return this.delete('departments', id);
+  }
+
+  // --- PUESTOS (organigrama) ---
+  async getPositions(): Promise<DBPosition[]> {
+    return this.getAll<DBPosition>('positions');
+  }
+
+  async getPositionById(id: string): Promise<DBPosition | null> {
+    return this.getById<DBPosition>('positions', id);
+  }
+
+  async getPositionsByDepartment(departmentId: string): Promise<DBPosition[]> {
+    return this.query<DBPosition>('positions', 'departmentId', departmentId);
+  }
+
+  async getPositionsByParent(parentPositionId: string | null): Promise<DBPosition[]> {
+    // Firestore no indexa null directamente por igualdad fiable, así que
+    // los roots (sin parent) se filtran en memoria.
+    if (parentPositionId === null) {
+      const all = await this.getAll<DBPosition>('positions');
+      return all.filter(p => !p.parentPositionId);
+    }
+    return this.query<DBPosition>('positions', 'parentPositionId', parentPositionId);
+  }
+
+  async createPosition(position: Omit<DBPosition, 'id'>): Promise<DBPosition> {
+    return this.create<DBPosition>('positions', position);
+  }
+
+  async updatePosition(id: string, data: Partial<DBPosition>): Promise<DBPosition | null> {
+    return this.update<DBPosition>('positions', id, data);
+  }
+
+  async deletePosition(id: string): Promise<boolean> {
+    return this.delete('positions', id);
+  }
+
+  async getUsersByPosition(positionId: string): Promise<DBUser[]> {
+    return this.query<DBUser>('users', 'positionId', positionId);
+  }
+
+  async getUsersByDepartment(departmentId: string): Promise<DBUser[]> {
+    return this.query<DBUser>('users', 'departmentId', departmentId);
+  }
+
   // --- DEADLINE EXTENSIONS ---
   async getDeadlineExtensions(): Promise<DBDeadlineExtension[]> {
     return this.getAll<DBDeadlineExtension>('deadlineExtensions');
@@ -1391,7 +1503,10 @@ export type {
   DBTaskSubmission as TaskSubmission,
   DBDeadlineExtension as DeadlineExtension,
   DBSection as Section,
-  DBSectionLessonOverride as SectionLessonOverride
+  DBSectionLessonOverride as SectionLessonOverride,
+  DBDepartment as Department,
+  DBPosition as Position,
+  DBSectionAudience as SectionAudience
 };
 
 export type { WhereFilterOp, QueryDocumentSnapshot };

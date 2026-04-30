@@ -18,6 +18,7 @@
     "deploy": "npm run build && firebase deploy --only hosting",
     "deploy:preview": "npm run build && firebase hosting:channel:deploy preview",
     "seed": "node scripts/seed-admins.mjs",
+    "seed:org": "node scripts/seed-organization.mjs",
     "backup": "node scripts/backup-firestore.mjs",
     "restore": "node scripts/restore-firestore.mjs",
     "check-user": "node scripts/check-user.mjs"

@@ -1,0 +1,164 @@
+/*
+  Organigrama — versión minimal, alineada y con color del departamento
+  al 50% como fondo de cada caja.
+*/
+
+.org-chart-root {
+  padding: 32px 24px;
+  background: #fff;
+  display: inline-block;
+  min-width: max-content;
+}
+
+.org-chart-root > .org-chart {
+  display: inline-flex;
+  justify-content: center;
+}
+
+.org-chart,
+.org-chart ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  position: relative;
+}
+
+.org-chart ul { padding-top: 32px; }
+
+/* Línea vertical corta desde el padre hacia la fila de hijos */
+.org-chart ul::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  height: 32px;
+  border-left: 1px solid #E5E7EB;
+}
+
+/*
+  Cada <li> es una columna centrada → la caja y su subárbol se alinean
+  perfectamente debajo del centro del <li>, y las líneas horizontales
+  del arco inter-hermanos caen justo sobre el centro de cada caja.
+*/
+.org-chart li {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 32px 16px 0 16px;
+  position: relative;
+}
+
+/* Líneas horizontales del arco hacia los hermanos */
+.org-chart li::before,
+.org-chart li::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  width: 50%;
+  height: 32px;
+  border-top: 1px solid #E5E7EB;
+}
+.org-chart li::before { right: 50%; }
+.org-chart li::after  { left:  50%; }
+
+.org-chart li:first-child::before,
+.org-chart li:last-child::after { border: 0; }
+
+.org-chart li:only-child::before,
+.org-chart li:only-child::after { display: none; }
+
+/* La raíz no lleva líneas hacia arriba */
+.org-chart > li::before,
+.org-chart > li::after { display: none; }
+.org-chart > li { padding-top: 0; }
+
+/* ── Nodo ─────────────────────────────────────────────────────────────── */
+
+.org-node {
+  min-width: 180px;
+  max-width: 220px;
+  background: var(--node-bg, rgba(148, 163, 184, 0.5));
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  padding: 10px 12px;
+  text-align: left;
+  position: relative;
+  cursor: pointer;
+  transition: border-color 120ms ease, transform 120ms ease;
+  color: #111827;
+}
+.org-node:hover {
+  border-color: rgba(0, 0, 0, 0.28);
+}
+.org-node.is-locked { cursor: default; }
+.org-node.is-locked:hover { border-color: rgba(0, 0, 0, 0.08); }
+.org-node.is-root {
+  min-width: 200px;
+  border-color: #111827;
+}
+
+.org-node-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #111827;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.org-node-actions {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.org-node:hover .org-node-actions,
+.org-node:focus-within .org-node-actions { opacity: 1; }
+.org-node-action {
+  background: rgba(255, 255, 255, 0.6);
+  border: 0;
+  padding: 2px;
+  border-radius: 4px;
+  color: #111827;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+}
+.org-node-action:hover { background: #fff; }
+
+.org-node-lock {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  color: rgba(17, 24, 39, 0.35);
+  display: inline-flex;
+}
+
+/* Chevron para colapsar */
+.org-node-toggle {
+  position: absolute;
+  bottom: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #fff;
+  border: 1px solid #E5E7EB;
+  color: #6B7280;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 2;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+.org-node-toggle:hover { color: #111827; border-color: #9CA3AF; }

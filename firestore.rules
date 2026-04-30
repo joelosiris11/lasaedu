@@ -179,6 +179,20 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // ---- Organigrama: departamentos ----
+    // Todos los autenticados pueden leer el árbol (la UI aplica el scope fino).
+    // Escritura restringida a admin/supervisor (la UI limita además a su subárbol).
+    match /departments/{id} {
+      allow read:  if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ---- Organigrama: puestos ----
+    match /positions/{id} {
+      allow read:  if isSignedIn();
+      allow write: if isAdmin();
+    }
+
     // ---- AI assistant prompt versions (admin-only) ----
     match /aiAssistantPrompts/{id} {
       allow read, write: if hasRole('admin');

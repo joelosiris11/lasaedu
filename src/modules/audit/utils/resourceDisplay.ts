@@ -9,6 +9,8 @@ import {
   Layers,
   GraduationCap,
   Users,
+  Building2,
+  Briefcase,
 } from 'lucide-react';
 import type { AuditResourceType } from '@shared/services/auditLogService';
 
@@ -64,6 +66,12 @@ export function getResourceIcon(
       return Users;
     case 'evaluation':
       return ClipboardList;
+    case 'department':
+      return Building2;
+    case 'position':
+      return Briefcase;
+    default:
+      return FileText;
   }
 }
 
@@ -102,6 +110,12 @@ export function getResourceLabel(
       return 'un usuario';
     case 'evaluation':
       return 'una evaluación';
+    case 'department':
+      return 'un departamento';
+    case 'position':
+      return 'un puesto';
+    default:
+      return 'un recurso';
   }
 }
 
@@ -140,5 +154,11 @@ export function getResourceShortLabel(
       return 'Usuario';
     case 'evaluation':
       return 'Evaluación';
+    case 'department':
+      return 'Departamento';
+    case 'position':
+      return 'Puesto';
+    default:
+      return 'Recurso';
   }
 }

@@ -14,6 +14,7 @@ import {
   MessageSquare,
   UserCog,
   UserPlus,
+  Briefcase,
   ChevronsLeft,
   ChevronsRight,
   Layers,
@@ -81,7 +82,8 @@ const sidebarSections: SidebarSection[] = [
     label: 'Gestión',
     roles: ['admin', 'supervisor'],
     items: [
-      { icon: UserCog, label: 'Gestión Usuarios', path: '/users', roles: ['admin', 'supervisor'] },
+      { icon: UserCog, label: 'Gestión Usuarios', path: '/users', roles: ['admin'] },
+      { icon: Briefcase, label: 'Organigrama', path: '/organization', roles: ['admin', 'supervisor'] },
       { icon: UserPlus, label: 'Inscripciones', path: '/enrollments', roles: ['admin', 'supervisor'] },
       { icon: BookOpen, label: 'Cursos', path: '/courses', roles: ['admin', 'supervisor'] },
       { icon: Layers, label: 'Secciones', path: '/my-sections', roles: ['admin', 'supervisor'] },

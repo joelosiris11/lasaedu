@@ -50,6 +50,8 @@ const RESOURCE_LABELS: Record<AuditResourceType, string> = {
   section: 'Sección',
   user: 'Usuario',
   evaluation: 'Evaluación',
+  department: 'Departamento',
+  position: 'Puesto',
 };
 
 // All red shades — no green/blue/amber/purple/emerald

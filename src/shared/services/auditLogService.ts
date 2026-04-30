@@ -23,7 +23,9 @@ export type AuditResourceType =
   | 'lesson'
   | 'section'
   | 'user'
-  | 'evaluation';
+  | 'evaluation'
+  | 'department'
+  | 'position';
 
 export interface DBAuditLog {
   id: string;

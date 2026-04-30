@@ -8,9 +8,11 @@ import {
   ProtectedRoute,
   AdminDashboard,
   TeacherDashboard,
+  SupervisorDashboard,
   StudentDashboard,
   SupportDashboard,
   UsersPage,
+  OrganizationPage,
   CoursesPage,
   CommunicationPage
 } from '@/pages';
@@ -76,8 +78,9 @@ const DashboardRedirect = () => {
 
   switch (user.role) {
     case 'admin':
-    case 'supervisor':
       return <AdminDashboard />;
+    case 'supervisor':
+      return <SupervisorDashboard />;
     case 'teacher':
       return <TeacherDashboard />;
     case 'student':
@@ -130,8 +133,16 @@ export const router = createBrowserRouter([
       {
         path: 'users',
         element: (
-          <ProtectedRoute allowedRoles={['admin', 'supervisor']}>
+          <ProtectedRoute allowedRoles={['admin']}>
             <UsersPage />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: 'organization',
+        element: (
+          <ProtectedRoute allowedRoles={['admin', 'supervisor']}>
+            <OrganizationPage />
           </ProtectedRoute>
         )
       },
