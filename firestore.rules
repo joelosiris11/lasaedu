@@ -70,7 +70,26 @@ service cloud.firestore {
       allow read:   if isSignedIn();
       allow create: if isStaff() ||
                        (isStudent() && request.resource.data.userId == request.auth.uid);
-      allow update: if isStaff();
+      // Staff can update anything. Students can update ONLY their own enrollment
+      // and ONLY progress-tracking fields — not userId, courseId, sectionId,
+      // certificateId, grade, enrolledAt, createdAt, etc.
+      allow update: if isStaff() ||
+                       (isStudent()
+                         && resource.data.userId == request.auth.uid
+                         && request.resource.data.userId == request.auth.uid
+                         && request.resource.data.diff(resource.data).affectedKeys()
+                              .hasOnly([
+                                'progress',
+                                'status',
+                                'completedLessons',
+                                'completedModules',
+                                'lastLessonId',
+                                'lastAccessedAt',
+                                'lastUpdated',
+                                'completedAt',
+                                'totalTimeSpent',
+                                'updatedAt'
+                              ]));
       allow delete: if isAdmin();
     }
 
