@@ -756,6 +756,8 @@ function BulkEnrollModal({
       title="Inscripción masiva"
       subtitle={`${selectedStudents.length} estudiante${selectedStudents.length !== 1 ? 's' : ''} seleccionado${selectedStudents.length !== 1 ? 's' : ''}`}
       disableBackdropClose={enrolling}
+      maxHeight="80vh"
+      minHeight="32rem"
       footer={
         <div className="flex items-center justify-end gap-2">
           <Button variant="outline" size="sm" onClick={onClose} disabled={enrolling} className="text-xs">
