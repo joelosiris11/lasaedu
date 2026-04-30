@@ -1,6 +1,7 @@
 import { TOOL_DECLARATIONS, executeTool } from './tools';
 import { DEFAULT_SYSTEM_PROMPT } from './defaultPrompt';
 import type { ToolCallRecord } from '../types';
+import { auth } from '@app/config/firebase';
 
 // ─── Message shape (Ollama /api/chat) ──────────────────────────────────
 //
@@ -27,8 +28,8 @@ export type OllamaMessage =
   | { role: 'tool'; content: string; tool_name?: string };
 
 export interface OllamaConfig {
-  apiKey: string;
-  baseUrl: string;
+  /** URL of the server-side proxy that forwards to Ollama Cloud (default: /ai/chat). */
+  proxyUrl: string;
   model: string;
   systemInstruction: string;
 }
@@ -47,19 +48,15 @@ export interface RunResult {
   toolCalls: ToolCallRecord[];
 }
 
-function getApiKey(override?: string): string {
-  const key = override || import.meta.env.VITE_OLLAMA_API_KEY;
-  if (!key) {
-    throw new Error(
-      'Falta VITE_OLLAMA_API_KEY en el entorno. Agrega la API key de Ollama Cloud al .env.',
-    );
-  }
-  return key;
-}
-
-function getBaseUrl(override?: string): string {
-  const url = (override || import.meta.env.VITE_OLLAMA_BASE_URL || 'https://ollama.com') as string;
-  return url.replace(/\/+$/, '');
+function getProxyUrl(override?: string): string {
+  if (override) return override;
+  const explicit = import.meta.env.VITE_AI_PROXY_URL as string | undefined;
+  if (explicit) return explicit;
+  // Reuse the file-server URL by default — the AI proxy lives in the same
+  // backend. In dev VITE_FILE_SERVER_URL is empty, so we fall through to a
+  // same-origin path that Vite proxies to the file-server.
+  const base = (import.meta.env.VITE_FILE_SERVER_URL as string | undefined) ?? '';
+  return `${base.replace(/\/+$/, '')}/ai/chat`;
 }
 
 function getModelName(override?: string): string {
@@ -76,8 +73,7 @@ function newId(): string {
 
 export function getModel(config?: Partial<OllamaConfig>): OllamaConfig {
   return {
-    apiKey: getApiKey(config?.apiKey),
-    baseUrl: getBaseUrl(config?.baseUrl),
+    proxyUrl: getProxyUrl(config?.proxyUrl),
     model: getModelName(config?.model),
     systemInstruction: config?.systemInstruction || DEFAULT_SYSTEM_PROMPT,
   };
@@ -103,23 +99,26 @@ async function* streamChat(
   config: OllamaConfig,
   messages: OllamaMessage[],
 ): AsyncGenerator<OllamaStreamChunk, void, void> {
-  const res = await fetch(`${config.baseUrl}/api/chat`, {
+  // Auth with the user's Firebase ID token — the server proxy verifies it and
+  // checks the admin role before forwarding to Ollama Cloud. The Ollama API
+  // key never reaches the browser.
+  const idToken = await auth.currentUser?.getIdToken().catch(() => '');
+  const res = await fetch(config.proxyUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.apiKey}`,
+      ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
     },
     body: JSON.stringify({
       model: config.model,
       messages,
       tools: TOOL_DECLARATIONS,
-      stream: true,
     }),
   });
 
   if (!res.ok || !res.body) {
     const body = await res.text().catch(() => '');
-    throw new Error(`Ollama Cloud error ${res.status}: ${body || res.statusText}`);
+    throw new Error(`AI proxy error ${res.status}: ${body || res.statusText}`);
   }
 
   const reader = res.body.getReader();

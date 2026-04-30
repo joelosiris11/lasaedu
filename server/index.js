@@ -301,6 +301,71 @@ app.post('/user/clear-must-change-password', authMiddleware, async (req, res) =>
   }
 });
 
+/**
+ * POST /ai/chat
+ * Body: { model: string, messages: [...], tools?: [...] }
+ *
+ * Server-side proxy for Ollama Cloud's /api/chat. The browser cannot call
+ * https://ollama.com directly because it doesn't set CORS headers. This
+ * endpoint forwards the request, adds the Bearer key from server env, and
+ * streams the NDJSON response straight back to the client.
+ *
+ * Admin-only — the AI assistant is exposed in the UI to admins only and the
+ * key burns real credits, so we gate at the auth layer too.
+ */
+app.post('/ai/chat', authMiddleware, adminMiddleware, async (req, res) => {
+  const apiKey = process.env.OLLAMA_API_KEY;
+  if (!apiKey) {
+    return res.status(500).json({ error: 'OLLAMA_API_KEY not configured on the server' });
+  }
+  const baseUrl = process.env.OLLAMA_BASE_URL || 'https://ollama.com';
+  const { model, messages, tools } = req.body || {};
+  if (!model || !Array.isArray(messages)) {
+    return res.status(400).json({ error: 'model and messages[] are required' });
+  }
+
+  let upstream;
+  try {
+    upstream = await fetch(`${baseUrl}/api/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({ model, messages, tools, stream: true }),
+    });
+  } catch (err) {
+    console.error('ollama upstream fetch failed', err);
+    return res.status(502).json({ error: 'Ollama upstream unreachable' });
+  }
+
+  if (!upstream.ok || !upstream.body) {
+    const body = await upstream.text().catch(() => '');
+    return res
+      .status(upstream.status || 502)
+      .json({ error: `Ollama error ${upstream.status}: ${body || upstream.statusText}` });
+  }
+
+  res.status(200);
+  res.setHeader('Content-Type', 'application/x-ndjson');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('X-Accel-Buffering', 'no'); // disable proxy buffering (nginx, etc.)
+  if (typeof res.flushHeaders === 'function') res.flushHeaders();
+
+  const reader = upstream.body.getReader();
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (value) res.write(Buffer.from(value));
+    }
+    res.end();
+  } catch (err) {
+    console.error('ollama stream relay failed', err);
+    if (!res.writableEnded) res.end();
+  }
+});
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`📁 File server running on port ${PORT}`);
   console.log(`   Upload dir: ${UPLOAD_DIR}`);

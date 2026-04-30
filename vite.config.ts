@@ -64,6 +64,11 @@ export default defineConfig({
         target: process.env.VITE_FILE_SERVER_INTERNAL || 'http://fileserver:3010',
         changeOrigin: true,
       },
+      '/ai': {
+        target: process.env.VITE_FILE_SERVER_INTERNAL || 'http://fileserver:3010',
+        changeOrigin: true,
+        timeout: 5 * 60 * 1000,
+      },
     },
   },
 })

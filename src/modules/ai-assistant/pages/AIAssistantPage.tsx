@@ -493,7 +493,7 @@ export default function AIAssistantPage() {
               ) : model ? (
                 'Conectado a Kimi (Ollama Cloud). Los cambios son reversibles por acción.'
               ) : (
-                'Sin API key configurada.'
+                'No hay un prompt activo configurado.'
               )}
             </div>
           </div>
@@ -613,7 +613,7 @@ export default function AIAssistantPage() {
                   placeholder={
                     model
                       ? 'Dile a Lasa qué editar… (Enter para enviar, Shift+Enter para nueva línea)'
-                      : 'Configura VITE_OLLAMA_API_KEY para habilitar el asistente.'
+                      : 'Configura un prompt activo para habilitar el asistente.'
                   }
                   className="flex-1 resize-none rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/20 disabled:bg-gray-100"
                 />
