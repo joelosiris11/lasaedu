@@ -182,10 +182,9 @@ const UsersPage = () => {
   const openReset = (u: DBUser) => { setResetTarget(u); setShowResetModal(true); };
 
   const isAdmin = currentUser?.role === 'admin';
-  const isSupervisor = currentUser?.role === 'supervisor';
 
   // ── Guard ──
-  if (!isAdmin && !isSupervisor) {
+  if (!isAdmin) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -418,13 +417,23 @@ function UserFormModal({
     initialScope?.sections?.mode === 'selected' ? initialScope.sections.ids : []
   );
 
-  // Load available courses/sections lazily when the user is (or becomes) a supervisor
+  // Teacher assignment state (only used when role === 'teacher')
+  // teacherCourseIds: courses the teacher will own as instructor.
+  // excludedSectionIds: sections of selected courses that should NOT be transferred.
+  // alreadyAssignedCourseIds: courses already owned by this teacher (edit mode) —
+  // can't be unchecked here; admin must edit the course directly to unassign.
+  const [teacherCourseIds, setTeacherCourseIds] = useState<string[]>([]);
+  const [excludedSectionIds, setExcludedSectionIds] = useState<Set<string>>(new Set());
+  const [alreadyAssignedCourseIds, setAlreadyAssignedCourseIds] = useState<Set<string>>(new Set());
+  const [teacherInitialized, setTeacherInitialized] = useState(false);
+
+  // Load available courses/sections lazily when the user is (or becomes) a supervisor or teacher
   const [availableCourses, setAvailableCourses] = useState<DBCourse[]>([]);
   const [availableSections, setAvailableSections] = useState<DBSection[]>([]);
   const [scopeLoading, setScopeLoading] = useState(false);
 
   useEffect(() => {
-    if (form.role !== 'supervisor') return;
+    if (form.role !== 'supervisor' && form.role !== 'teacher') return;
     if (availableCourses.length > 0 || availableSections.length > 0) return;
     let cancelled = false;
     setScopeLoading(true);
@@ -440,6 +449,24 @@ function UserFormModal({
       });
     return () => { cancelled = true; };
   }, [form.role, availableCourses.length, availableSections.length]);
+
+  // Pre-populate teacher assignments from current data once courses/sections are loaded
+  useEffect(() => {
+    if (form.role !== 'teacher') return;
+    if (teacherInitialized) return;
+    if (availableCourses.length === 0 && availableSections.length === 0) return;
+    if (!user?.id) {
+      // Creating a new teacher: start with no assignments
+      setTeacherInitialized(true);
+      return;
+    }
+    const ownedCourses = availableCourses
+      .filter(c => c.instructorId === user.id)
+      .map(c => c.id);
+    setTeacherCourseIds(ownedCourses);
+    setAlreadyAssignedCourseIds(new Set(ownedCourses));
+    setTeacherInitialized(true);
+  }, [form.role, availableCourses, availableSections, user?.id, teacherInitialized]);
 
   // When course selection shrinks, drop section ids whose course is no longer allowed
   useEffect(() => {
@@ -485,6 +512,36 @@ function UserFormModal({
     );
   };
 
+  const toggleTeacherCourse = (id: string) => {
+    // Don't let the admin uncheck a course that is currently this teacher's
+    // — the modal can only ADD assignments. To unassign, edit the course directly.
+    if (alreadyAssignedCourseIds.has(id)) return;
+    setTeacherCourseIds(prev => {
+      const isSelected = prev.includes(id);
+      if (isSelected) {
+        // Removing course: also clear any explicit excludes for its sections
+        setExcludedSectionIds(prevEx => {
+          const next = new Set(prevEx);
+          for (const s of availableSections) {
+            if (s.courseId === id) next.delete(s.id);
+          }
+          return next;
+        });
+        return prev.filter(x => x !== id);
+      }
+      return [...prev, id];
+    });
+  };
+
+  const toggleExcludedSection = (id: string) => {
+    setExcludedSectionIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   const generatedCred = birthDateToCredential(form.birthDate);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -508,12 +565,45 @@ function UserFormModal({
       }
 
       const supervisorScope = buildSupervisorScope();
+      const fullName = `${form.firstName} ${form.lastName}`.trim();
+
+      // Build the list of course/section transfers to apply after the user is saved.
+      // Sections of selected courses are transferred by default unless explicitly excluded.
+      const applyTeacherAssignments = async (teacherId: string) => {
+        if (form.role !== 'teacher') return;
+        const courseUpdates: Promise<unknown>[] = [];
+        for (const courseId of teacherCourseIds) {
+          const course = availableCourses.find(c => c.id === courseId);
+          if (!course) continue;
+          if (course.instructorId === teacherId && course.instructor === fullName) continue;
+          courseUpdates.push(
+            courseService.update(courseId, {
+              instructorId: teacherId,
+              instructor: fullName,
+            })
+          );
+        }
+        const sectionsToTransfer = availableSections.filter(
+          s => teacherCourseIds.includes(s.courseId) && !excludedSectionIds.has(s.id)
+        );
+        const sectionUpdates: Promise<unknown>[] = [];
+        for (const section of sectionsToTransfer) {
+          if (section.instructorId === teacherId && section.instructorName === fullName) continue;
+          sectionUpdates.push(
+            sectionService.update(section.id, {
+              instructorId: teacherId,
+              instructorName: fullName,
+            })
+          );
+        }
+        await Promise.all([...courseUpdates, ...sectionUpdates]);
+      };
 
       if (isEdit) {
         const updated = await userService.update(user.id, {
           firstName: form.firstName,
           lastName: form.lastName,
-          name: `${form.firstName} ${form.lastName}`.trim(),
+          name: fullName,
           role: form.role,
           // Clear scope when leaving supervisor role; otherwise persist the new scope.
           supervisorScope: form.role === 'supervisor' ? supervisorScope : undefined,
@@ -524,6 +614,7 @@ function UserFormModal({
             birthDate: form.birthDate,
           },
         });
+        await applyTeacherAssignments(user.id);
         if (updated) onSaved(updated);
       } else {
         if (!form.birthDate) {
@@ -550,8 +641,10 @@ function UserFormModal({
         // Attach the supervisor scope on the freshly-created user, if applicable
         if (form.role === 'supervisor' && supervisorScope) {
           const withScope = await userService.update(created.id, { supervisorScope });
+          await applyTeacherAssignments(created.id);
           onSaved(withScope ?? created);
         } else {
+          await applyTeacherAssignments(created.id);
           onSaved(created);
         }
       }
@@ -816,6 +909,104 @@ function UserFormModal({
                   </p>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* Asignación de cursos (solo rol profesor) */}
+          {form.role === 'teacher' && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50/40 p-4 space-y-3">
+              <div className="flex items-start gap-2">
+                <BookOpen className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold text-blue-900">Cursos asignados</p>
+                  <p className="text-xs text-blue-700/80">
+                    Selecciona los cursos que impartirá. Por defecto, todas las secciones del curso se transferirán a este profesor; puedes excluir alguna si es necesario.
+                  </p>
+                </div>
+              </div>
+
+              {scopeLoading ? (
+                <div className="rounded-md border border-gray-200 bg-white p-3 text-xs text-gray-500 flex items-center gap-2">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> Cargando cursos…
+                </div>
+              ) : availableCourses.length === 0 ? (
+                <div className="rounded-md border border-gray-200 bg-white p-3 text-xs text-gray-500">
+                  No hay cursos disponibles.
+                </div>
+              ) : (
+                <div className="rounded-md border border-gray-200 bg-white max-h-72 overflow-y-auto divide-y divide-gray-100">
+                  {availableCourses.map(course => {
+                    const courseSections = availableSections.filter(s => s.courseId === course.id);
+                    const isCourseSelected = teacherCourseIds.includes(course.id);
+                    const isLocked = alreadyAssignedCourseIds.has(course.id);
+                    const includedCount = courseSections.filter(s => !excludedSectionIds.has(s.id)).length;
+                    return (
+                      <div key={course.id}>
+                        <label
+                          className={`flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 ${isLocked ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                          title={isLocked ? 'Curso ya asignado a este profesor. Para desasignar, edita el curso directamente.' : undefined}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isCourseSelected}
+                            disabled={isLocked}
+                            onChange={() => toggleTeacherCourse(course.id)}
+                            className="rounded border-gray-300 text-red-600 focus:ring-red-500 disabled:opacity-60"
+                          />
+                          <span className="truncate text-gray-800 font-medium">{course.title}</span>
+                          {isLocked && (
+                            <span className="shrink-0 text-[10px] text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded">
+                              Asignado
+                            </span>
+                          )}
+                          <span className="ml-auto shrink-0 text-[11px] text-gray-500">
+                            {isCourseSelected
+                              ? `${includedCount}/${courseSections.length} sec.`
+                              : `${courseSections.length} sec.`}
+                          </span>
+                        </label>
+                        {isCourseSelected && courseSections.length > 0 && (
+                          <div className="bg-gray-50/60 border-t border-gray-100 px-3 py-2 pl-9 space-y-1">
+                            {courseSections.map(section => {
+                              const included = !excludedSectionIds.has(section.id);
+                              return (
+                                <label
+                                  key={section.id}
+                                  className="flex items-center gap-2 text-xs cursor-pointer text-gray-700 hover:text-gray-900"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={included}
+                                    onChange={() => toggleExcludedSection(section.id)}
+                                    className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+                                  />
+                                  <span className="truncate">{section.title}</span>
+                                  {section.instructorId && section.instructorId !== (user?.id ?? '') && (
+                                    <span className="ml-auto shrink-0 text-[10px] text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">
+                                      actual: {section.instructorName || '—'}
+                                    </span>
+                                  )}
+                                </label>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {teacherCourseIds.length > 0 && (
+                <p className="text-[11px] text-gray-500">
+                  {teacherCourseIds.length} curso{teacherCourseIds.length === 1 ? '' : 's'} seleccionado{teacherCourseIds.length === 1 ? '' : 's'}
+                  {(() => {
+                    const sectionsToTransfer = availableSections.filter(
+                      s => teacherCourseIds.includes(s.courseId) && !excludedSectionIds.has(s.id)
+                    ).length;
+                    return ` · ${sectionsToTransfer} sección${sectionsToTransfer === 1 ? '' : 'es'} a transferir`;
+                  })()}
+                </p>
+              )}
             </div>
           )}
 
