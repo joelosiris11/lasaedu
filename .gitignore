@@ -46,6 +46,9 @@ ui-debug.log
 service-account*.json
 *.key.json
 
+# Local backups of Firestore (contain user data — never commit)
+backups/
+
 # OS generated files
 Thumbs.db
 .DS_Store
