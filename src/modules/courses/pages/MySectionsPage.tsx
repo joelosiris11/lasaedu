@@ -772,6 +772,7 @@ export default function MySectionsPage() {
 
   const isStudent = user?.role === 'student';
   const isAdmin = user?.role === 'admin';
+  const isSupervisor = user?.role === 'supervisor';
   const { filterSections, filterCourses } = useSupervisorScope();
 
   // ── Data state ───────────────────────────────────────────────────────────
@@ -1226,8 +1227,8 @@ export default function MySectionsPage() {
               </button>
             </div>
 
-            {/* Nueva sección — teacher only */}
-            {!isStudent && teacherCourses.length > 0 && (
+            {/* Nueva sección — teacher/admin only (supervisors are read-only) */}
+            {!isStudent && !isSupervisor && teacherCourses.length > 0 && (
               <div className="relative">
                 <Button
                   size="sm"

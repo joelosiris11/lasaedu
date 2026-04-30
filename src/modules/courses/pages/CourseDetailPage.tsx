@@ -826,13 +826,15 @@ export default function CourseDetailPage() {
                   {courseSections.length}
                 </span>
               </div>
-              <Button
-                size="sm"
-                onClick={() => setSectionWizardOpen(true)}
-              >
-                <Plus className="h-4 w-4 mr-1" />
-                Nueva sección
-              </Button>
+              {canEdit && (
+                <Button
+                  size="sm"
+                  onClick={() => setSectionWizardOpen(true)}
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Nueva sección
+                </Button>
+              )}
             </div>
 
             {courseSections.length === 0 ? (
