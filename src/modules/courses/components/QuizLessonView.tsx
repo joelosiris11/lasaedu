@@ -126,6 +126,22 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
     return () => clearInterval(interval);
   }, [popupOpen]);
 
+  // Listen for the popup signaling a passed quiz so the parent can mark the
+  // lesson as complete BEFORE the popup-close reload kicks in. The popup only
+  // sends this message when the quiz was passed (see QuizLessonView.handleSubmit
+  // — onComplete() is gated on quizResult.passed).
+  useEffect(() => {
+    if (popupMode || readOnly) return;
+    const onMessage = (e: MessageEvent) => {
+      const data = e.data as { type?: string; lessonId?: string } | undefined;
+      if (!data || data.type !== 'quiz-completed') return;
+      if (data.lessonId && data.lessonId !== lesson.id) return;
+      onComplete();
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [popupMode, readOnly, lesson.id, onComplete]);
+
   // Whether to use the popup flow: only for students (not readOnly, not already in popup)
   const shouldUsePopup = !popupMode && !readOnly && !!sectionId;
 
