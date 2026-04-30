@@ -93,6 +93,7 @@ export default function QuizPopupPage() {
         onComplete={handleComplete}
         userId={user?.id}
         courseId={courseId}
+        sectionId={sectionId}
         sectionOverride={sectionOverride}
         popupMode
       />
