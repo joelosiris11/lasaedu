@@ -915,10 +915,15 @@ export const notificationService = {
   },
   
   subscribeToUser: (userId: string, callback: (notifications: DBNotification[]) => void) => {
-    return firebaseDB.subscribe<DBNotification>('notifications', (allNotifications) => {
-      const filtered = allNotifications.filter(n => n.userId === userId);
-      callback(filtered);
+    // Use a server-side filter (where userId == userId) so the read passes the
+    // per-doc Firestore rule. A full collection scan tries to read every
+    // notification — including other users' — which fails with insufficient
+    // permissions even for the recipient of some.
+    firebaseDB.getNotificationsByUser(userId).then(callback).catch(err => {
+      console.error('Error getting notifications:', err);
+      callback([]);
     });
+    return () => {}; // no-op unsubscribe (matches subscribe() contract)
   },
 };
 
