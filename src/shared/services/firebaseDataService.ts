@@ -180,6 +180,8 @@ export interface DBEnrollment {
   totalTimeSpent: number; // en minutos
   certificateId?: string;
   grade?: number;
+  /** ISO timestamp set the first time progress reaches 100%. */
+  completedAt?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -955,13 +957,15 @@ class FirebaseDataService {
     const completedLessons = [...new Set([...enrollment.completedLessons, lessonId])];
     const progress = Math.round((completedLessons.length / totalLessons) * 100);
     const status = progress >= 100 ? 'completed' : 'active';
+    const justCompleted = status === 'completed' && !enrollment.completedAt;
 
     return this.update<DBEnrollment>('enrollments', enrollmentId, {
       completedLessons,
       progress,
       status,
       lastLessonId: lessonId,
-      lastAccessedAt: new Date().toISOString()
+      lastAccessedAt: new Date().toISOString(),
+      ...(justCompleted ? { completedAt: new Date().toISOString() } : {}),
     });
   }
 

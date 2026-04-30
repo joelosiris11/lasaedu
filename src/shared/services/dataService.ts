@@ -983,11 +983,14 @@ export const taskSubmissionService = {
                 100,
                 Math.round((newCompleted.length / totalLessons) * 100)
               );
+              const willComplete = progress >= 100;
+              const justCompleted = willComplete && !enrollment.completedAt;
               await firebaseDB.updateEnrollment(enrollment.id, {
                 completedLessons: newCompleted,
                 progress,
-                status: progress >= 100 ? 'completed' : enrollment.status,
+                status: willComplete ? 'completed' : enrollment.status,
                 updatedAt: Date.now(),
+                ...(justCompleted ? { completedAt: new Date().toISOString() } : {}),
               });
             }
           }

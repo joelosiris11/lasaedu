@@ -387,13 +387,15 @@ export default function LessonViewPage() {
       const totalLessons = modules.reduce((sum, m) => sum + m.lessons.length, 0);
       const newProgress = Math.round((newCompletedLessons.length / totalLessons) * 100);
 
+      const justCompleted = newProgress >= 100 && !enrollment.completedAt;
       await enrollmentService.update(enrollment.id, {
         completedLessons: newCompletedLessons,
         progress: newProgress,
         status: newProgress >= 100 ? 'completed' : 'active',
         lastLessonId: currentLesson.id,
         lastAccessedAt: new Date().toISOString(),
-        lastUpdated: Date.now()
+        lastUpdated: Date.now(),
+        ...(justCompleted ? { completedAt: new Date().toISOString() } : {}),
       } as any); // Type cast to avoid type mismatch issues
 
       setCompletedLessons(prev => new Set([...prev, currentLesson.id]));
