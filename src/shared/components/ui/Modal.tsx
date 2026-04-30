@@ -14,6 +14,10 @@ interface ModalProps {
   footer?: ReactNode;
   /** Disable closing on backdrop click (e.g. while saving). */
   disableBackdropClose?: boolean;
+  /** Override desktop max-height (CSS value, e.g. '80vh'). Mobile stays at 95vh. */
+  maxHeight?: string;
+  /** Minimum height of the modal body container (CSS value, e.g. '24rem'). */
+  minHeight?: string;
   children: ReactNode;
 }
 
@@ -36,6 +40,8 @@ export function Modal({
   size = '3xl',
   footer,
   disableBackdropClose = false,
+  maxHeight,
+  minHeight,
   children,
 }: ModalProps) {
   useEffect(() => {
@@ -66,6 +72,10 @@ export function Modal({
           'max-h-[95vh] sm:max-h-[90vh]',
           SIZE_CLASSES[size]
         )}
+        style={{
+          ...(maxHeight ? { maxHeight } : null),
+          ...(minHeight ? { minHeight } : null),
+        }}
       >
         {(title || subtitle) && (
           <div className="flex items-start justify-between px-5 sm:px-6 py-4 border-b border-gray-100">
