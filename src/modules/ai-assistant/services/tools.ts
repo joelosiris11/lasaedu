@@ -1,12 +1,33 @@
-import { SchemaType, type FunctionDeclaration } from '@google/generative-ai';
 import {
   courseService,
   moduleService,
   lessonService,
+  userService,
+  sectionService,
+  departmentService,
+  positionService,
+  legacyEnrollmentService,
+  evaluationService,
+  gradeService,
+  certificateService,
+  supportTicketService,
   type DBCourse,
   type DBModule,
   type DBLesson,
 } from '@shared/services/dataService';
+
+// Tool declarations follow Ollama's `/api/chat` `tools` array shape, which
+// mirrors OpenAI's function-calling JSON Schema. Properties use plain
+// JSON-Schema strings ('string', 'number', 'array', 'object') instead of
+// Gemini's SchemaType enum.
+export interface OllamaToolDeclaration {
+  type: 'function';
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+}
 import { useAuthStore } from '@app/store/authStore';
 import { searchStockImages } from './unsplash';
 import { useUndoStack, newUndoId } from './undoStack';
@@ -52,173 +73,107 @@ export interface ToolExecResult {
   undoId?: string;
 }
 
-// ─── Tool declarations (for Gemini) ─────────────────────────────────────
+// ─── Tool declarations (for Ollama Cloud / Kimi) ────────────────────────
 
-export const TOOL_DECLARATIONS: FunctionDeclaration[] = [
+export const TOOL_DECLARATIONS: OllamaToolDeclaration[] = [
   {
-    name: 'list_courses',
-    description:
-      'Devuelve todos los cursos con sus campos principales (id, título, categoría, nivel, estado, imagen, número de secciones y estudiantes).',
-    parameters: {
-      type: SchemaType.OBJECT,
-      properties: {},
-    },
-  },
-  {
-    name: 'get_course_tree',
-    description:
-      'Obtiene un curso completo con sus módulos y lecciones resumidas (sin el HTML completo). Úsalo antes de editar para entender la estructura.',
-    parameters: {
-      type: SchemaType.OBJECT,
-      required: ['courseId'],
-      properties: {
-        courseId: { type: SchemaType.STRING, description: 'ID del curso' },
+    type: 'function',
+    function: {
+      name: 'list_courses',
+      description:
+        'Devuelve todos los cursos con sus campos principales (id, título, categoría, nivel, estado, imagen, número de secciones y estudiantes).',
+      parameters: {
+        type: 'object',
+        properties: {},
       },
     },
   },
   {
-    name: 'get_lesson',
-    description:
-      'Devuelve una lección con su contenido HTML completo (solo para lecciones tipo texto/wysiwyg). Úsalo antes de reescribirla.',
-    parameters: {
-      type: SchemaType.OBJECT,
-      required: ['lessonId'],
-      properties: {
-        lessonId: { type: SchemaType.STRING },
-      },
-    },
-  },
-  {
-    name: 'create_course',
-    description:
-      'Crea un nuevo curso en estado borrador. Devuelve el ID nuevo.',
-    parameters: {
-      type: SchemaType.OBJECT,
-      required: ['title', 'description', 'category', 'level'],
-      properties: {
-        title: { type: SchemaType.STRING },
-        description: { type: SchemaType.STRING },
-        category: { type: SchemaType.STRING },
-        level: {
-          type: SchemaType.STRING,
-          format: 'enum',
-          enum: ['principiante', 'intermedio', 'avanzado'],
+    type: 'function',
+    function: {
+      name: 'get_course_tree',
+      description:
+        'Obtiene un curso completo con sus módulos y lecciones resumidas (sin el HTML completo). Úsalo antes de editar para entender la estructura.',
+      parameters: {
+        type: 'object',
+        required: ['courseId'],
+        properties: {
+          courseId: { type: 'string', description: 'ID del curso' },
         },
-        duration: { type: SchemaType.STRING, description: 'Ej. "8 horas"' },
-        objectives: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
-        tags: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
-        image: { type: SchemaType.STRING, description: 'URL de imagen (opcional)' },
       },
     },
   },
   {
-    name: 'update_course',
-    description:
-      'Actualiza campos de un curso existente (título, descripción, categoría, nivel, imagen, tags, objetivos, etc.). No borra el curso.',
-    parameters: {
-      type: SchemaType.OBJECT,
-      required: ['courseId', 'patch'],
-      properties: {
-        courseId: { type: SchemaType.STRING },
-        patch: {
-          type: SchemaType.OBJECT,
-          description: 'Objeto con solo los campos a actualizar',
-          properties: {
-            title: { type: SchemaType.STRING },
-            description: { type: SchemaType.STRING },
-            category: { type: SchemaType.STRING },
-            level: {
-              type: SchemaType.STRING,
-              format: 'enum',
-              enum: ['principiante', 'intermedio', 'avanzado'],
-            },
-            duration: { type: SchemaType.STRING },
-            image: { type: SchemaType.STRING },
-            tags: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
-            objectives: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
-            requirements: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
-            status: {
-              type: SchemaType.STRING,
-              format: 'enum',
-              enum: ['borrador', 'publicado', 'archivado'],
-            },
+    type: 'function',
+    function: {
+      name: 'get_lesson',
+      description:
+        'Devuelve una lección con su contenido HTML completo (solo para lecciones tipo texto/wysiwyg). Úsalo antes de reescribirla.',
+      parameters: {
+        type: 'object',
+        required: ['lessonId'],
+        properties: {
+          lessonId: { type: 'string' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_course',
+      description:
+        'Crea un nuevo curso en estado borrador. Devuelve el ID nuevo.',
+      parameters: {
+        type: 'object',
+        required: ['title', 'description', 'category', 'level'],
+        properties: {
+          title: { type: 'string' },
+          description: { type: 'string' },
+          category: { type: 'string' },
+          level: {
+            type: 'string',
+            enum: ['principiante', 'intermedio', 'avanzado'],
           },
+          duration: { type: 'string', description: 'Ej. "8 horas"' },
+          objectives: { type: 'array', items: { type: 'string' } },
+          tags: { type: 'array', items: { type: 'string' } },
+          image: { type: 'string', description: 'URL de imagen (opcional)' },
         },
       },
     },
   },
   {
-    name: 'create_module',
-    description:
-      'Crea un módulo (grupo de lecciones) dentro de un curso. Si no se especifica order, se agrega al final.',
-    parameters: {
-      type: SchemaType.OBJECT,
-      required: ['courseId', 'title'],
-      properties: {
-        courseId: { type: SchemaType.STRING },
-        title: { type: SchemaType.STRING },
-        description: { type: SchemaType.STRING },
-        duration: { type: SchemaType.STRING },
-      },
-    },
-  },
-  {
-    name: 'update_module',
-    description: 'Actualiza campos de un módulo.',
-    parameters: {
-      type: SchemaType.OBJECT,
-      required: ['moduleId', 'patch'],
-      properties: {
-        moduleId: { type: SchemaType.STRING },
-        patch: {
-          type: SchemaType.OBJECT,
-          properties: {
-            title: { type: SchemaType.STRING },
-            description: { type: SchemaType.STRING },
-            duration: { type: SchemaType.STRING },
-            image: { type: SchemaType.STRING },
-          },
-        },
-      },
-    },
-  },
-  {
-    name: 'create_lesson',
-    description:
-      'Crea una lección de tipo "texto" dentro de un módulo con HTML/markdown. Para otros tipos (video, quiz) solo usa el constructor manual.',
-    parameters: {
-      type: SchemaType.OBJECT,
-      required: ['moduleId', 'title', 'contentHtml'],
-      properties: {
-        moduleId: { type: SchemaType.STRING },
-        title: { type: SchemaType.STRING },
-        description: { type: SchemaType.STRING },
-        contentHtml: {
-          type: SchemaType.STRING,
-          description: 'Contenido de la lección en HTML (usa <h2>, <p>, <ul>, <strong>, <em>, <img>, etc.)',
-        },
-      },
-    },
-  },
-  {
-    name: 'update_lesson',
-    description:
-      'Actualiza metadatos de una lección (título, descripción, orden, estado). Para cambiar el contenido usa update_lesson_content.',
-    parameters: {
-      type: SchemaType.OBJECT,
-      required: ['lessonId', 'patch'],
-      properties: {
-        lessonId: { type: SchemaType.STRING },
-        patch: {
-          type: SchemaType.OBJECT,
-          properties: {
-            title: { type: SchemaType.STRING },
-            description: { type: SchemaType.STRING },
-            duration: { type: SchemaType.STRING },
-            status: {
-              type: SchemaType.STRING,
-              format: 'enum',
-              enum: ['borrador', 'publicado'],
+    type: 'function',
+    function: {
+      name: 'update_course',
+      description:
+        'Actualiza campos de un curso existente (título, descripción, categoría, nivel, imagen, tags, objetivos, etc.). No borra el curso.',
+      parameters: {
+        type: 'object',
+        required: ['courseId', 'patch'],
+        properties: {
+          courseId: { type: 'string' },
+          patch: {
+            type: 'object',
+            description: 'Objeto con solo los campos a actualizar',
+            properties: {
+              title: { type: 'string' },
+              description: { type: 'string' },
+              category: { type: 'string' },
+              level: {
+                type: 'string',
+                enum: ['principiante', 'intermedio', 'avanzado'],
+              },
+              duration: { type: 'string' },
+              image: { type: 'string' },
+              tags: { type: 'array', items: { type: 'string' } },
+              objectives: { type: 'array', items: { type: 'string' } },
+              requirements: { type: 'array', items: { type: 'string' } },
+              status: {
+                type: 'string',
+                enum: ['borrador', 'publicado', 'archivado'],
+              },
             },
           },
         },
@@ -226,61 +181,264 @@ export const TOOL_DECLARATIONS: FunctionDeclaration[] = [
     },
   },
   {
-    name: 'update_lesson_content',
-    description:
-      'Reemplaza el HTML del cuerpo de una lección de tipo texto (WYSIWYG). Pasa el HTML completo nuevo, no un diff.',
-    parameters: {
-      type: SchemaType.OBJECT,
-      required: ['lessonId', 'contentHtml'],
-      properties: {
-        lessonId: { type: SchemaType.STRING },
-        contentHtml: {
-          type: SchemaType.STRING,
-          description: 'HTML completo nuevo del cuerpo. Puede incluir <img src="..."> con URLs de Unsplash.',
+    type: 'function',
+    function: {
+      name: 'create_module',
+      description:
+        'Crea un módulo (grupo de lecciones) dentro de un curso. Si no se especifica order, se agrega al final.',
+      parameters: {
+        type: 'object',
+        required: ['courseId', 'title'],
+        properties: {
+          courseId: { type: 'string' },
+          title: { type: 'string' },
+          description: { type: 'string' },
+          duration: { type: 'string' },
         },
       },
     },
   },
   {
-    name: 'get_current_system_prompt',
-    description:
-      'Devuelve tu propio system prompt actual (el texto que define tu rol y reglas). Úsalo antes de proponer una auto-mejora para conocer la versión vigente.',
-    parameters: { type: SchemaType.OBJECT, properties: {} },
-  },
-  {
-    name: 'propose_system_prompt_update',
-    description:
-      'Crea una nueva versión de tu propio system prompt y la activa. Úsalo cuando el admin te dé feedback concreto sobre tu comportamiento. Debes enviar el prompt completo nuevo (no un diff) y mantener intactas las reglas estrictas de la sección "REGLAS ESTRICTAS". La versión anterior queda archivada.',
-    parameters: {
-      type: SchemaType.OBJECT,
-      required: ['newPrompt', 'reason'],
-      properties: {
-        newPrompt: {
-          type: SchemaType.STRING,
-          description: 'El texto COMPLETO del nuevo system prompt.',
-        },
-        reason: {
-          type: SchemaType.STRING,
-          description: 'Una frase que explique qué cambió y por qué (ej. "Menos verboso tras feedback del admin").',
+    type: 'function',
+    function: {
+      name: 'update_module',
+      description: 'Actualiza campos de un módulo.',
+      parameters: {
+        type: 'object',
+        required: ['moduleId', 'patch'],
+        properties: {
+          moduleId: { type: 'string' },
+          patch: {
+            type: 'object',
+            properties: {
+              title: { type: 'string' },
+              description: { type: 'string' },
+              duration: { type: 'string' },
+              image: { type: 'string' },
+            },
+          },
         },
       },
     },
   },
   {
-    name: 'search_stock_images',
-    description:
-      'Busca imágenes libres en Unsplash para ilustrar cursos o lecciones. Devuelve una lista con URL directa, thumbnail y autor para atribución.',
-    parameters: {
-      type: SchemaType.OBJECT,
-      required: ['query'],
-      properties: {
-        query: { type: SchemaType.STRING, description: 'Términos de búsqueda en inglés o español.' },
-        orientation: {
-          type: SchemaType.STRING,
-          format: 'enum',
-          enum: ['landscape', 'portrait', 'squarish'],
+    type: 'function',
+    function: {
+      name: 'create_lesson',
+      description:
+        'Crea una lección de tipo "texto" dentro de un módulo con HTML/markdown. Para otros tipos (video, quiz) solo usa el constructor manual.',
+      parameters: {
+        type: 'object',
+        required: ['moduleId', 'title', 'contentHtml'],
+        properties: {
+          moduleId: { type: 'string' },
+          title: { type: 'string' },
+          description: { type: 'string' },
+          contentHtml: {
+            type: 'string',
+            description:
+              'Contenido de la lección en HTML (usa <h2>, <p>, <ul>, <strong>, <em>, <img>, etc.)',
+          },
         },
-        perPage: { type: SchemaType.NUMBER, description: '1 a 10. Por defecto 6.' },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'update_lesson',
+      description:
+        'Actualiza metadatos de una lección (título, descripción, orden, estado). Para cambiar el contenido usa update_lesson_content.',
+      parameters: {
+        type: 'object',
+        required: ['lessonId', 'patch'],
+        properties: {
+          lessonId: { type: 'string' },
+          patch: {
+            type: 'object',
+            properties: {
+              title: { type: 'string' },
+              description: { type: 'string' },
+              duration: { type: 'string' },
+              status: {
+                type: 'string',
+                enum: ['borrador', 'publicado'],
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'update_lesson_content',
+      description:
+        'Reemplaza el HTML del cuerpo de una lección de tipo texto (WYSIWYG). Pasa el HTML completo nuevo, no un diff.',
+      parameters: {
+        type: 'object',
+        required: ['lessonId', 'contentHtml'],
+        properties: {
+          lessonId: { type: 'string' },
+          contentHtml: {
+            type: 'string',
+            description:
+              'HTML completo nuevo del cuerpo. Puede incluir <img src="..."> con URLs de Unsplash.',
+          },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_current_system_prompt',
+      description:
+        'Devuelve tu propio system prompt actual (el texto que define tu rol y reglas). Úsalo antes de proponer una auto-mejora para conocer la versión vigente.',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'propose_system_prompt_update',
+      description:
+        'Crea una nueva versión de tu propio system prompt y la activa. Úsalo cuando el admin te dé feedback concreto sobre tu comportamiento. Debes enviar el prompt completo nuevo (no un diff) y mantener intactas las reglas estrictas de la sección "REGLAS ESTRICTAS". La versión anterior queda archivada.',
+      parameters: {
+        type: 'object',
+        required: ['newPrompt', 'reason'],
+        properties: {
+          newPrompt: {
+            type: 'string',
+            description: 'El texto COMPLETO del nuevo system prompt.',
+          },
+          reason: {
+            type: 'string',
+            description:
+              'Una frase que explique qué cambió y por qué (ej. "Menos verboso tras feedback del admin").',
+          },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'search_stock_images',
+      description:
+        'Busca imágenes libres en Unsplash para ilustrar cursos o lecciones. Devuelve una lista con URL directa, thumbnail y autor para atribución.',
+      parameters: {
+        type: 'object',
+        required: ['query'],
+        properties: {
+          query: {
+            type: 'string',
+            description: 'Términos de búsqueda en inglés o español.',
+          },
+          orientation: {
+            type: 'string',
+            enum: ['landscape', 'portrait', 'squarish'],
+          },
+          perPage: { type: 'number', description: '1 a 10. Por defecto 6.' },
+        },
+      },
+    },
+  },
+  // ─── Read-only DB tools ──────────────────────────────────────────────
+  {
+    type: 'function',
+    function: {
+      name: 'db_overview',
+      description:
+        'Devuelve un resumen con los conteos totales de la base de datos: usuarios (con desglose por rol — student, teacher, admin, support, supervisor), cursos (con desglose por estado), secciones, módulos, lecciones, matrículas, evaluaciones, calificaciones, certificados, departamentos, posiciones y tickets de soporte. Úsalo cuando el admin pregunte cuántos estudiantes/profesores/cursos hay.',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'db_count',
+      description:
+        'Cuenta cuántos registros hay en una colección, opcionalmente filtrando por igualdad en uno o varios campos de nivel raíz. Ej: db_count("users", { role: "student" }) → cuántos estudiantes hay.',
+      parameters: {
+        type: 'object',
+        required: ['collection'],
+        properties: {
+          collection: {
+            type: 'string',
+            enum: [
+              'users',
+              'courses',
+              'sections',
+              'modules',
+              'lessons',
+              'enrollments',
+              'evaluations',
+              'grades',
+              'certificates',
+              'departments',
+              'positions',
+              'supportTickets',
+            ],
+          },
+          where: {
+            type: 'object',
+            description:
+              'Filtro opcional de igualdad sobre campos de nivel raíz. Ej: { "role": "student", "status": "publicado" }.',
+          },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'db_query',
+      description:
+        'Devuelve hasta `limit` registros de una colección, opcionalmente filtrando por igualdad y proyectando solo ciertos campos. Útil para responder preguntas como "dame los últimos 10 estudiantes registrados". Sanea automáticamente datos sensibles de usuarios (passwordHash, tokens).',
+      parameters: {
+        type: 'object',
+        required: ['collection'],
+        properties: {
+          collection: {
+            type: 'string',
+            enum: [
+              'users',
+              'courses',
+              'sections',
+              'modules',
+              'lessons',
+              'enrollments',
+              'evaluations',
+              'grades',
+              'certificates',
+              'departments',
+              'positions',
+              'supportTickets',
+            ],
+          },
+          where: {
+            type: 'object',
+            description:
+              'Filtro opcional de igualdad sobre campos de nivel raíz.',
+          },
+          fields: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'Lista de campos a devolver. Si se omite se devuelven todos los seguros.',
+          },
+          limit: {
+            type: 'number',
+            description: '1 a 50. Por defecto 25.',
+          },
+          orderBy: {
+            type: 'string',
+            description:
+              'Campo numérico por el que ordenar de mayor a menor (ej. "createdAt", "updatedAt").',
+          },
+        },
       },
     },
   },
@@ -692,6 +850,192 @@ async function execSearchStockImages(args: ToolArgs): Promise<ToolExecResult> {
   };
 }
 
+// ─── Read-only DB executors ──────────────────────────────────────────────
+
+type CollectionName =
+  | 'users'
+  | 'courses'
+  | 'sections'
+  | 'modules'
+  | 'lessons'
+  | 'enrollments'
+  | 'evaluations'
+  | 'grades'
+  | 'certificates'
+  | 'departments'
+  | 'positions'
+  | 'supportTickets';
+
+const COLLECTION_LOADERS: Record<CollectionName, () => Promise<unknown[]>> = {
+  users: () => userService.getAll(),
+  courses: () => courseService.getAll(),
+  sections: () => sectionService.getAll(),
+  modules: () => moduleService.getAll(),
+  lessons: () => lessonService.getAll(),
+  enrollments: () => legacyEnrollmentService.getAll(),
+  evaluations: () => evaluationService.getAll(),
+  grades: () => gradeService.getAll(),
+  certificates: () => certificateService.getAll(),
+  departments: () => departmentService.getAll(),
+  positions: () => positionService.getAll(),
+  supportTickets: () => supportTicketService.getAll(),
+};
+
+// Strip credentials and reset tokens from user records before they go to the
+// model. The AI doesn't need them and we don't want to risk leaking hashes.
+const USER_SECRET_FIELDS = new Set([
+  'passwordHash',
+  'emailVerificationToken',
+  'passwordResetToken',
+  'passwordResetExpires',
+  'loginAttempts',
+  'lockUntil',
+]);
+
+function sanitizeRecord(collection: CollectionName, record: unknown): Record<string, unknown> {
+  const obj = (record ?? {}) as Record<string, unknown>;
+  if (collection !== 'users') return obj;
+  const out: Record<string, unknown> = {};
+  for (const k of Object.keys(obj)) {
+    if (!USER_SECRET_FIELDS.has(k)) out[k] = obj[k];
+  }
+  return out;
+}
+
+function matchesWhere(record: Record<string, unknown>, where?: Record<string, unknown>): boolean {
+  if (!where) return true;
+  for (const [k, v] of Object.entries(where)) {
+    if (record[k] !== v) return false;
+  }
+  return true;
+}
+
+function projectFields(
+  record: Record<string, unknown>,
+  fields?: string[],
+): Record<string, unknown> {
+  if (!fields || fields.length === 0) return record;
+  const out: Record<string, unknown> = {};
+  for (const f of fields) {
+    if (f in record) out[f] = record[f];
+  }
+  return out;
+}
+
+async function execDbOverview(): Promise<ToolExecResult> {
+  requireAdmin();
+  const [
+    users,
+    courses,
+    sections,
+    modules,
+    lessons,
+    enrollments,
+    evaluations,
+    grades,
+    certificates,
+    departments,
+    positions,
+    supportTickets,
+  ] = await Promise.all([
+    userService.getAll(),
+    courseService.getAll(),
+    sectionService.getAll(),
+    moduleService.getAll(),
+    lessonService.getAll(),
+    legacyEnrollmentService.getAll(),
+    evaluationService.getAll(),
+    gradeService.getAll(),
+    certificateService.getAll(),
+    departmentService.getAll(),
+    positionService.getAll(),
+    supportTicketService.getAll(),
+  ]);
+
+  const usersByRole: Record<string, number> = {};
+  for (const u of users) {
+    const r = (u as { role?: string }).role || 'unknown';
+    usersByRole[r] = (usersByRole[r] || 0) + 1;
+  }
+  const coursesByStatus: Record<string, number> = {};
+  for (const c of courses) {
+    const s = (c as { status?: string }).status || 'unknown';
+    coursesByStatus[s] = (coursesByStatus[s] || 0) + 1;
+  }
+  const ticketsByStatus: Record<string, number> = {};
+  for (const t of supportTickets) {
+    const s = (t as { status?: string }).status || 'unknown';
+    ticketsByStatus[s] = (ticketsByStatus[s] || 0) + 1;
+  }
+
+  const data = {
+    users: { total: users.length, byRole: usersByRole },
+    courses: { total: courses.length, byStatus: coursesByStatus },
+    sections: { total: sections.length },
+    modules: { total: modules.length },
+    lessons: { total: lessons.length },
+    enrollments: { total: enrollments.length },
+    evaluations: { total: evaluations.length },
+    grades: { total: grades.length },
+    certificates: { total: certificates.length },
+    departments: { total: departments.length },
+    positions: { total: positions.length },
+    supportTickets: { total: supportTickets.length, byStatus: ticketsByStatus },
+  };
+  return {
+    data,
+    summary: `Overview: ${users.length} usuarios (${usersByRole.student || 0} estudiantes, ${usersByRole.teacher || 0} profesores), ${courses.length} cursos, ${sections.length} secciones, ${enrollments.length} matrículas.`,
+  };
+}
+
+async function execDbCount(args: ToolArgs): Promise<ToolExecResult> {
+  requireAdmin();
+  const collection = String(args.collection) as CollectionName;
+  const loader = COLLECTION_LOADERS[collection];
+  if (!loader) throw new Error(`Colección desconocida: ${collection}`);
+  const where = (args.where as Record<string, unknown> | undefined) || undefined;
+  const all = await loader();
+  const count = all.filter((r) => matchesWhere(r as Record<string, unknown>, where)).length;
+  const filterStr = where ? ` con filtro ${JSON.stringify(where)}` : '';
+  return {
+    data: { collection, where: where ?? null, count },
+    summary: `${count} registros en "${collection}"${filterStr}.`,
+  };
+}
+
+async function execDbQuery(args: ToolArgs): Promise<ToolExecResult> {
+  requireAdmin();
+  const collection = String(args.collection) as CollectionName;
+  const loader = COLLECTION_LOADERS[collection];
+  if (!loader) throw new Error(`Colección desconocida: ${collection}`);
+  const where = (args.where as Record<string, unknown> | undefined) || undefined;
+  const fields = Array.isArray(args.fields)
+    ? (args.fields as unknown[]).map((f) => String(f))
+    : undefined;
+  const limit = Math.min(Math.max(typeof args.limit === 'number' ? args.limit : 25, 1), 50);
+  const orderBy = typeof args.orderBy === 'string' ? args.orderBy : undefined;
+
+  const all = await loader();
+  let rows = all
+    .map((r) => sanitizeRecord(collection, r))
+    .filter((r) => matchesWhere(r, where));
+
+  if (orderBy) {
+    rows = rows.slice().sort((a, b) => {
+      const av = typeof a[orderBy] === 'number' ? (a[orderBy] as number) : 0;
+      const bv = typeof b[orderBy] === 'number' ? (b[orderBy] as number) : 0;
+      return bv - av;
+    });
+  }
+
+  const total = rows.length;
+  const sliced = rows.slice(0, limit).map((r) => projectFields(r, fields));
+  return {
+    data: { collection, total, returned: sliced.length, rows: sliced },
+    summary: `${sliced.length}/${total} registros de "${collection}" devueltos.`,
+  };
+}
+
 // ─── Dispatcher ──────────────────────────────────────────────────────────
 
 export type ToolName =
@@ -707,7 +1051,10 @@ export type ToolName =
   | 'update_lesson_content'
   | 'get_current_system_prompt'
   | 'propose_system_prompt_update'
-  | 'search_stock_images';
+  | 'search_stock_images'
+  | 'db_overview'
+  | 'db_count'
+  | 'db_query';
 
 const EXECUTORS: Record<ToolName, (args: ToolArgs) => Promise<ToolExecResult>> = {
   list_courses: execListCourses,
@@ -723,6 +1070,9 @@ const EXECUTORS: Record<ToolName, (args: ToolArgs) => Promise<ToolExecResult>> =
   get_current_system_prompt: execGetCurrentSystemPrompt,
   propose_system_prompt_update: execProposeSystemPromptUpdate,
   search_stock_images: execSearchStockImages,
+  db_overview: execDbOverview,
+  db_count: execDbCount,
+  db_query: execDbQuery,
 };
 
 export async function executeTool(name: string, args: ToolArgs): Promise<ToolExecResult> {

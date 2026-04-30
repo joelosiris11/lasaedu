@@ -6,8 +6,8 @@ import type { ChatMessage } from '../types';
  * user so the sidebar can show "previous chats" and restore a full
  * conversation when the admin clicks one.
  *
- * `historyJson` holds the Gemini `Content[]` array stringified — we can't
- * import the type here without pulling the Gemini SDK into the service.
+ * `historyJson` holds the Ollama `OllamaMessage[]` array stringified —
+ * we keep it as a string so this service stays decoupled from the AI client.
  */
 export interface DBChatSession {
   id: string;

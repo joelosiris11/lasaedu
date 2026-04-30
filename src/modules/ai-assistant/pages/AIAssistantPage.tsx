@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { Content } from '@google/generative-ai';
 import { useAuthStore } from '@app/store/authStore';
 import { useHeaderStore } from '@app/store/headerStore';
 import {
@@ -25,7 +24,7 @@ import {
   type DBCourse,
   type DBSection,
 } from '@shared/services/dataService';
-import { getModel, runTurn } from '../services/geminiClient';
+import { getModel, runTurn, type OllamaMessage } from '../services/ollamaClient';
 import { useUndoStack } from '../services/undoStack';
 import { getActivePrompt, type DBPromptVersion } from '../services/promptVersions';
 import {
@@ -89,7 +88,7 @@ export default function AIAssistantPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
-  const [history, setHistory] = useState<Content[]>([]);
+  const [history, setHistory] = useState<OllamaMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [activePrompt, setActivePrompt] = useState<DBPromptVersion | null>(null);
   const [showVersions, setShowVersions] = useState(false);
@@ -122,7 +121,7 @@ export default function AIAssistantPage() {
   useEffect(() => {
     setOverride({
       title: 'Asistente IA',
-      subtitle: 'Solo admins · Gemini + Unsplash',
+      subtitle: 'Solo admins · Kimi (Ollama Cloud) + Unsplash',
     });
     return () => setOverride(null);
   }, [setOverride]);
@@ -288,11 +287,23 @@ export default function AIAssistantPage() {
     async (sessionId: string) => {
       const sess = sessions.find((s) => s.id === sessionId);
       if (!sess) return;
-      let parsedHistory: Content[] = [];
+      let parsedHistory: OllamaMessage[] = [];
       try {
-        parsedHistory = sess.historyJson ? (JSON.parse(sess.historyJson) as Content[]) : [];
+        parsedHistory = sess.historyJson
+          ? (JSON.parse(sess.historyJson) as OllamaMessage[])
+          : [];
       } catch (err) {
         console.warn('[ai-assistant] failed to parse session history', err);
+      }
+      // Sessions saved with the prior Gemini client used a different message
+      // shape (`parts`, `functionCall`, `functionResponse`). Drop those so we
+      // don't crash the new Ollama client; the user can keep chatting fresh.
+      if (
+        parsedHistory.length &&
+        !parsedHistory.every((m) => typeof (m as OllamaMessage).content === 'string')
+      ) {
+        console.warn('[ai-assistant] dropping incompatible legacy history');
+        parsedHistory = [];
       }
       setMessages(sess.messages);
       setHistory(parsedHistory);
@@ -480,7 +491,7 @@ export default function AIAssistantPage() {
               {activePrompt ? (
                 <>Prompt activo: <span className="font-mono">v{activePrompt.versionNumber}</span> · {activePrompt.reason}</>
               ) : model ? (
-                'Conectado a Gemini. Los cambios son reversibles por acción.'
+                'Conectado a Kimi (Ollama Cloud). Los cambios son reversibles por acción.'
               ) : (
                 'Sin API key configurada.'
               )}
@@ -602,7 +613,7 @@ export default function AIAssistantPage() {
                   placeholder={
                     model
                       ? 'Dile a Lasa qué editar… (Enter para enviar, Shift+Enter para nueva línea)'
-                      : 'Configura VITE_GEMINI_API_KEY para habilitar el asistente.'
+                      : 'Configura VITE_OLLAMA_API_KEY para habilitar el asistente.'
                   }
                   className="flex-1 resize-none rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/20 disabled:bg-gray-100"
                 />
