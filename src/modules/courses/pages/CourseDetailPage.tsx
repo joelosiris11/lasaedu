@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@app/store/authStore';
-import { courseService, moduleService, lessonService, legacyEnrollmentService, sectionService, type DBModule, type DBLesson, type DBCourse, type DBEnrollment, type DBSection } from '@shared/services/dataService';
+import { courseService, moduleService, lessonService, legacyEnrollmentService, sectionService, evaluationService, type DBModule, type DBLesson, type DBCourse, type DBEnrollment, type DBSection } from '@shared/services/dataService';
 import { fileUploadService } from '@shared/services/fileUploadService';
 import {
   BookOpen,
@@ -445,7 +445,18 @@ export default function CourseDetailPage() {
           );
           if (courseEnrollment) {
             setEnrollment(courseEnrollment);
-            setCompletedLessons(new Set(courseEnrollment.completedLessons || []));
+            const ids = new Set<string>(courseEnrollment.completedLessons ?? []);
+            // Treat any quiz lesson with a passing attempt as completed,
+            // even if the lesson_completed flag was never written.
+            try {
+              const attempts = await evaluationService.getAttemptsByUser(user.id);
+              for (const a of attempts) {
+                if (a.passed) ids.add(a.evaluationId);
+              }
+            } catch {
+              // best-effort
+            }
+            setCompletedLessons(ids);
           }
         } catch (err) {
           console.error('Error loading enrollment:', err);

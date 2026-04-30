@@ -6,6 +6,7 @@ import {
   courseService,
   moduleService,
   lessonService,
+  evaluationService,
   type DBSection,
   type DBCourse,
   type DBModule,
@@ -102,13 +103,26 @@ export default function SectionDetailPage() {
         setCourse(c);
 
         // Student completion tracking — find the enrollment for THIS section
-        if (isStudent) {
+        if (isStudent && user?.id) {
           const sectionEnrollment = enrollments.find(
             e => e.sectionId === sectionId || e.courseId === sec.courseId
           );
-          if (sectionEnrollment?.completedLessons) {
-            setCompletedLessonIds(new Set(sectionEnrollment.completedLessons));
+          const ids = new Set<string>(sectionEnrollment?.completedLessons ?? []);
+
+          // Also treat any quiz lesson with a passing attempt as completed.
+          // The "lesson_completed" flag isn't always written for quizzes
+          // (e.g. legacy popup flow), but a passing attempt is a stronger
+          // signal anyway — we surface the check based on it.
+          try {
+            const attempts = await evaluationService.getAttemptsByUser(user.id);
+            for (const a of attempts) {
+              if (a.passed) ids.add(a.evaluationId);
+            }
+          } catch {
+            // attempts query is best-effort — never block the page on it
           }
+
+          setCompletedLessonIds(ids);
         }
 
         const overrideMap = new Map(overrides.map(o => [o.lessonId, o]));
