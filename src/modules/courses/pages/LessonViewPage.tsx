@@ -388,17 +388,32 @@ export default function LessonViewPage() {
       const newProgress = Math.round((newCompletedLessons.length / totalLessons) * 100);
 
       const justCompleted = newProgress >= 100 && !enrollment.completedAt;
+      const completionTimestamp = new Date().toISOString();
+      const newStatus: DBEnrollment['status'] = newProgress >= 100 ? 'completed' : 'active';
       await enrollmentService.update(enrollment.id, {
         completedLessons: newCompletedLessons,
         progress: newProgress,
-        status: newProgress >= 100 ? 'completed' : 'active',
+        status: newStatus,
         lastLessonId: currentLesson.id,
-        lastAccessedAt: new Date().toISOString(),
+        lastAccessedAt: completionTimestamp,
         lastUpdated: Date.now(),
-        ...(justCompleted ? { completedAt: new Date().toISOString() } : {}),
+        ...(justCompleted ? { completedAt: completionTimestamp } : {}),
       } as any); // Type cast to avoid type mismatch issues
 
       setCompletedLessons(prev => new Set([...prev, currentLesson.id]));
+      setEnrollment(prev =>
+        prev
+          ? {
+              ...prev,
+              completedLessons: newCompletedLessons,
+              progress: newProgress,
+              status: newStatus,
+              lastLessonId: currentLesson.id,
+              lastAccessedAt: completionTimestamp,
+              ...(justCompleted ? { completedAt: completionTimestamp } : {}),
+            }
+          : prev
+      );
       setShowCompletionModal(true);
 
       // Log student activity
