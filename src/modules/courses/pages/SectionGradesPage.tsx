@@ -14,15 +14,22 @@ import {
   Users,
   Loader2,
   ClipboardList,
+  Download,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@shared/components/ui/Card';
 import { Button } from '@shared/components/ui/Button';
+import { exportToExcel } from '@shared/services/exportService';
 
 interface StudentRow {
   userId: string;
   userName: string;
+  userEmail: string;
   grades: Map<string, number>; // lessonId -> score percentage
   avgGrade: number;
+  status: 'completed' | 'in_progress';
+  progress: number; // 0..100
+  startDate: string; // ISO — enrolledAt
+  endDate: string | null; // ISO — completedAt (falls back to lastAccessedAt for legacy completed enrollments); null if in progress
 }
 
 export default function SectionGradesPage() {
@@ -70,10 +77,12 @@ export default function SectionGradesPage() {
           taskSubmissionService.getAll(),
         ]);
 
-        // Get user names
+        // Get user info
         const userIds = enrollments.map(e => e.userId);
         const users = await Promise.all(userIds.map(id => firebaseDB.getUserById(id)));
-        const userMap = new Map(users.filter(Boolean).map(u => [u!.id, u!.name]));
+        const userMap = new Map(
+          users.filter(Boolean).map(u => [u!.id, { name: u!.name, email: u!.email }])
+        );
 
         // Build student rows
         const rows: StudentRow[] = enrollments.map(enrollment => {
@@ -104,11 +113,22 @@ export default function SectionGradesPage() {
             ? Math.round(gradeValues.reduce((a, b) => a + b, 0) / gradeValues.length)
             : 0;
 
+          const userInfo = userMap.get(enrollment.userId);
+          const isCompleted =
+            enrollment.status === 'completed' || (enrollment.progress ?? 0) >= 100;
+
           return {
             userId: enrollment.userId,
-            userName: userMap.get(enrollment.userId) || 'Unknown',
+            userName: userInfo?.name || 'Unknown',
+            userEmail: userInfo?.email || '',
             grades,
             avgGrade,
+            status: isCompleted ? 'completed' : 'in_progress',
+            progress: Math.round(enrollment.progress ?? 0),
+            startDate: enrollment.enrolledAt,
+            endDate: isCompleted
+              ? (enrollment.completedAt ?? enrollment.lastAccessedAt ?? null)
+              : null,
           };
         });
 
@@ -122,6 +142,57 @@ export default function SectionGradesPage() {
     load();
   }, [sectionId]);
 
+  const handleExport = () => {
+    if (students.length === 0) return;
+
+    const fmt = (iso: string | null | undefined) => {
+      if (!iso) return '—';
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return '—';
+      return d.toLocaleDateString('es', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    };
+
+    const rows = students.map(s => {
+      const row: Record<string, string | number> = {
+        estudiante: s.userName,
+        email: s.userEmail,
+        estado: s.status === 'completed' ? 'Completado' : 'En proceso',
+        progreso: `${s.progress}%`,
+        fecha_inicio: fmt(s.startDate),
+        fecha_fin: fmt(s.endDate),
+        nota: s.status === 'completed'
+          ? (s.avgGrade > 0 ? `${s.avgGrade}%` : 'Sin nota')
+          : '—',
+      };
+      for (const lesson of gradedLessons) {
+        const score = s.grades.get(lesson.id);
+        row[`lesson_${lesson.id}`] = score !== undefined ? `${score}%` : '—';
+      }
+      return row;
+    });
+
+    const columns = [
+      { key: 'estudiante', header: 'Estudiante' },
+      { key: 'email', header: 'Email' },
+      { key: 'estado', header: 'Estado' },
+      { key: 'progreso', header: 'Progreso' },
+      { key: 'fecha_inicio', header: 'Fecha de inicio' },
+      { key: 'fecha_fin', header: 'Fecha de fin' },
+      { key: 'nota', header: 'Nota' },
+      ...gradedLessons.map(lesson => ({
+        key: `lesson_${lesson.id}`,
+        header: lesson.title,
+      })),
+    ];
+
+    const safeTitle = (section?.title || 'seccion').replace(/[^a-z0-9_-]+/gi, '_');
+    exportToExcel(rows, columns, {
+      filename: `calificaciones_${safeTitle}_${new Date().toISOString().split('T')[0]}`,
+      title: `Calificaciones — ${section?.title ?? ''}`,
+      includeDate: true,
+    });
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -132,18 +203,28 @@ export default function SectionGradesPage() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
-      <div className="flex items-center space-x-4">
-        <Button variant="ghost" onClick={() => navigate(-1)}>
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Volver
-        </Button>
-        <div>
-          <div className="flex items-center gap-2">
-            <ClipboardList className="h-5 w-5 text-red-600" />
-            <h1 className="text-xl font-bold text-gray-900">Calificaciones</h1>
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center space-x-4 min-w-0">
+          <Button variant="ghost" onClick={() => navigate(-1)}>
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Volver
+          </Button>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <ClipboardList className="h-5 w-5 text-red-600" />
+              <h1 className="text-xl font-bold text-gray-900">Calificaciones</h1>
+            </div>
+            {section && <p className="text-sm text-gray-500 truncate">{section.title}</p>}
           </div>
-          {section && <p className="text-sm text-gray-500">{section.title}</p>}
         </div>
+        <Button
+          onClick={handleExport}
+          disabled={students.length === 0}
+          className="bg-red-600 hover:bg-red-700 text-white border-0 shrink-0"
+        >
+          <Download className="h-4 w-4 mr-2" />
+          Exportar Excel
+        </Button>
       </div>
 
       <Card>
