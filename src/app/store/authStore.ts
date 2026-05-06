@@ -1,11 +1,12 @@
 import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
-import { signInAnonymously } from 'firebase/auth';
+import { signInWithCustomToken } from 'firebase/auth';
 import { auth } from '@app/config/firebase';
 import type { User, AuthSession, UserRole } from '@shared/types';
 import { authService } from '@modules/auth/services/authService';
 import {
   bootstrapHubAuth,
+  fetchFirebaseCustomToken,
   hubTokenStore,
   logoutFromHub,
   type HubSessionUser,
@@ -115,24 +116,27 @@ export const useAuthStore = create<AuthStore>()(
           //   • returns a HubSessionUser (we have a valid hub session), or
           //   • redirects the browser to the hub login (then never resolves).
           //
-          // Anonymous Firebase Auth is established afterwards so existing
-          // Firestore / RTDB reads keep working with `request.auth != null`.
-          // The hub user is the identity-of-record; Firebase anon is just
-          // infrastructure.
+          // After hub bootstrap we ask the hub to mint a Firebase Custom
+          // Token impersonating this user, and signInWithCustomToken() so
+          // Firestore / RTDB rules see request.auth.uid = hub uid and
+          // request.auth.token.role = hub role. Existing rules keep working
+          // without modification.
           set({ isLoading: true });
 
           (async () => {
             try {
               const hubUser = await bootstrapHubAuth();
 
-              if (!auth.currentUser) {
-                try {
-                  await signInAnonymously(auth);
-                } catch (e) {
-                  // Anonymous sign-in failure is non-fatal — Firestore reads
-                  // may then fail individually, but auth itself is OK.
-                  console.warn('[authStore] anonymous Firebase sign-in failed:', e);
-                }
+              try {
+                const fbToken = await fetchFirebaseCustomToken();
+                await signInWithCustomToken(auth, fbToken);
+              } catch (e) {
+                // Firebase sign-in failed — this means Firestore writes will
+                // be denied. Surface the error to the user instead of
+                // silently degrading; the admin needs to drop a service
+                // account JSON in the hub.
+                console.error('[authStore] Firebase custom-token sign-in failed:', e);
+                throw e;
               }
 
               const lasaeduUser = await mergeWithLasaeduRecord(hubUser);

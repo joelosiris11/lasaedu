@@ -195,3 +195,33 @@ export function logoutFromHub(): void {
   hubTokenStore.clear();
   redirectToHubLogin();
 }
+
+/**
+ * Asks the hub to mint a Firebase Custom Token impersonating the current
+ * user. The child then calls signInWithCustomToken() so Firestore / RTDB
+ * see the hub uid + role custom claim and existing security rules pass.
+ */
+export async function fetchFirebaseCustomToken(): Promise<string> {
+  const session = hubTokenStore.get();
+  if (!session) throw new Error('No hay sesión del hub');
+  const r = await fetch(`${HUB_URL}/api/auth/firebase-token`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${session}`,
+    },
+    body: JSON.stringify({}),
+  });
+  if (!r.ok) {
+    let msg = `firebase-token failed (${r.status})`;
+    try {
+      const j = await r.json();
+      msg = j?.error ?? msg;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(msg);
+  }
+  const data = (await r.json()) as { firebaseToken: string };
+  return data.firebaseToken;
+}
