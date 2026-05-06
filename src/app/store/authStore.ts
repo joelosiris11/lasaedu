@@ -1,7 +1,15 @@
 import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
-import type { User, AuthSession } from '@shared/types';
+import { signInAnonymously } from 'firebase/auth';
+import { auth } from '@app/config/firebase';
+import type { User, AuthSession, UserRole } from '@shared/types';
 import { authService } from '@modules/auth/services/authService';
+import {
+  bootstrapHubAuth,
+  hubTokenStore,
+  logoutFromHub,
+  type HubSessionUser,
+} from '@shared/services/hubAuth';
 
 interface AuthState {
   user: User | null;
@@ -52,130 +60,50 @@ export const useAuthStore = create<AuthStore>()(
 
         setError: (error) => set({ error }),
 
-        login: async (email: string, password: string) => {
-          set({ isLoading: true, error: null });
-          try {
-            const { user, accessToken, refreshToken, mustChangePassword } = await authService.login({
-              email,
-              password
-            });
-
-            // Create session object
-            const session: AuthSession = {
-              sessionId: `sess_${Date.now()}`,
-              userId: user.id,
-              accessToken,
-              refreshToken,
-              expiresAt: Date.now() + 3600000, // 1 hour
-              createdAt: Date.now(),
-              lastUsed: Date.now(),
-              userAgent: navigator.userAgent,
-              ipAddress: '127.0.0.1'
-            };
-
-            set({ user, session, isAuthenticated: true, isLoading: false, mustChangePassword: !!mustChangePassword });
-          } catch (error: any) {
-            // Map Firebase Auth error messages to Spanish
-            let errorMessage = 'Error al iniciar sesión';
-            if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
-              errorMessage = 'Credenciales inválidas';
-            } else if (error.code === 'auth/invalid-email') {
-              errorMessage = 'Email inválido';
-            } else if (error.code === 'auth/user-disabled') {
-              errorMessage = 'Usuario deshabilitado';
-            } else if (error.code === 'auth/too-many-requests') {
-              errorMessage = 'Demasiados intentos. Intente más tarde.';
-            } else if (error.code === 'auth/invalid-credential') {
-              errorMessage = 'Credenciales inválidas';
-            } else if (error.message) {
-              errorMessage = error.message;
-            }
-
-            set({ error: errorMessage, isLoading: false });
-            throw new Error(errorMessage);
-          }
+        // Local login is disabled: lasaedu delegates auth to lasaHUB. Anything
+        // that previously called this should redirect via logoutFromHub() so
+        // the user lands on the hub login.
+        login: async () => {
+          logoutFromHub();
         },
 
         logout: async () => {
           set({ isLoading: true });
-          try {
-            await authService.logout();
-            set({ user: null, session: null, isAuthenticated: false, isLoading: false, error: null, mustChangePassword: false });
-          } catch (error: any) {
-            console.error('Logout error:', error);
-            set({ user: null, session: null, isAuthenticated: false, isLoading: false, error: null, mustChangePassword: false });
-          }
+          // Clear local state immediately so the brief redirect doesn't show
+          // stale user data; logoutFromHub() then sends them to the hub.
+          set({
+            user: null,
+            session: null,
+            isAuthenticated: false,
+            isLoading: false,
+            error: null,
+            mustChangePassword: false,
+          });
+          logoutFromHub();
         },
 
-        register: async (data) => {
-          set({ isLoading: true, error: null });
-          try {
-            const { user, accessToken, refreshToken } = await authService.register({
-              email: data.email,
-              password: data.password,
-              name: data.name,
-              role: data.role
-            });
-
-            const session: AuthSession = {
-              sessionId: `sess_${Date.now()}`,
-              userId: user.id,
-              accessToken,
-              refreshToken,
-              expiresAt: Date.now() + 3600000,
-              createdAt: Date.now(),
-              lastUsed: Date.now(),
-              userAgent: navigator.userAgent,
-              ipAddress: '127.0.0.1'
-            };
-
-            set({ user, session, isAuthenticated: true, isLoading: false });
-          } catch (error: any) {
-            // Map Firebase Auth error messages to Spanish
-            let errorMessage = 'Error al registrarse';
-            if (error.code === 'auth/email-already-in-use') {
-              errorMessage = 'El email ya está registrado';
-            } else if (error.code === 'auth/invalid-email') {
-              errorMessage = 'Email inválido';
-            } else if (error.code === 'auth/weak-password') {
-              errorMessage = 'La contraseña debe tener al menos 6 caracteres';
-            } else if (error.message) {
-              errorMessage = error.message;
-            }
-
-            set({ error: errorMessage, isLoading: false });
-            throw new Error(errorMessage);
-          }
+        // Registration is disabled here — users come from lasaHUB.
+        register: async () => {
+          throw new Error('El registro se hace en LASA Hub, no en lasaedu.');
         },
 
+        // Password reset is handled in lasaHUB; here it just bounces to it.
+        resetPassword: async () => {
+          logoutFromHub();
+        },
+
+        // The hub's app session token cannot be "refreshed" — when it
+        // expires, the user must round-trip through the hub again. We
+        // surface that by clearing local state and sending them to log in.
         refreshToken: async () => {
-          try {
-            const newToken = await authService.refreshToken();
-            const currentSession = get().session;
-            if (currentSession) {
-              set({ session: { ...currentSession, accessToken: newToken } });
-            }
-          } catch (e) {
-            // Token refresh failed, logout user
-            get().logout();
-          }
-        },
-
-        resetPassword: async (email: string) => {
-          set({ isLoading: true, error: null });
-          try {
-            await authService.resetPassword(email);
-            set({ isLoading: false });
-          } catch (error: any) {
-            let errorMessage = 'Error al enviar email de recuperación';
-            if (error.code === 'auth/user-not-found') {
-              errorMessage = 'No existe una cuenta con este email';
-            } else if (error.code === 'auth/invalid-email') {
-              errorMessage = 'Email inválido';
-            }
-            set({ error: errorMessage, isLoading: false });
-            throw new Error(errorMessage);
-          }
+          set({
+            user: null,
+            session: null,
+            isAuthenticated: false,
+            error: null,
+            mustChangePassword: false,
+          });
+          logoutFromHub();
         },
 
         dismissChangePassword: () => set({ mustChangePassword: false }),
@@ -183,74 +111,69 @@ export const useAuthStore = create<AuthStore>()(
         clearAuth: () => set({ user: null, session: null, isAuthenticated: false, error: null, mustChangePassword: false }),
 
         initializeAuth: () => {
-          // Subscribe to Firebase Auth state changes
-          const unsubscribe = authService.onAuthStateChanged(async (firebaseUser) => {
-            if (firebaseUser) {
-              // User is signed in, but we might already have their data from persist
-              const currentUser = get().user;
-              if (!currentUser) {
-                // Need to fetch user data from database
+          // lasaedu delegates auth to lasaHUB. The hub bootstrap either:
+          //   • returns a HubSessionUser (we have a valid hub session), or
+          //   • redirects the browser to the hub login (then never resolves).
+          //
+          // Anonymous Firebase Auth is established afterwards so existing
+          // Firestore / RTDB reads keep working with `request.auth != null`.
+          // The hub user is the identity-of-record; Firebase anon is just
+          // infrastructure.
+          set({ isLoading: true });
+
+          (async () => {
+            try {
+              const hubUser = await bootstrapHubAuth();
+
+              if (!auth.currentUser) {
                 try {
-                  const { firebaseDB } = await import('@shared/services/firebaseDataService');
-                  const dbUser = await firebaseDB.getUserByEmail(firebaseUser.email!);
-
-                  if (dbUser) {
-                    const user: User = {
-                      id: dbUser.id,
-                      email: dbUser.email,
-                      name: dbUser.name,
-                      role: dbUser.role as any,
-                      emailVerified: dbUser.emailVerified || firebaseUser.emailVerified,
-                      loginAttempts: dbUser.loginAttempts || 0,
-                      profile: dbUser.profile || {},
-                      preferences: {
-                        theme: 'light',
-                        notifications: {
-                          email: dbUser.preferences?.notifications?.email ?? true,
-                          push: dbUser.preferences?.notifications?.push ?? true,
-                          inApp: true
-                        }
-                      },
-                      refreshTokens: {},
-                      supervisorScope: dbUser.supervisorScope,
-                      createdAt: dbUser.createdAt,
-                      lastActive: Date.now()
-                    };
-
-                    const accessToken = await firebaseUser.getIdToken();
-                    const session: AuthSession = {
-                      sessionId: `sess_${Date.now()}`,
-                      userId: user.id,
-                      accessToken,
-                      refreshToken: firebaseUser.refreshToken,
-                      expiresAt: Date.now() + 3600000,
-                      createdAt: Date.now(),
-                      lastUsed: Date.now(),
-                      userAgent: navigator.userAgent,
-                      ipAddress: '127.0.0.1'
-                    };
-
-                    set({ user, session, isAuthenticated: true, initialized: true });
-                  }
-                } catch (error) {
-                  console.error('Error fetching user data:', error);
-                  set({ initialized: true });
+                  await signInAnonymously(auth);
+                } catch (e) {
+                  // Anonymous sign-in failure is non-fatal — Firestore reads
+                  // may then fail individually, but auth itself is OK.
+                  console.warn('[authStore] anonymous Firebase sign-in failed:', e);
                 }
-              } else {
-                set({ initialized: true });
               }
-            } else {
-              // User is signed out
-              const wasAuthenticated = get().isAuthenticated;
-              if (wasAuthenticated) {
-                set({ user: null, session: null, isAuthenticated: false, initialized: true });
-              } else {
-                set({ initialized: true });
-              }
-            }
-          });
 
-          return unsubscribe;
+              const lasaeduUser = await mergeWithLasaeduRecord(hubUser);
+
+              const session: AuthSession = {
+                sessionId: `sess_${Date.now()}`,
+                userId: lasaeduUser.id,
+                accessToken: hubTokenStore.get() ?? '',
+                refreshToken: '',
+                expiresAt: Date.now() + 12 * 3600 * 1000,
+                createdAt: Date.now(),
+                lastUsed: Date.now(),
+                userAgent: navigator.userAgent,
+                ipAddress: '127.0.0.1',
+              };
+
+              set({
+                user: lasaeduUser,
+                session,
+                isAuthenticated: true,
+                isLoading: false,
+                initialized: true,
+                error: null,
+              });
+            } catch (err) {
+              if ((err as Error)?.message === 'redirecting-to-hub') return;
+              console.error('[authStore] hub bootstrap failed:', err);
+              set({
+                user: null,
+                session: null,
+                isAuthenticated: false,
+                isLoading: false,
+                initialized: true,
+                error: (err as Error)?.message ?? 'Error de autenticación',
+              });
+            }
+          })();
+
+          // Nothing to unsubscribe from — return a no-op for callers that
+          // expect a cleanup function.
+          return () => {};
         }
       }),
       {
@@ -264,3 +187,47 @@ export const useAuthStore = create<AuthStore>()(
     )
   )
 );
+
+/**
+ * Combines the hub-issued identity with lasaedu's own user record so the
+ * rest of the app keeps seeing the rich `User` shape it expects.
+ *
+ *   1. Look up the lasaedu DB record by email.
+ *   2. If found, the DB role wins (so per-app role assignments stick).
+ *   3. If missing, fabricate a default record using the hub-mapped role.
+ */
+async function mergeWithLasaeduRecord(hub: HubSessionUser): Promise<User> {
+  const now = Date.now();
+  let dbUser: any = null;
+  try {
+    const { firebaseDB } = await import('@shared/services/firebaseDataService');
+    dbUser = await firebaseDB.getUserByEmail(hub.email);
+  } catch (e) {
+    // RTDB read failed — proceed with hub-only profile.
+    console.warn('[authStore] could not load lasaedu user record:', e);
+  }
+
+  const role: UserRole = (dbUser?.role as UserRole) ?? hub.role;
+
+  return {
+    id: dbUser?.id ?? hub.uid,
+    email: hub.email,
+    name: dbUser?.name ?? hub.name,
+    role,
+    emailVerified: dbUser?.emailVerified ?? true,
+    loginAttempts: dbUser?.loginAttempts ?? 0,
+    profile: dbUser?.profile ?? {},
+    preferences: {
+      theme: 'light',
+      notifications: {
+        email: dbUser?.preferences?.notifications?.email ?? true,
+        push: dbUser?.preferences?.notifications?.push ?? true,
+        inApp: true,
+      },
+    } as any,
+    refreshTokens: {},
+    supervisorScope: dbUser?.supervisorScope,
+    createdAt: dbUser?.createdAt ?? now,
+    lastActive: now,
+  } as User;
+}

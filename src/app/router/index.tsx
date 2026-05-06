@@ -1,9 +1,8 @@
+import { useEffect } from 'react';
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { useAuthStore } from '@app/store/authStore';
+import { redirectToHubLogin } from '@shared/services/hubAuth';
 import {
-  LoginPage,
-  RegisterPage,
-  RecoveryPage,
   MainLayout,
   ProtectedRoute,
   AdminDashboard,
@@ -16,6 +15,15 @@ import {
   CoursesPage,
   CommunicationPage
 } from '@/pages';
+
+// All login-adjacent paths bounce straight to lasaHUB. lasaedu has no local
+// login UI by design — the hub is the single source of truth for auth.
+const HubRedirect = () => {
+  useEffect(() => {
+    redirectToHubLogin();
+  }, []);
+  return null;
+};
 import CourseDetailPage from '@modules/courses/pages/CourseDetailPage';
 import LessonViewPage from '@modules/courses/pages/LessonViewPage';
 import LessonBuilderPage from '@modules/courses/pages/LessonBuilderPage';
@@ -73,7 +81,7 @@ const DashboardRedirect = () => {
   const { user, isAuthenticated } = useAuthStore();
 
   if (!isAuthenticated || !user) {
-    return <Navigate to="/login" replace />;
+    return <HubRedirect />;
   }
 
   switch (user.role) {
@@ -88,23 +96,15 @@ const DashboardRedirect = () => {
     case 'support':
       return <SupportDashboard />;
     default:
-      return <Navigate to="/login" replace />;
+      return <HubRedirect />;
   }
 };
 
 export const router = createBrowserRouter([
-  {
-    path: '/login',
-    element: <LoginPage />
-  },
-  {
-    path: '/register',
-    element: <RegisterPage />
-  },
-  {
-    path: '/recovery',
-    element: <RecoveryPage />
-  },
+  // Local auth routes are retired — bounce all of them to the hub.
+  { path: '/login', element: <HubRedirect /> },
+  { path: '/register', element: <HubRedirect /> },
+  { path: '/recovery', element: <HubRedirect /> },
   // Quiz popup — standalone window, no MainLayout
   {
     path: '/quiz/:sectionId/:lessonId',
