@@ -366,6 +366,122 @@ app.post('/ai/chat', authMiddleware, adminMiddleware, async (req, res) => {
   }
 });
 
+/**
+ * POST /ai/generate-image
+ * Body: { prompt: string, aspectRatio?: '1:1'|'4:3'|'16:9'|'3:4'|'9:16' }
+ *
+ * Server-side proxy for Gemini's image generation endpoint. Calls
+ * generateContent on a Gemini Flash image model with the server-side
+ * GEMINI_API_KEY (never exposed to the browser), saves the resulting bytes
+ * to UPLOAD_DIR/ai-generated, and returns a public URL ready to embed in a
+ * course or lesson. Admin-only because each call burns real API quota.
+ */
+app.post('/ai/generate-image', authMiddleware, adminMiddleware, async (req, res) => {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return res.status(500).json({ error: 'GEMINI_API_KEY not configured on the server' });
+  }
+  const { prompt, aspectRatio } = req.body || {};
+  if (typeof prompt !== 'string' || !prompt.trim()) {
+    return res.status(400).json({ error: 'prompt is required' });
+  }
+
+  // Default to a Gemini Flash image-preview model; override with env if needed.
+  // Reference: https://ai.google.dev/gemini-api/docs/image-generation
+  const model = process.env.GEMINI_IMAGE_MODEL || 'gemini-2.5-flash-image-preview';
+  const allowedRatios = new Set(['1:1', '4:3', '16:9', '3:4', '9:16']);
+  const ratio = allowedRatios.has(aspectRatio) ? aspectRatio : '16:9';
+
+  let upstream;
+  try {
+    upstream = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: 'user',
+              parts: [{ text: prompt.trim() }],
+            },
+          ],
+          generationConfig: {
+            responseModalities: ['IMAGE'],
+            imageConfig: { aspectRatio: ratio },
+          },
+        }),
+      },
+    );
+  } catch (err) {
+    console.error('gemini upstream fetch failed', err);
+    return res.status(502).json({ error: 'Gemini upstream unreachable' });
+  }
+
+  if (!upstream.ok) {
+    const body = await upstream.text().catch(() => '');
+    return res
+      .status(upstream.status || 502)
+      .json({ error: `Gemini error ${upstream.status}: ${body || upstream.statusText}` });
+  }
+
+  let payload;
+  try {
+    payload = await upstream.json();
+  } catch (err) {
+    console.error('gemini response not json', err);
+    return res.status(502).json({ error: 'Gemini returned non-JSON response' });
+  }
+
+  // Walk the candidates → content.parts looking for the first inlineData
+  // entry. Some models also return a textual rationale alongside the image.
+  let imageBase64 = null;
+  let mimeType = 'image/png';
+  for (const cand of payload?.candidates || []) {
+    for (const part of cand?.content?.parts || []) {
+      const inline = part.inlineData || part.inline_data;
+      if (inline?.data) {
+        imageBase64 = inline.data;
+        mimeType = inline.mimeType || inline.mime_type || mimeType;
+        break;
+      }
+    }
+    if (imageBase64) break;
+  }
+
+  if (!imageBase64) {
+    const promptFeedback = payload?.promptFeedback || payload?.prompt_feedback;
+    const reason = promptFeedback?.blockReason || promptFeedback?.block_reason;
+    return res.status(502).json({
+      error: reason
+        ? `Gemini bloqueó la generación: ${reason}`
+        : 'Gemini no devolvió ninguna imagen',
+    });
+  }
+
+  // Persist under uploads/ai-generated/. Same content addressing scheme as
+  // the file-upload route so URLs round-trip through /files/:path.
+  const ext = mimeType === 'image/jpeg' ? '.jpg' : '.png';
+  const subDir = 'ai-generated';
+  const fullDir = path.join(UPLOAD_DIR, subDir);
+  fs.mkdirSync(fullDir, { recursive: true });
+  const fileName = `gemini_${Date.now()}_${crypto.randomBytes(6).toString('hex')}${ext}`;
+  const filePath = path.join(fullDir, fileName);
+
+  try {
+    fs.writeFileSync(filePath, Buffer.from(imageBase64, 'base64'));
+  } catch (err) {
+    console.error('failed to persist gemini image', err);
+    return res.status(500).json({ error: 'Failed to persist generated image' });
+  }
+
+  const baseUrl = process.env.BASE_URL || '';
+  const relative = `${subDir}/${fileName}`;
+  const url = baseUrl ? `${baseUrl}/files/${relative}` : `/files/${relative}`;
+
+  res.json({ url, prompt: prompt.trim(), model });
+});
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`📁 File server running on port ${PORT}`);
   console.log(`   Upload dir: ${UPLOAD_DIR}`);
