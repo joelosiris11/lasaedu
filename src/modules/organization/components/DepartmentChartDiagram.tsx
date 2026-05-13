@@ -16,19 +16,18 @@ import {
   type OrgTreeNode,
 } from '@shared/utils/orgScope';
 import { PanZoom } from './PanZoom';
-import './OrgChartDiagram.css';
-import './DepartmentChartDiagram.css';
+import './ConceptOrgChart.css';
 
-/** #RRGGBB → rgba(r, g, b, alpha). */
-function hexToRgba(hex: string | undefined, alpha: number): string {
-  if (!hex) return `rgba(148, 163, 184, ${alpha})`;
-  const clean = hex.replace('#', '');
-  if (clean.length !== 6) return `rgba(148, 163, 184, ${alpha})`;
-  const r = parseInt(clean.slice(0, 2), 16);
-  const g = parseInt(clean.slice(2, 4), 16);
-  const b = parseInt(clean.slice(4, 6), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
+/**
+ * Mapa conceptual del organigrama.
+ *
+ * Vista por defecto: solo se ven los DEPARTAMENTOS, jerarquizados a partir
+ * del depto raíz (típicamente "Administración"). Al hacer click en un depto,
+ * éste se expande inline mostrando un mini-mapa conceptual de sus puestos.
+ *
+ * Las "niveles" de la jerarquía se infieren visualmente por el espaciado
+ * vertical uniforme entre filas — sin etiquetas explícitas de nivel.
+ */
 
 interface Props {
   departments: DBDepartment[];
@@ -55,10 +54,10 @@ export function DepartmentChartDiagram({
   onAddSubDepartment,
   emptyHint,
 }: Props) {
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const [expandedDepts, setExpandedDepts] = useState<Set<string>>(() => new Set());
 
-  const toggle = (id: string) =>
-    setExpanded(prev => {
+  const toggleDept = (id: string) =>
+    setExpandedDepts(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -67,8 +66,8 @@ export function DepartmentChartDiagram({
 
   const deptTree = useMemo(() => buildDepartmentTree(departments), [departments]);
 
-  // Sub-árbol de puestos por depto: posiciones del depto cuyo padre no está
-  // en el mismo depto → raíces locales; el resto se cuelga de su padre.
+  // Sub-árbol de puestos por depto: roots = puestos cuyo padre no está en el
+  // mismo depto.
   const positionsByDept = useMemo(() => {
     const result = new Map<string, OrgTreeNode[]>();
     for (const dept of departments) {
@@ -102,9 +101,9 @@ export function DepartmentChartDiagram({
 
   if (departments.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50/50 p-10 text-center">
+      <div className="concept-empty">
         <Building2 className="mx-auto h-10 w-10 text-gray-300 mb-3" />
-        <p className="text-sm text-gray-600">
+        <p className="text-sm">
           {emptyHint ?? 'Aún no hay departamentos. Crea uno para empezar.'}
         </p>
       </div>
@@ -113,15 +112,15 @@ export function DepartmentChartDiagram({
 
   return (
     <PanZoom>
-      <div className="dept-chart-root">
-        <ul className="dept-chart">
+      <div className="concept-canvas">
+        <ul className="concept-row">
           {deptTree.map(node => (
-            <DepartmentNode
+            <DepartmentSlot
               key={node.department.id}
               node={node}
               isRoot
-              expanded={expanded}
-              onToggle={toggle}
+              expandedDepts={expandedDepts}
+              onToggle={toggleDept}
               positions={positions}
               userCounts={userCounts}
               positionsByDept={positionsByDept}
@@ -139,10 +138,12 @@ export function DepartmentChartDiagram({
   );
 }
 
-interface DeptNodeProps {
+// ─── Departamento ────────────────────────────────────────────────────────────
+
+interface DeptSlotProps {
   node: DepartmentTreeNode;
   isRoot?: boolean;
-  expanded: Set<string>;
+  expandedDepts: Set<string>;
   onToggle: (id: string) => void;
   positions: DBPosition[];
   userCounts: Map<string, number>;
@@ -155,10 +156,10 @@ interface DeptNodeProps {
   onAddSubDepartment: (parentId: string) => void;
 }
 
-function DepartmentNode({
+function DepartmentSlot({
   node,
   isRoot,
-  expanded,
+  expandedDepts,
   onToggle,
   positions,
   userCounts,
@@ -169,13 +170,11 @@ function DepartmentNode({
   onAddPosition,
   onEditDepartment,
   onAddSubDepartment,
-}: DeptNodeProps) {
+}: DeptSlotProps) {
   const dept = node.department;
-  const isOpen = expanded.has(dept.id);
-  const hasChildren = node.children.length > 0;
+  const isOpen = expandedDepts.has(dept.id);
   const editableDept = canManageDepartment(dept.id);
   const accent = dept.color ?? '#94A3B8';
-  const tint = hexToRgba(dept.color, 0.18);
 
   const positionsInDept = positions.filter(p => p.departmentId === dept.id);
   const peopleCount = positionsInDept.reduce(
@@ -185,40 +184,35 @@ function DepartmentNode({
   const trees = positionsByDept.get(dept.id) ?? [];
 
   return (
-    <li>
+    <li className="concept-slot">
       <div
-        className={`dept-node ${isRoot ? 'is-root' : ''}`}
-        style={{
-          ['--dept-accent' as any]: accent,
-          backgroundColor: isOpen ? tint : '#fff',
-        }}
+        className={`concept-card ${isRoot ? 'is-root' : ''} ${isOpen ? 'is-open' : ''}`}
+        style={{ ['--accent' as any]: accent }}
       >
-        {/* Cabecera — click para expandir */}
         <button
           type="button"
+          className="concept-card-header"
           onClick={() => onToggle(dept.id)}
-          className="dept-node-header"
           aria-expanded={isOpen}
         >
-          <span
-            className="dept-node-icon"
-            style={{ backgroundColor: hexToRgba(dept.color, 0.32) }}
-          >
-            <Building2 className="h-4 w-4" style={{ color: accent }} />
+          <span className="concept-card-icon">
+            <Building2 className="h-4 w-4" />
           </span>
 
-          <span className="dept-node-info">
-            <span className="dept-node-title" title={dept.name}>{dept.name}</span>
-            <span className="dept-node-meta">
+          <span className="concept-card-info">
+            <span className="concept-card-title" title={dept.name}>
+              {dept.name}
+            </span>
+            <span className="concept-card-meta">
               <Briefcase className="h-3 w-3" />
               {positionsInDept.length}
-              <span className="dept-node-meta-sep">·</span>
+              <span className="concept-card-meta-sep">·</span>
               <Users className="h-3 w-3" />
               {peopleCount}
             </span>
           </span>
 
-          <span className="dept-node-chevron">
+          <span className="concept-card-chevron">
             {isOpen ? (
               <ChevronDown className="h-4 w-4" />
             ) : (
@@ -227,13 +221,12 @@ function DepartmentNode({
           </span>
         </button>
 
-        {/* Acciones — solo visibles al hover */}
-        <div className="dept-node-actions">
-          {editableDept && (
+        <div className="concept-card-actions">
+          {editableDept ? (
             <>
               <button
                 type="button"
-                className="dept-node-action"
+                className="concept-card-action"
                 title="Sub-departamento"
                 onClick={e => { e.stopPropagation(); onAddSubDepartment(dept.id); }}
               >
@@ -241,43 +234,41 @@ function DepartmentNode({
               </button>
               <button
                 type="button"
-                className="dept-node-action"
+                className="concept-card-action"
                 title="Editar"
                 onClick={e => { e.stopPropagation(); onEditDepartment(dept); }}
               >
                 <Edit3 className="h-3.5 w-3.5" />
               </button>
             </>
-          )}
-          {!editableDept && (
-            <span className="dept-node-lock" title="Fuera de tu alcance">
+          ) : (
+            <span className="concept-card-lock" title="Fuera de tu alcance">
               <Lock className="h-3.5 w-3.5" />
             </span>
           )}
         </div>
 
-        {/* Cuerpo expandido — puestos del departamento */}
         {isOpen && (
-          <div className="dept-node-body">
+          <div className="concept-card-body">
             {trees.length === 0 ? (
-              <div className="dept-node-empty">
+              <div className="concept-card-empty">
                 <span>Sin puestos en este departamento.</span>
                 {editableDept && (
                   <button
                     type="button"
+                    className="concept-card-add"
                     onClick={() => onAddPosition(dept.id, null)}
-                    className="dept-node-add"
                   >
                     <Plus className="h-3 w-3" />
-                    Agregar
+                    Agregar puesto
                   </button>
                 )}
               </div>
             ) : (
               <>
-                <ul className="org-chart">
+                <ul className="concept-row">
                   {trees.map(child => (
-                    <PositionNode
+                    <PositionSlot
                       key={child.position.id}
                       node={child}
                       isRoot
@@ -289,14 +280,16 @@ function DepartmentNode({
                   ))}
                 </ul>
                 {editableDept && (
-                  <button
-                    type="button"
-                    onClick={() => onAddPosition(dept.id, null)}
-                    className="dept-node-add-row"
-                  >
-                    <Plus className="h-3 w-3" />
-                    Agregar puesto raíz
-                  </button>
+                  <div style={{ display: 'flex', justifyContent: 'center' }}>
+                    <button
+                      type="button"
+                      className="concept-card-add-row"
+                      onClick={() => onAddPosition(dept.id, null)}
+                    >
+                      <Plus className="h-3 w-3" />
+                      Puesto raíz
+                    </button>
+                  </div>
                 )}
               </>
             )}
@@ -304,13 +297,13 @@ function DepartmentNode({
         )}
       </div>
 
-      {hasChildren && (
-        <ul className="dept-chart">
+      {node.children.length > 0 && (
+        <ul className="concept-row">
           {node.children.map(child => (
-            <DepartmentNode
+            <DepartmentSlot
               key={child.department.id}
               node={child}
-              expanded={expanded}
+              expandedDepts={expandedDepts}
               onToggle={onToggle}
               positions={positions}
               userCounts={userCounts}
@@ -329,7 +322,9 @@ function DepartmentNode({
   );
 }
 
-interface PositionNodeProps {
+// ─── Puesto ──────────────────────────────────────────────────────────────────
+
+interface PositionSlotProps {
   node: OrgTreeNode;
   isRoot?: boolean;
   departmentColor?: string;
@@ -338,44 +333,50 @@ interface PositionNodeProps {
   onAddChild: (parentId: string) => void;
 }
 
-function PositionNode({
+function PositionSlot({
   node,
   isRoot,
   departmentColor,
   canEditPosition,
   onEdit,
   onAddChild,
-}: PositionNodeProps) {
+}: PositionSlotProps) {
   const [collapsed, setCollapsed] = useState(false);
 
   const pos = node.position;
   const hasChildren = node.children.length > 0;
   const editable = canEditPosition(pos.id);
-  const bg = hexToRgba(departmentColor, 0.5);
+  const accent = departmentColor ?? '#94A3B8';
 
   return (
-    <li>
+    <li className="concept-slot">
       <div
-        className={`org-node ${isRoot ? 'is-root' : ''} ${editable ? '' : 'is-locked'}`}
-        style={{ ['--node-bg' as any]: bg }}
-        onClick={() => editable && onEdit(pos)}
-        role={editable ? 'button' : undefined}
-        tabIndex={editable ? 0 : undefined}
-        onKeyDown={e => {
-          if (!editable) return;
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            onEdit(pos);
-          }
-        }}
+        className={`concept-card ${isRoot ? 'is-root' : ''} ${editable ? '' : 'is-locked'}`}
+        style={{ ['--accent' as any]: accent }}
       >
-        <div className="org-node-title" title={pos.title}>{pos.title}</div>
+        <button
+          type="button"
+          className="concept-card-header"
+          onClick={() => editable && onEdit(pos)}
+          disabled={!editable}
+          style={editable ? undefined : { cursor: 'default' }}
+        >
+          <span className="concept-card-icon">
+            <Briefcase className="h-3.5 w-3.5" />
+          </span>
+          <span className="concept-card-info">
+            <span className="concept-card-title" title={pos.title}>
+              {pos.title}
+            </span>
+          </span>
+          <span className="concept-card-chevron" />
+        </button>
 
         {editable ? (
-          <div className="org-node-actions">
+          <div className="concept-card-actions">
             <button
               type="button"
-              className="org-node-action"
+              className="concept-card-action"
               title="Agregar subordinado"
               onClick={e => { e.stopPropagation(); onAddChild(pos.id); }}
             >
@@ -383,7 +384,7 @@ function PositionNode({
             </button>
             <button
               type="button"
-              className="org-node-action"
+              className="concept-card-action"
               title="Editar"
               onClick={e => { e.stopPropagation(); onEdit(pos); }}
             >
@@ -391,7 +392,7 @@ function PositionNode({
             </button>
           </div>
         ) : (
-          <span className="org-node-lock" title="Fuera de tu alcance">
+          <span className="concept-card-lock" title="Fuera de tu alcance">
             <Lock className="h-3.5 w-3.5" />
           </span>
         )}
@@ -399,7 +400,7 @@ function PositionNode({
         {hasChildren && (
           <button
             type="button"
-            className="org-node-toggle"
+            className="concept-card-toggle"
             title={collapsed ? 'Expandir' : 'Contraer'}
             onClick={e => { e.stopPropagation(); setCollapsed(v => !v); }}
           >
@@ -413,9 +414,9 @@ function PositionNode({
       </div>
 
       {hasChildren && !collapsed && (
-        <ul>
+        <ul className="concept-row">
           {node.children.map(child => (
-            <PositionNode
+            <PositionSlot
               key={child.position.id}
               node={child}
               departmentColor={departmentColor}

@@ -1,0 +1,421 @@
+/*
+  Mapa conceptual del organigrama — vista jerárquica limpia.
+
+  Los "niveles" se perciben por el espaciado vertical uniforme entre filas
+  (`--level-gap`). Cada nodo se conecta al padre con una línea vertical, y
+  los hermanos comparten una barra horizontal en el punto medio del gap.
+
+  Estructura DOM:
+    .concept-canvas         → padding global del lienzo
+      ul.concept-row        → fila horizontal (un nivel)
+        li.concept-slot     → contenedor de un nodo + su sub-árbol
+          .concept-card     → la caja del nodo
+          ul.concept-row    → siguiente nivel (hijos del nodo)
+
+  Geometría de los conectores:
+    - El gap entre niveles vive en `padding-top` del slot.
+    - `row::before`     : línea vertical desde la base del padre hasta la
+                          barra horizontal — la mitad superior del gap.
+    - `slot::before/::after` : barra horizontal a media altura del gap, mitad
+                               izquierda/derecha. Se ocultan en first/last/only.
+    - `slot` background-image: línea vertical desde la barra horizontal hasta
+                               la base del slot — la mitad inferior del gap.
+*/
+
+.concept-canvas {
+  --concept-line: #CBD5E1;
+  --level-gap: 56px;
+  --sibling-gap: 32px;
+  --card-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06);
+  --card-shadow-hover: 0 2px 4px rgba(15, 23, 42, 0.06), 0 4px 12px rgba(15, 23, 42, 0.10);
+  --card-shadow-root: 0 2px 4px rgba(15, 23, 42, 0.06), 0 8px 24px rgba(15, 23, 42, 0.10);
+
+  padding: 56px 48px 64px;
+  background:
+    radial-gradient(circle at 1px 1px, rgba(15, 23, 42, 0.06) 1px, transparent 0)
+      0 0 / 24px 24px,
+    #FAFBFC;
+  display: inline-block;
+  min-width: max-content;
+}
+
+/* ─── Fila + slot ──────────────────────────────────────────────────────── */
+
+.concept-row {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  position: relative;
+}
+
+/* Vertical line from parent card bottom to the horizontal bar (upper half of gap).
+   Solo aplica a filas anidadas (no a la fila raíz). */
+.concept-slot > .concept-row::before {
+  content: '';
+  position: absolute;
+  top: calc(var(--level-gap) * -0.5);
+  left: 50%;
+  width: 1px;
+  height: calc(var(--level-gap) * 0.5);
+  background: var(--concept-line);
+  pointer-events: none;
+}
+
+.concept-slot {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  /* horizontal padding crea el espacio entre hermanos sin romper conectores */
+  padding: var(--level-gap) calc(var(--sibling-gap) * 0.5) 0;
+
+  /* Vertical line from horizontal bar to slot top — lower half of gap */
+  background-image: linear-gradient(to bottom, var(--concept-line), var(--concept-line));
+  background-position: 50% calc(var(--level-gap) * 0.5);
+  background-size: 1px calc(var(--level-gap) * 0.5);
+  background-repeat: no-repeat;
+}
+
+/* Horizontal bar — left half */
+.concept-slot::before {
+  content: '';
+  position: absolute;
+  top: calc(var(--level-gap) * 0.5);
+  left: 0;
+  width: 50%;
+  height: 1px;
+  background: var(--concept-line);
+  pointer-events: none;
+}
+/* Horizontal bar — right half */
+.concept-slot::after {
+  content: '';
+  position: absolute;
+  top: calc(var(--level-gap) * 0.5);
+  left: 50%;
+  width: 50%;
+  height: 1px;
+  background: var(--concept-line);
+  pointer-events: none;
+}
+.concept-slot:first-child::before { background: transparent; }
+.concept-slot:last-child::after { background: transparent; }
+.concept-slot:only-child::before,
+.concept-slot:only-child::after { display: none; }
+
+/* La fila raíz no tiene padre arriba */
+.concept-canvas > .concept-row > .concept-slot {
+  padding-top: 0;
+  background-image: none;
+}
+.concept-canvas > .concept-row > .concept-slot::before,
+.concept-canvas > .concept-row > .concept-slot::after {
+  display: none;
+}
+
+/* ─── Tarjeta ──────────────────────────────────────────────────────────── */
+
+.concept-card {
+  --accent: #94A3B8;
+  width: 240px;
+  background: #FFFFFF;
+  border: 1px solid #E5E7EB;
+  border-left: 4px solid var(--accent);
+  border-radius: 10px;
+  box-shadow: var(--card-shadow);
+  position: relative;
+  transition: box-shadow 160ms ease, transform 160ms ease, border-color 160ms ease;
+  overflow: hidden;
+}
+
+.concept-card:hover {
+  box-shadow: var(--card-shadow-hover);
+  transform: translateY(-1px);
+}
+
+.concept-card.is-root {
+  width: 280px;
+  border-left-width: 5px;
+  box-shadow: var(--card-shadow-root);
+}
+
+.concept-card.is-open {
+  width: 320px;
+  transform: none;
+}
+.concept-card.is-open:hover {
+  transform: none;
+  box-shadow: var(--card-shadow-root);
+}
+
+/* ─── Header ──────────────────────────────────────────────────────────── */
+
+.concept-card-header {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+  color: #0F172A;
+}
+
+.concept-card-header:hover {
+  background: rgba(15, 23, 42, 0.02);
+}
+
+.concept-card-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 16%, white);
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.concept-card.is-root .concept-card-icon {
+  width: 32px;
+  height: 32px;
+}
+
+.concept-card-info {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.concept-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0F172A;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.concept-card.is-root .concept-card-title {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.005em;
+}
+
+.concept-card-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #64748B;
+  font-variant-numeric: tabular-nums;
+}
+
+.concept-card-meta-sep {
+  color: #CBD5E1;
+}
+
+.concept-card-chevron {
+  color: #94A3B8;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* ─── Acciones (hover) ────────────────────────────────────────────────── */
+
+.concept-card-actions {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+  z-index: 1;
+}
+
+.concept-card:hover .concept-card-actions,
+.concept-card:focus-within .concept-card-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.concept-card-action {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.92);
+  color: #475569;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.concept-card-action:hover {
+  background: #fff;
+  color: #0F172A;
+  border-color: #E5E7EB;
+}
+
+.concept-card-lock {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  color: rgba(15, 23, 42, 0.30);
+  display: inline-flex;
+  pointer-events: none;
+}
+
+/* ─── Body expandido ──────────────────────────────────────────────────── */
+
+.concept-card-body {
+  border-top: 1px solid #F1F5F9;
+  padding: 14px 12px 14px;
+  background: #FAFBFC;
+}
+
+.concept-card-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  font-size: 12px;
+  color: #64748B;
+}
+
+.concept-card-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #0F172A;
+  background: #fff;
+  border: 1px solid #E5E7EB;
+  border-radius: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: border-color 120ms ease;
+}
+
+.concept-card-add:hover {
+  border-color: #94A3B8;
+}
+
+.concept-card-add-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 14px auto 0;
+  font-size: 11px;
+  color: #475569;
+  background: transparent;
+  border: 1px dashed #CBD5E1;
+  border-radius: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: border-color 120ms ease, color 120ms ease;
+}
+
+.concept-card-add-row:hover {
+  border-color: #94A3B8;
+  color: #0F172A;
+}
+
+/* ─── Sub-árbol de puestos (dentro del depto expandido) ───────────────── */
+
+.concept-card-body > .concept-row {
+  --level-gap: 36px;
+  --sibling-gap: 22px;
+}
+
+.concept-card-body .concept-card {
+  width: 180px;
+  border-left-width: 3px;
+}
+
+.concept-card-body .concept-card.is-root {
+  width: 200px;
+  border-left-width: 4px;
+}
+
+.concept-card-body .concept-card-header {
+  padding: 9px 11px;
+  gap: 8px;
+}
+
+.concept-card-body .concept-card-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+}
+
+.concept-card-body .concept-card-title {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.concept-card-body .concept-card.is-root .concept-card-title {
+  font-size: 12.5px;
+}
+
+.concept-card-body .concept-card-meta {
+  font-size: 10px;
+  gap: 5px;
+}
+
+/* Toggle (chevron flotante) para colapsar sub-árbol de puestos */
+.concept-card-toggle {
+  position: absolute;
+  bottom: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: #fff;
+  border: 1px solid #E5E7EB;
+  color: #64748B;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 2;
+  transition: color 120ms ease, border-color 120ms ease;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+
+.concept-card-toggle:hover {
+  color: #0F172A;
+  border-color: #9CA3AF;
+}
+
+.concept-card.is-locked {
+  cursor: default;
+}
+
+/* ─── Empty state global ──────────────────────────────────────────────── */
+
+.concept-empty {
+  border: 1px dashed #CBD5E1;
+  border-radius: 12px;
+  background: #FAFBFC;
+  padding: 56px 32px;
+  text-align: center;
+  color: #64748B;
+}

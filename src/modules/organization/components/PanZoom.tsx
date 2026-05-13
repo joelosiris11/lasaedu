@@ -167,7 +167,10 @@ export function PanZoom({ children, height = 'min(70vh, 700px)' }: Props) {
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     if (e.button !== 0) return;
     const target = e.target as HTMLElement;
-    if (target.closest('.org-node-action, .org-node-toggle, .org-node[role="button"]')) return;
+    if (target.closest(
+      '.concept-card-header, .concept-card-action, .concept-card-toggle, .concept-card-add, .concept-card-add-row, ' +
+      '.org-node-action, .org-node-toggle, .org-node[role="button"]'
+    )) return;
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     dragStart.current = { x: e.clientX, y: e.clientY, tx: stateRef.current.tx, ty: stateRef.current.ty };
     setDragging(true);
@@ -189,7 +192,10 @@ export function PanZoom({ children, height = 'min(70vh, 700px)' }: Props) {
     const vp = viewportRef.current;
     if (!vp) return;
     const target = e.target as HTMLElement;
-    if (target.closest('.org-node, .org-node-action, .org-node-toggle')) return;
+    if (target.closest(
+      '.concept-card, .concept-card-action, .concept-card-toggle, ' +
+      '.org-node, .org-node-action, .org-node-toggle'
+    )) return;
     const rect = vp.getBoundingClientRect();
     applyZoom(stateRef.current.scale * 1.5, e.clientX - rect.left, e.clientY - rect.top);
   }, [applyZoom]);
