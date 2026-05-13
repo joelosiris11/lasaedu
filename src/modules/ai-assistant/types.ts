@@ -18,12 +18,26 @@ export interface ToolCallRecord {
 
 export type ChatRole = 'user' | 'model' | 'system';
 
+export interface AttachedImage {
+  url: string;
+  source: 'unsplash' | 'gemini';
+  description?: string;
+  // Unsplash attribution (for crediting if the AI inserts it in lesson HTML).
+  author?: string;
+  authorUrl?: string;
+  // Gemini-only metadata
+  prompt?: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: ChatRole;
   text: string;
   createdAt: number;
   toolCalls?: ToolCallRecord[];
+  // Images the admin manually attached when sending the message. Persisted
+  // so reloading a session re-renders the chips inside the user bubble.
+  attachments?: AttachedImage[];
   // When true, the bubble is still streaming text from the model.
   streaming?: boolean;
 }
@@ -44,4 +58,11 @@ export interface StockImage {
   authorUrl: string;
   sourceUrl: string;
   description?: string;
+}
+
+export interface GeneratedImage {
+  url: string;
+  prompt: string;
+  model: string;
+  generated: true;
 }

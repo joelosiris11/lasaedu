@@ -30,6 +30,7 @@ export interface OllamaToolDeclaration {
 }
 import { useAuthStore } from '@app/store/authStore';
 import { searchStockImages } from './unsplash';
+import { generateImageWithGemini } from './gemini';
 import { useUndoStack, newUndoId } from './undoStack';
 import {
   getActivePrompt,
@@ -327,7 +328,7 @@ export const TOOL_DECLARATIONS: OllamaToolDeclaration[] = [
     function: {
       name: 'search_stock_images',
       description:
-        'Busca imágenes libres en Unsplash para ilustrar cursos o lecciones. Devuelve una lista con URL directa, thumbnail y autor para atribución.',
+        'Busca imágenes libres en Unsplash para que el ADMIN elija manualmente. NO selecciones tú una URL ni la apliques a un curso o lección: la UI muestra los resultados como una galería clickeable y el admin decide. Después de llamar este tool, simplemente confirma cuántos resultados hay y espera la siguiente instrucción.',
       parameters: {
         type: 'object',
         required: ['query'],
@@ -341,6 +342,30 @@ export const TOOL_DECLARATIONS: OllamaToolDeclaration[] = [
             enum: ['landscape', 'portrait', 'squarish'],
           },
           perPage: { type: 'number', description: '1 a 10. Por defecto 6.' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'generate_image',
+      description:
+        'Genera una imagen nueva con Gemini Flash a partir de un prompt descriptivo. La imagen se guarda en el servidor y devuelve una URL pública. La UI muestra la imagen para que el admin decida manualmente si la aplica como portada o la inserta en una lección. NO la apliques tú automáticamente.',
+      parameters: {
+        type: 'object',
+        required: ['prompt'],
+        properties: {
+          prompt: {
+            type: 'string',
+            description:
+              'Descripción detallada de la imagen (en inglés produce mejores resultados). Incluye estilo, sujeto, ambiente y composición.',
+          },
+          aspectRatio: {
+            type: 'string',
+            enum: ['1:1', '4:3', '16:9', '3:4', '9:16'],
+            description: 'Relación de aspecto deseada. Por defecto 16:9 para portadas de cursos.',
+          },
         },
       },
     },
@@ -845,8 +870,33 @@ async function execSearchStockImages(args: ToolArgs): Promise<ToolExecResult> {
     perPage: typeof args.perPage === 'number' ? args.perPage : 6,
   });
   return {
-    data: results,
-    summary: `${results.length} imágenes encontradas para "${query}".`,
+    // Wrap so the UI can disambiguate stock results from a single generated
+    // image. The card renders a selectable grid for `kind: "stock"`.
+    data: { kind: 'stock' as const, query, images: results },
+    summary: `${results.length} imágenes encontradas para "${query}". Elige una manualmente desde la galería.`,
+  };
+}
+
+async function execGenerateImage(args: ToolArgs): Promise<ToolExecResult> {
+  requireAdmin();
+  const prompt = String(args.prompt || '').trim();
+  if (!prompt) throw new Error('prompt vacío');
+  const aspectRatio = args.aspectRatio as
+    | '1:1'
+    | '4:3'
+    | '16:9'
+    | '3:4'
+    | '9:16'
+    | undefined;
+  const result = await generateImageWithGemini({ prompt, aspectRatio });
+  return {
+    data: {
+      kind: 'generated' as const,
+      url: result.url,
+      prompt: result.prompt,
+      model: result.model,
+    },
+    summary: `Imagen generada con Gemini Flash. Decide manualmente si la aplicas.`,
   };
 }
 
@@ -1052,6 +1102,7 @@ export type ToolName =
   | 'get_current_system_prompt'
   | 'propose_system_prompt_update'
   | 'search_stock_images'
+  | 'generate_image'
   | 'db_overview'
   | 'db_count'
   | 'db_query';
@@ -1070,6 +1121,7 @@ const EXECUTORS: Record<ToolName, (args: ToolArgs) => Promise<ToolExecResult>> =
   get_current_system_prompt: execGetCurrentSystemPrompt,
   propose_system_prompt_update: execProposeSystemPromptUpdate,
   search_stock_images: execSearchStockImages,
+  generate_image: execGenerateImage,
   db_overview: execDbOverview,
   db_count: execDbCount,
   db_query: execDbQuery,

@@ -16,6 +16,7 @@ import {
   Trash2,
   ListTree,
   History,
+  ImagePlus,
 } from 'lucide-react';
 import { Button } from '@shared/components/ui/Button';
 import {
@@ -26,6 +27,7 @@ import {
 } from '@shared/services/dataService';
 import { getModel, runTurn, type OllamaMessage } from '../services/ollamaClient';
 import { useUndoStack } from '../services/undoStack';
+import { useAssistantScope } from '../services/assistantScopeStore';
 import { getActivePrompt, type DBPromptVersion } from '../services/promptVersions';
 import {
   createSession,
@@ -36,13 +38,14 @@ import {
 } from '../services/chatSessions';
 import ToolCallCard from '../components/ToolCallCard';
 import VersionManager from '../components/VersionManager';
-import type { ChatMessage, ToolCallRecord } from '../types';
+import ImageAttacherModal from '../components/ImageAttacherModal';
+import type { AttachedImage, ChatMessage, ToolCallRecord } from '../types';
 
 const QUICK_ACTIONS_EXISTING = [
   'Resume qué contiene este curso y dime qué partes se ven flojas.',
   'Reescribe la primera lección para que sea más clara y estructurada.',
-  'Busca una imagen de portada bonita y aplícala al curso.',
-  'Sugiere 3 lecciones nuevas que encajen con el nivel del curso.',
+  'Busca portadas bonitas en Unsplash para que yo elija una.',
+  'Genera una portada personalizada con Gemini Flash para este curso.',
 ];
 const QUICK_ACTIONS_NEW = [
   'Crea un curso de Introducción a SQL con 3 módulos y 2 lecciones cada uno.',
@@ -83,6 +86,8 @@ export default function AIAssistantPage() {
   const setOverride = useHeaderStore((s) => s.setOverride);
   const undoEntries = useUndoStack((s) => s.entries);
   const undo = useUndoStack((s) => s.undo);
+  const setAssistantScope = useAssistantScope((s) => s.setScope);
+  const resetAssistantScope = useAssistantScope((s) => s.reset);
 
   // Chat state
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -106,6 +111,12 @@ export default function AIAssistantPage() {
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [sidebarTab, setSidebarTab] = useState<'chats' | 'changes'>('chats');
 
+  // Attached images for the next message. The admin can attach one or more
+  // via the image picker; the URLs are pinned to the message envelope so the
+  // model is forced to reuse them instead of searching/generating new ones.
+  const [attachments, setAttachments] = useState<AttachedImage[]>([]);
+  const [showAttacher, setShowAttacher] = useState(false);
+
   const selectedCourse = useMemo(
     () => courses.find((c) => c.id === selectedCourseId) ?? null,
     [courses, selectedCourseId],
@@ -121,10 +132,32 @@ export default function AIAssistantPage() {
   useEffect(() => {
     setOverride({
       title: 'Asistente IA',
-      subtitle: 'Solo admins · Kimi (Ollama Cloud) + Unsplash',
+      subtitle: 'Solo admins · Kimi (Ollama Cloud) + Unsplash + Gemini Flash',
     });
     return () => setOverride(null);
   }, [setOverride]);
+
+  // Mirror scope into the shared store so per-message ToolCallCards know which
+  // course/section to apply images to. Reset on unmount to avoid leaking
+  // scope into other pages that might consume the store later.
+  useEffect(() => {
+    setAssistantScope({
+      courseId: selectedCourseId,
+      courseTitle: selectedCourse?.title ?? null,
+      sectionId: selectedSectionId,
+      sectionTitle: selectedSection?.title ?? null,
+      isNewCourseScope: isNewCourseScope,
+    });
+  }, [
+    selectedCourseId,
+    selectedCourse,
+    selectedSectionId,
+    selectedSection,
+    isNewCourseScope,
+    setAssistantScope,
+  ]);
+
+  useEffect(() => () => resetAssistantScope(), [resetAssistantScope]);
 
   // Auto-scroll to the last message when new content arrives
   useEffect(() => {
@@ -281,6 +314,7 @@ export default function AIAssistantPage() {
     setSections([]);
     setScopeReady(false);
     setError(null);
+    setAttachments([]);
   }, []);
 
   const handleLoadSession = useCallback(
@@ -398,13 +432,35 @@ export default function AIAssistantPage() {
       const trimmed = text.trim();
       if (!trimmed || isSending || !model || !scopeReady) return;
 
-      const messageToModel = buildContextPrefix() + trimmed;
+      // Build a strict instruction the model must obey when the admin attached
+      // one or more images. The point is to override the AI's instinct to call
+      // search_stock_images / generate_image: the URLs are already chosen.
+      const attachmentBlock =
+        attachments.length > 0
+          ? `\n\n[Imágenes adjuntas por el admin — DEBES usar EXACTAMENTE estas URLs en cualquier portada o <img> que insertes. NO llames a search_stock_images ni generate_image: el admin ya eligió. Si solo aplica una, úsala como portada con update_course (o update_module si corresponde a un módulo).]\n${attachments
+              .map((a, i) => {
+                const credit =
+                  a.source === 'unsplash' && a.author
+                    ? ` — Foto de ${a.author} en Unsplash (${a.authorUrl})`
+                    : a.source === 'gemini'
+                    ? ' — Generada con Gemini Flash'
+                    : '';
+                const desc = a.description ? ` · "${a.description}"` : '';
+                return `${i + 1}. ${a.url}${desc}${credit}`;
+              })
+              .join('\n')}`
+          : '';
+
+      const messageToModel = buildContextPrefix() + trimmed + attachmentBlock;
+
+      const sentAttachments = attachments;
 
       const userMsg: ChatMessage = {
         id: newMsgId(),
         role: 'user',
         text: trimmed,
         createdAt: Date.now(),
+        ...(sentAttachments.length > 0 ? { attachments: sentAttachments } : {}),
       };
       const modelMsg: ChatMessage = {
         id: newMsgId(),
@@ -416,6 +472,7 @@ export default function AIAssistantPage() {
       };
       setMessages((prev) => [...prev, userMsg, modelMsg]);
       setInput('');
+      setAttachments([]);
       setIsSending(true);
       setError(null);
 
@@ -458,6 +515,7 @@ export default function AIAssistantPage() {
       updateToolCall,
       updateMessage,
       refreshActivePrompt,
+      attachments,
     ],
   );
 
@@ -602,25 +660,66 @@ export default function AIAssistantPage() {
               }}
               className="border-t border-gray-200 bg-gray-50 p-3"
             >
-              <div className="flex items-end gap-2">
+              {attachments.length > 0 && (
+                <div className="mb-2 flex flex-wrap gap-2">
+                  {attachments.map((img, i) => (
+                    <div
+                      key={`${img.url}-${i}`}
+                      className="group relative rounded-md overflow-hidden border border-gray-200 bg-white"
+                      title={img.description || img.url}
+                    >
+                      <img
+                        src={img.url}
+                        alt={img.description || 'Adjunta'}
+                        className="h-14 w-20 object-cover"
+                      />
+                      <div className="absolute bottom-0 left-0 right-0 bg-black/50 px-1 py-0.5 text-[9px] text-white truncate">
+                        {img.source === 'unsplash' ? 'Unsplash' : 'Gemini'}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setAttachments((prev) => prev.filter((_, j) => j !== i))
+                        }
+                        className="absolute top-0.5 right-0.5 rounded-full bg-black/60 hover:bg-red-600 text-white p-0.5"
+                        aria-label="Quitar adjunto"
+                      >
+                        <XIcon className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="flex items-stretch gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAttacher(true)}
+                  disabled={!model || isSending}
+                  className="shrink-0 inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-700 hover:border-red-300 hover:bg-red-50/40 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Adjuntar imagen (Unsplash o Gemini Flash)"
+                  aria-label="Adjuntar imagen"
+                >
+                  <ImagePlus className="h-4 w-4" />
+                </button>
                 <textarea
                   ref={textareaRef}
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  rows={2}
+                  rows={1}
                   disabled={!model || isSending}
                   placeholder={
                     model
                       ? 'Dile a Lasa qué editar… (Enter para enviar, Shift+Enter para nueva línea)'
                       : 'Configura un prompt activo para habilitar el asistente.'
                   }
-                  className="flex-1 resize-none rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/20 disabled:bg-gray-100"
+                  className="flex-1 h-9 resize-none rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm leading-6 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/20 disabled:bg-gray-100"
                 />
                 <Button
                   type="submit"
                   disabled={!input.trim() || !model || isSending}
-                  className="bg-red-600 hover:bg-red-700 text-white"
+                  className="bg-red-600 hover:bg-red-700 text-white !h-9 w-9 p-0"
+                  aria-label="Enviar"
                 >
                   {isSending ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -674,6 +773,12 @@ export default function AIAssistantPage() {
           // Keep chat history so the admin doesn't lose course context after
           // a prompt change.
         }}
+      />
+
+      <ImageAttacherModal
+        open={showAttacher}
+        onClose={() => setShowAttacher(false)}
+        onAttach={(img) => setAttachments((prev) => [...prev, img])}
       />
     </div>
   );
@@ -1039,6 +1144,26 @@ function MessageBubble({ message }: { message: ChatMessage }) {
             : 'bg-gray-100 text-gray-900 rounded-bl-md'
         }`}
       >
+        {message.attachments && message.attachments.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {message.attachments.map((a, i) => (
+              <a
+                key={`${a.url}-${i}`}
+                href={a.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block rounded-md overflow-hidden border border-white/30"
+                title={a.description || a.url}
+              >
+                <img
+                  src={a.url}
+                  alt={a.description || 'Adjunta'}
+                  className="h-20 w-28 object-cover"
+                />
+              </a>
+            ))}
+          </div>
+        )}
         {message.text && (
           <div className="whitespace-pre-wrap leading-relaxed">
             {renderLight(message.text)}
