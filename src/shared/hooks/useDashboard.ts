@@ -45,10 +45,6 @@ export const useSystemStats = () => {
     };
 
     fetchStats();
-    
-    // Actualizar cada 30 segundos
-    const interval = setInterval(fetchStats, 30000);
-    return () => clearInterval(interval);
   }, []);
 
   return { stats, loading, error, refetch: () => setLoading(true) };
@@ -74,10 +70,6 @@ export const useRecentActivity = (limit = 10) => {
     };
 
     fetchActivities();
-    
-    // Actualizar cada minuto
-    const interval = setInterval(fetchActivities, 60000);
-    return () => clearInterval(interval);
   }, [limit]);
 
   return { activities, loading, error };
@@ -103,10 +95,6 @@ export const useSystemMetrics = () => {
     };
 
     fetchMetrics();
-    
-    // Actualizar cada 10 segundos
-    const interval = setInterval(fetchMetrics, 10000);
-    return () => clearInterval(interval);
   }, []);
 
   return { metrics, loading, error };
@@ -222,10 +210,6 @@ export const useSupportTickets = (assigneeId?: string) => {
     };
 
     fetchTickets();
-    
-    // Actualizar cada 2 minutos
-    const interval = setInterval(fetchTickets, 120000);
-    return () => clearInterval(interval);
   }, [assigneeId]);
 
   return { tickets, loading, error };
@@ -251,8 +235,6 @@ export const useAdminOverview = () => {
     };
 
     fetchData();
-    const interval = setInterval(fetchData, 30000);
-    return () => clearInterval(interval);
   }, []);
 
   return { data, loading, error };
@@ -332,10 +314,6 @@ export const useSupportStats = () => {
     };
 
     fetchStats();
-    
-    // Actualizar cada minuto
-    const interval = setInterval(fetchStats, 60000);
-    return () => clearInterval(interval);
   }, []);
 
   return { stats, loading, error };
