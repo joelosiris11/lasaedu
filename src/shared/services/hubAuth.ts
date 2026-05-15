@@ -39,6 +39,16 @@ const APP_SLUG = 'lasaedu';
 const TOKEN_KEY = 'lasaedu.hubToken';
 const USER_KEY = 'lasaedu.hubUser';
 
+/**
+ * When `VITE_LOCAL_AUTH` is truthy lasaedu uses its own email/password login
+ * (LoginPage + authService) instead of delegating to lasaHUB. Useful for
+ * local dev, demos, or environments where the hub is unreachable.
+ */
+export function isLocalAuthMode(): boolean {
+  const v = import.meta.env.VITE_LOCAL_AUTH as unknown;
+  return v === 'true' || v === '1' || v === true;
+}
+
 export interface HubSessionUser {
   uid: string;
   email: string;

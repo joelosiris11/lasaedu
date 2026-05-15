@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@app/store/authStore';
 import { evaluationService, legacyEnrollmentService, extensionService } from '@shared/services/dataService';
 import type { DBEvaluation, DBEnrollment, DBDeadlineExtension } from '@shared/services/dataService';
@@ -8,7 +9,6 @@ import {
   Search,
   Edit3,
   Trash2,
-  Eye,
   Clock,
   Star,
   BookOpen,
@@ -19,6 +19,7 @@ import {
   BarChart3,
   CalendarClock,
   User,
+  ClipboardList,
 } from 'lucide-react';
 import { Card, CardContent } from '@shared/components/ui/Card';
 import { Button } from '@shared/components/ui/Button';
@@ -27,6 +28,7 @@ import { Label } from '@shared/components/ui/Label';
 
 const EvaluationsPage = () => {
   const { user } = useAuthStore();
+  const navigate = useNavigate();
   const [evaluations, setEvaluations] = useState<DBEvaluation[]>([]);
   const [enrollments, setEnrollments] = useState<DBEnrollment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -477,14 +479,19 @@ const EvaluationsPage = () => {
                         </>
                       ) : (
                         <>
-                          <Button size="sm" variant="outline">
-                            <Eye className="h-4 w-4 mr-1" />
-                            Ver
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => navigate(`/evaluations/${evaluation.id}/attempts`)}
+                            title="Revisar entregas"
+                          >
+                            <ClipboardList className="h-4 w-4 mr-1" />
+                            Entregas
                           </Button>
                           {canManageEvaluations && (evaluation.createdBy === user?.id || user?.role === 'admin') && (
                             <>
-                              <Button 
-                                size="sm" 
+                              <Button
+                                size="sm"
                                 variant="outline"
                                 onClick={() => {
                                   setEditingEvaluation(evaluation);

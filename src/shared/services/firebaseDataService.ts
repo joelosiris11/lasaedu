@@ -274,6 +274,7 @@ export interface DBEvaluationAttempt {
   id: string;
   evaluationId: string;
   userId: string;
+  userName?: string;
   courseId: string;
   sectionId?: string;
   answers: {
@@ -282,13 +283,33 @@ export interface DBEvaluationAttempt {
     isCorrect?: boolean;
     pointsEarned?: number;
   }[];
+  // Per-question auto/manual grading records. Only set for evaluations that
+  // contain ai_open_answer questions. The student-facing UI must NEVER expose
+  // anything from here other than `pointsEarned` and `studentFeedback`.
+  aiGrades?: Record<string, {
+    questionId: string;
+    pointsEarned: number;
+    maxPoints: number;
+    source: 'auto' | 'ai' | 'teacher';
+    studentFeedback?: string;
+    rationale?: string;
+    aiSuggestedPoints?: number;
+    aiSuggestedFeedback?: string;
+    aiModel?: string;
+    aiGradedAt?: number;
+    overriddenBy?: string;
+    overriddenAt?: number;
+    overrideReason?: string;
+  }>;
   score: number;
   maxScore: number;
+  totalPoints?: number;
   percentage: number;
   passed: boolean;
   timeSpent: number; // en segundos
   startedAt: string;
   completedAt: string;
+  submittedAt?: string;
   status: 'in_progress' | 'completed' | 'abandoned';
   feedback?: string;
   gradedBy?: string;

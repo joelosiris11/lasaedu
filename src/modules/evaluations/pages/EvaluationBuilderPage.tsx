@@ -233,7 +233,7 @@ export default function EvaluationBuilderPage() {
   };
 
   const getQuestionTypeName = (type: Question['type']) => {
-    const typeMap = {
+    const typeMap: Record<Question['type'], string> = {
       single_choice: 'Selección única',
       multiple_choice: 'Selección múltiple',
       true_false: 'Verdadero/Falso',
@@ -244,7 +244,8 @@ export default function EvaluationBuilderPage() {
       ordering: 'Ordenar',
       fill_blank: 'Completar',
       hotspot: 'Punto caliente',
-      file_upload: 'Subir archivo'
+      file_upload: 'Subir archivo',
+      ai_open_answer: 'Respuesta abierta (auto)'
     };
     return typeMap[type] || type;
   };

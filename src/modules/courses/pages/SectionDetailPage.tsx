@@ -7,6 +7,8 @@ import {
   moduleService,
   lessonService,
   evaluationService,
+  gradeService,
+  taskSubmissionService,
   type DBSection,
   type DBCourse,
   type DBModule,
@@ -28,10 +30,13 @@ import {
   Loader2,
   ChevronDown,
   ChevronRight,
+  Download,
 } from 'lucide-react';
 import { Card } from '@shared/components/ui/Card';
+import { Button } from '@shared/components/ui/Button';
 import { CoursePattern } from '@shared/components/ui/CoursePattern';
 import DeadlineBadge from '@shared/components/ui/DeadlineBadge';
+import { exportToCSV } from '@shared/services/exportService';
 
 interface ModuleWithLessons extends DBModule {
   lessons: (DBLesson & { resolved?: ReturnType<typeof resolveDeadlines> })[];
@@ -49,6 +54,15 @@ function getLessonIcon(type: string) {
     case 'foro': return <MessageSquare className={cls} />;
     default: return <FileText className="h-4 w-4 text-gray-400" />;
   }
+}
+
+// Same A/B/C/D/F scale used in GradesPage.
+function letterFor(percentage: number): string {
+  if (percentage >= 90) return 'A';
+  if (percentage >= 80) return 'B';
+  if (percentage >= 70) return 'C';
+  if (percentage >= 60) return 'D';
+  return 'F';
 }
 
 // Completion circle: filled with red check when done, hollow gray ring otherwise.
@@ -84,6 +98,9 @@ export default function SectionDetailPage() {
   const [completedLessonIds, setCompletedLessonIds] = useState<Set<string>>(new Set());
 
   const isStudent = user?.role === 'student';
+  const isStaff =
+    user?.role === 'admin' || user?.role === 'supervisor' || user?.role === 'teacher';
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     if (!sectionId) return;
@@ -161,6 +178,104 @@ export default function SectionDetailPage() {
     });
   };
 
+  // Loads enrollments + grades on demand so the student view of this page
+  // stays cheap. Builds one CSV row per enrolled student with: name, código
+  // (user id), progreso (%) and promedio (% of quiz/tarea scores).
+  const handleExportCsv = async () => {
+    if (!section || !sectionId || exporting) return;
+    setExporting(true);
+    try {
+      const enrollments = await sectionService.getEnrollments(sectionId);
+      if (enrollments.length === 0) {
+        alert('No hay estudiantes inscritos en esta sección.');
+        return;
+      }
+
+      const gradedLessonIds: string[] = [];
+      for (const mod of modules) {
+        for (const l of mod.lessons) {
+          if (l.type === 'quiz' || l.type === 'tarea') gradedLessonIds.push(l.id);
+        }
+      }
+
+      const [users, allGrades, allSubmissions] = await Promise.all([
+        Promise.all(enrollments.map(e => firebaseDB.getUserById(e.userId))),
+        gradeService.getByCourse(section.courseId),
+        taskSubmissionService.getAll(),
+      ]);
+      const userMap = new Map(
+        users.filter(Boolean).map(u => [u!.id, { name: u!.name, email: u!.email }]),
+      );
+
+      const rows = enrollments.map(enrollment => {
+        const scores: number[] = [];
+        for (const lessonId of gradedLessonIds) {
+          const g = allGrades.find(
+            x =>
+              x.studentId === enrollment.userId &&
+              x.lessonId === lessonId &&
+              (!x.sectionId || x.sectionId === sectionId),
+          );
+          if (g) {
+            scores.push(g.percentage);
+            continue;
+          }
+          const sub = allSubmissions.find(
+            s =>
+              s.studentId === enrollment.userId &&
+              s.lessonId === lessonId &&
+              (!s.sectionId || s.sectionId === sectionId) &&
+              s.grade,
+          );
+          if (sub?.grade) {
+            scores.push(Math.round((sub.grade.score / sub.grade.maxScore) * 100));
+          }
+        }
+
+        const avg =
+          scores.length > 0
+            ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
+            : null;
+        const progress = Math.round(enrollment.progress ?? 0);
+        const userInfo = userMap.get(enrollment.userId);
+
+        return {
+          nombre: userInfo?.name ?? 'Desconocido',
+          codigo: enrollment.userId,
+          email: userInfo?.email ?? '',
+          progreso: `${progress}%`,
+          tiene_progreso: progress > 0 ? 'Sí' : 'No',
+          promedio: avg !== null ? `${avg}%` : '—',
+          letra: avg !== null ? letterFor(avg) : '—',
+        };
+      });
+
+      rows.sort((a, b) => a.nombre.localeCompare(b.nombre));
+
+      const safeTitle = (section.title || 'seccion').replace(/[^a-z0-9_-]+/gi, '_');
+      exportToCSV(
+        rows,
+        [
+          { key: 'nombre', header: 'Nombre' },
+          { key: 'codigo', header: 'Código de usuario' },
+          { key: 'email', header: 'Email' },
+          { key: 'progreso', header: 'Progreso' },
+          { key: 'tiene_progreso', header: 'Tiene progreso' },
+          { key: 'promedio', header: 'Promedio' },
+          { key: 'letra', header: 'Letra' },
+        ],
+        {
+          filename: `progreso_${safeTitle}_${new Date().toISOString().split('T')[0]}`,
+        },
+      );
+    } catch (err) {
+      console.error('CSV export failed:', err);
+      alert('No se pudo exportar el CSV. Revisa la consola.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -235,6 +350,24 @@ export default function SectionDetailPage() {
               {section.status === 'activa' ? 'En curso' : section.status}
             </span>
           </div>
+
+          {/* Staff-only CSV export */}
+          {isStaff && (
+            <div className="pt-1 flex justify-end">
+              <Button
+                onClick={handleExportCsv}
+                disabled={exporting}
+                className="bg-red-600 hover:bg-red-700 text-white border-0"
+              >
+                {exporting ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4 mr-2" />
+                )}
+                Descargar CSV de progreso
+              </Button>
+            </div>
+          )}
 
           {/* Student progress row */}
           {isStudent && totalLessons > 0 && (

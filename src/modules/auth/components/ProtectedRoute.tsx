@@ -3,7 +3,7 @@ import { Navigate, Outlet } from 'react-router-dom';
 import { useAuthStore } from '../../../app/store/authStore';
 import type { UserRole } from '@shared/types';
 import { Loader2 } from 'lucide-react';
-import { redirectToHubLogin } from '@shared/services/hubAuth';
+import { isLocalAuthMode, redirectToHubLogin } from '@shared/services/hubAuth';
 
 interface ProtectedRouteProps {
   allowedRoles?: UserRole[];
@@ -12,13 +12,17 @@ interface ProtectedRouteProps {
 
 const ProtectedRoute = ({ allowedRoles, children }: ProtectedRouteProps) => {
   const { user, isAuthenticated, isLoading, initialized } = useAuthStore();
+  const localAuth = isLocalAuthMode();
 
   useEffect(() => {
-    if (initialized && !isLoading && !isAuthenticated) {
-      // No local fallback: any unauthenticated access goes back to lasaHUB.
+    if (initialized && !isLoading && !isAuthenticated && !localAuth) {
       redirectToHubLogin();
     }
-  }, [initialized, isLoading, isAuthenticated]);
+  }, [initialized, isLoading, isAuthenticated, localAuth]);
+
+  if (initialized && !isLoading && !isAuthenticated && localAuth) {
+    return <Navigate to="/login" replace />;
+  }
 
   if (isLoading || !initialized || !isAuthenticated) {
     return (

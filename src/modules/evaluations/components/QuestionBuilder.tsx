@@ -12,7 +12,8 @@ import {
   Upload,
   Edit3,
   Trash2,
-  FileText
+  FileText,
+  Sparkles
 } from 'lucide-react';
 import { Button } from '@shared/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@shared/components/ui/Card';
@@ -78,11 +79,17 @@ const QUESTION_TYPES = [
     icon: List, 
     description: 'Secuencia correcta'
   },
-  { 
-    value: 'file_upload', 
-    label: 'Subir Archivo', 
-    icon: Upload, 
+  {
+    value: 'file_upload',
+    label: 'Subir Archivo',
+    icon: Upload,
     description: 'Adjuntar documento'
+  },
+  {
+    value: 'ai_open_answer',
+    label: 'Respuesta Abierta (auto-calificada)',
+    icon: Sparkles,
+    description: 'Texto libre con corrección automática basada en el curso. Solo visible para profesores; el estudiante la ve como respuesta abierta normal.'
   }
 ] as const;
 
@@ -155,6 +162,16 @@ export default function QuestionBuilder({
           newErrors.correctAnswer = 'Debe proporcionar la respuesta correcta';
         }
         break;
+
+      case 'ai_open_answer': {
+        const rubric = questionData.metadata?.rubric?.trim();
+        const concepts = questionData.metadata?.keyConcepts || [];
+        const sample = questionData.metadata?.sampleAnswer?.trim();
+        if (!rubric && concepts.length === 0 && !sample) {
+          newErrors.correctAnswer = 'Provee al menos una rúbrica, conceptos clave o una respuesta de referencia para que la corrección sea consistente.';
+        }
+        break;
+      }
       
       case 'matching':
         if (!questionData.correctAnswer || questionData.correctAnswer.length < 2) {
@@ -431,6 +448,104 @@ export default function QuestionBuilder({
             <p className="text-sm text-gray-600">
               Esta pregunta requiere calificación manual. Proporciona criterios claros para la evaluación.
             </p>
+          </div>
+        );
+
+      case 'ai_open_answer':
+        return (
+          <div className="space-y-4">
+            <div className="flex items-start gap-2 bg-violet-50 border border-violet-200 text-violet-800 rounded-lg p-3 text-sm">
+              <Sparkles className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="font-medium">Calificación automática</p>
+                <p className="text-violet-700">
+                  La respuesta del estudiante será corregida en base al contenido del curso y a los criterios que escribas aquí. El estudiante verá su nota y la retroalimentación, sin saber cómo se calificó. Puedes ajustar la nota manualmente desde la vista de revisión.
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="ai-rubric">Rúbrica / criterios de evaluación</Label>
+              <textarea
+                id="ai-rubric"
+                value={questionData.metadata?.rubric || ''}
+                onChange={(e) => setQuestionData(prev => ({
+                  ...prev,
+                  metadata: { ...prev.metadata, rubric: e.target.value }
+                }))}
+                placeholder="Ej: La respuesta debe explicar el ciclo del agua mencionando evaporación, condensación y precipitación. Penaliza errores conceptuales graves. Premia ejemplos."
+                className={`w-full min-h-[100px] p-3 border rounded-lg ${
+                  errors.correctAnswer ? 'border-red-500' : 'border-gray-300'
+                }`}
+              />
+            </div>
+
+            <div>
+              <Label>Conceptos clave que la respuesta debe cubrir</Label>
+              <div className="flex flex-wrap gap-2 mb-2">
+                {(questionData.metadata?.keyConcepts || []).map((concept) => (
+                  <span
+                    key={concept}
+                    className="inline-flex items-center gap-1 px-2 py-1 bg-violet-100 text-violet-800 text-sm rounded"
+                  >
+                    {concept}
+                    <button
+                      type="button"
+                      onClick={() => setQuestionData(prev => ({
+                        ...prev,
+                        metadata: {
+                          ...prev.metadata,
+                          keyConcepts: (prev.metadata?.keyConcepts || []).filter(c => c !== concept)
+                        }
+                      }))}
+                      className="hover:text-violet-600"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Ej: evaporación"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      const val = (e.currentTarget.value || '').trim();
+                      if (!val) return;
+                      const existing = questionData.metadata?.keyConcepts || [];
+                      if (existing.includes(val)) return;
+                      setQuestionData(prev => ({
+                        ...prev,
+                        metadata: { ...prev.metadata, keyConcepts: [...existing, val] }
+                      }));
+                      e.currentTarget.value = '';
+                    }
+                  }}
+                />
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Presiona Enter para agregar. Estos conceptos guían a la corrección; no se muestran al estudiante.
+              </p>
+            </div>
+
+            <div>
+              <Label htmlFor="ai-sample">Respuesta de referencia (anclaje, opcional)</Label>
+              <textarea
+                id="ai-sample"
+                value={questionData.metadata?.sampleAnswer || ''}
+                onChange={(e) => setQuestionData(prev => ({
+                  ...prev,
+                  metadata: { ...prev.metadata, sampleAnswer: e.target.value }
+                }))}
+                placeholder="Una respuesta ideal contra la cual comparar. Se mantiene oculta para el estudiante."
+                className="w-full min-h-[100px] p-3 border border-gray-300 rounded-lg"
+              />
+            </div>
+
+            {errors.correctAnswer && (
+              <p className="text-red-500 text-sm">{errors.correctAnswer}</p>
+            )}
           </div>
         );
 

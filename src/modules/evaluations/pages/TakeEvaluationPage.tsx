@@ -4,9 +4,19 @@ import { useAuthStore } from '@app/store/authStore';
 import { evaluationService, extensionService } from '@shared/services/dataService';
 import { firebaseDB } from '@shared/services/firebaseDataService';
 import { assessmentService } from '@shared/services/assessmentService';
-import type { Question as ModernQuestion, QuestionOption } from '@shared/types/assessment';
+import type { Question as ModernQuestion, QuestionOption, AnswerGrade } from '@shared/types/assessment';
 import { getExamTimeLimit, getStudentExtension, formatDeadlineDate } from '@shared/utils/deadlines';
 import { logStudent } from '@shared/services/auditLogService';
+import { gradeOpenAnswer, buildCourseContext } from '@shared/services/answerGradingService';
+
+const stripHtml = (html: string): string =>
+  html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 import {
   ArrowLeft,
   ArrowRight,
@@ -22,12 +32,17 @@ import { Button } from '@shared/components/ui/Button';
 
 interface Question {
   id: string;
-  type: 'multiple_choice' | 'true_false' | 'short_answer' | 'essay' | 'matching' | 'ordering';
+  type: 'multiple_choice' | 'true_false' | 'short_answer' | 'essay' | 'matching' | 'ordering' | 'ai_open_answer';
   question: string;
   options?: string[];
   correctAnswer: string | string[] | boolean;
   points: number;
   explanation?: string;
+  // Carried from the modern question — student NEVER sees these fields,
+  // they are only used to feed the auto-grading call.
+  aiRubric?: string;
+  aiKeyConcepts?: string[];
+  aiSampleAnswer?: string;
 }
 
 interface EvaluationData {
@@ -174,7 +189,8 @@ export default function TakeEvaluationPage() {
       'long_answer': 'essay',
       'essay': 'essay',
       'matching': 'matching',
-      'ordering': 'ordering'
+      'ordering': 'ordering',
+      'ai_open_answer': 'ai_open_answer'
     };
 
     return {
@@ -184,7 +200,10 @@ export default function TakeEvaluationPage() {
       options,
       correctAnswer,
       points: q.points,
-      explanation: q.explanation
+      explanation: q.explanation,
+      aiRubric: q.metadata?.rubric,
+      aiKeyConcepts: q.metadata?.keyConcepts,
+      aiSampleAnswer: q.metadata?.sampleAnswer
     };
   };
 
@@ -316,12 +335,12 @@ export default function TakeEvaluationPage() {
   };
 
   const shuffleArray = <T,>(array: T[]): T[] => {
-    const shuffled = [...array];
-    for (let i = shuffled.length - 1; i > 0; i--) {
+    const shuffledArr = [...array];
+    for (let i = shuffledArr.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      [shuffledArr[i], shuffledArr[j]] = [shuffledArr[j], shuffledArr[i]];
     }
-    return shuffled;
+    return shuffledArr;
   };
 
   const formatTime = (seconds: number): string => {
@@ -344,7 +363,7 @@ export default function TakeEvaluationPage() {
 
   const handleSubmit = useCallback(async (forced = false) => {
     if (!evaluation || !user) return;
-    
+
     if (!forced && !confirming) {
       const unanswered = answers.filter(a => a.answer === null).length;
       if (unanswered > 0) {
@@ -352,50 +371,106 @@ export default function TakeEvaluationPage() {
         return;
       }
     }
-    
+
+    // Build a compact course context from the lessons of this course, used to
+    // anchor the auto-grader. We do this once even if there are multiple
+    // ai_open_answer questions in the evaluation. The student never sees that
+    // this fetch happened.
+    let courseContext = '';
+    const hasAiQuestions = evaluation.questions.some(q => q.type === 'ai_open_answer');
+    if (hasAiQuestions) {
+      try {
+        const lessons = await firebaseDB.getLessonsByCourse(evaluation.courseId);
+        courseContext = buildCourseContext(
+          lessons
+            .filter(l => l.status === 'publicado')
+            .sort((a, b) => (a.order || 0) - (b.order || 0))
+            .map(l => ({ title: l.title, content: stripHtml(l.content || l.description || '') })),
+        );
+      } catch (err) {
+        // Best-effort; grader still works with rubric alone
+        console.warn('failed to build course context', err);
+      }
+    }
+
     // Calculate results
     let totalPoints = 0;
     let earnedPoints = 0;
     let correctCount = 0;
-    
-    const resultAnswers = evaluation.questions.map(question => {
+    const aiGrades: Record<string, AnswerGrade> = {};
+
+    const resultPromises = evaluation.questions.map(async question => {
       const userAnswer = answers.find(a => a.questionId === question.id)?.answer;
       let isCorrect = false;
-      
+      let questionEarnedPoints = 0;
+      let explanation = question.explanation;
+
       // Compare answers based on question type
       if (question.type === 'multiple_choice') {
         // For multiple choice, correctAnswer is the index as string
         const correctIndex = parseInt(question.correctAnswer as string);
         const userIndex = userAnswer !== null ? parseInt(userAnswer as string) : -1;
         isCorrect = correctIndex === userIndex;
+        questionEarnedPoints = isCorrect ? question.points : 0;
       } else if (question.type === 'true_false') {
         isCorrect = question.correctAnswer === userAnswer;
+        questionEarnedPoints = isCorrect ? question.points : 0;
       } else if (question.type === 'short_answer') {
         const correct = (question.correctAnswer as string).toLowerCase().trim();
-        const user = (userAnswer as string || '').toLowerCase().trim();
-        isCorrect = correct === user;
+        const u = (userAnswer as string || '').toLowerCase().trim();
+        isCorrect = correct === u;
+        questionEarnedPoints = isCorrect ? question.points : 0;
+      } else if (question.type === 'ai_open_answer') {
+        // Auto-grade against rubric + course context. Student-facing strings
+        // must never reference AI — they're rendered as plain teacher
+        // feedback. The teacher can override later via the review page.
+        const result = await gradeOpenAnswer({
+          question: question.question,
+          studentAnswer: (userAnswer as string) || '',
+          maxPoints: question.points,
+          rubric: question.aiRubric,
+          keyConcepts: question.aiKeyConcepts,
+          sampleAnswer: question.aiSampleAnswer,
+          courseContext,
+        });
+        questionEarnedPoints = result.score;
+        isCorrect = result.normalized >= 0.7;
+        explanation = result.feedback || explanation;
+        aiGrades[question.id] = {
+          questionId: question.id,
+          pointsEarned: result.score,
+          maxPoints: question.points,
+          source: 'ai',
+          studentFeedback: result.feedback,
+          rationale: result.rationale,
+          aiSuggestedPoints: result.score,
+          aiSuggestedFeedback: result.feedback,
+          aiModel: result.model,
+          aiGradedAt: Date.now(),
+        };
       }
       // Essay questions are always marked for manual review
-      
+
       totalPoints += question.points;
-      if (isCorrect) {
-        earnedPoints += question.points;
-        correctCount++;
-      }
-      
+      earnedPoints += questionEarnedPoints;
+      if (isCorrect && question.type !== 'ai_open_answer') correctCount++;
+      if (question.type === 'ai_open_answer' && questionEarnedPoints >= question.points * 0.7) correctCount++;
+
       return {
         questionId: question.id,
         userAnswer: userAnswer ?? null,
         correctAnswer: question.correctAnswer,
         isCorrect,
         points: question.points,
-        earnedPoints: isCorrect ? question.points : 0,
-        explanation: question.explanation
+        earnedPoints: questionEarnedPoints,
+        explanation
       };
     });
-    
+
+    const resultAnswers = await Promise.all(resultPromises);
+
     const percentage = totalPoints > 0 ? Math.round((earnedPoints / totalPoints) * 100) : 0;
-    
+
     const submissionResult: SubmissionResult = {
       score: earnedPoints,
       totalPoints,
@@ -405,7 +480,7 @@ export default function TakeEvaluationPage() {
       totalQuestions: evaluation.questions.length,
       answers: resultAnswers
     };
-    
+
     // Save submission
     const submission = {
       id: `sub_${Date.now()}`,
@@ -413,16 +488,18 @@ export default function TakeEvaluationPage() {
       userId: user.id,
       userName: user.name,
       answers,
+      // Persist per-question grading metadata for teacher review/override
+      ...(Object.keys(aiGrades).length > 0 ? { aiGrades } : {}),
       score: earnedPoints,
       totalPoints,
       percentage,
       passed: submissionResult.passed,
       submittedAt: new Date().toISOString(),
-      timeSpent: evaluation.settings.timeLimit 
-        ? (evaluation.settings.timeLimit * 60) - (timeRemaining || 0) 
+      timeSpent: evaluation.settings.timeLimit
+        ? (evaluation.settings.timeLimit * 60) - (timeRemaining || 0)
         : 0
     };
-    
+
     // Save submission to Firebase
     await evaluationService.createAttempt(submission);
 
@@ -578,7 +655,10 @@ export default function TakeEvaluationPage() {
                             }
                           </span>
                         </p>
-                        {!answer.isCorrect && (
+                        {/* For ai_open_answer there is no single "correct" string — we
+                            show only the teacher-style feedback (which came from the
+                            auto-grader, but the student never knows that). */}
+                        {!answer.isCorrect && question.type !== 'ai_open_answer' && (
                           <p className="text-sm text-green-700 mt-1">
                             Respuesta correcta: {' '}
                             {question.type === 'multiple_choice' && question.options
@@ -689,7 +769,8 @@ export default function TakeEvaluationPage() {
                 {currentQuestion.type === 'multiple_choice' ? 'Opción Múltiple' :
                  currentQuestion.type === 'true_false' ? 'Verdadero/Falso' :
                  currentQuestion.type === 'short_answer' ? 'Respuesta Corta' :
-                 currentQuestion.type === 'essay' ? 'Ensayo' : 'Pregunta'}
+                 currentQuestion.type === 'essay' ? 'Ensayo' :
+                 currentQuestion.type === 'ai_open_answer' ? 'Respuesta Abierta' : 'Pregunta'}
               </span>
               <span className="text-sm text-gray-600">{currentQuestion.points} puntos</span>
             </div>
@@ -778,6 +859,19 @@ export default function TakeEvaluationPage() {
               className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
               rows={6}
               placeholder="Desarrolla tu respuesta..."
+            />
+          )}
+
+          {/* AI-graded open answer — renders identically to a normal open
+              answer. The student must not know it is auto-graded; the label
+              above shows "Respuesta abierta" and there are no AI references. */}
+          {currentQuestion.type === 'ai_open_answer' && (
+            <textarea
+              value={(currentAnswer as string) || ''}
+              onChange={e => handleAnswerChange(currentQuestion.id, e.target.value)}
+              className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              rows={8}
+              placeholder="Escribe tu respuesta con tus propias palabras..."
             />
           )}
         </CardContent>

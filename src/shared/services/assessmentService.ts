@@ -379,10 +379,14 @@ class AssessmentService {
       case 'long_answer':
       case 'essay':
       case 'file_upload':
-        // These require manual grading
-        return { 
-          points: 0, 
-          isCorrect: false 
+      case 'ai_open_answer':
+        // long_answer/essay/file_upload need manual review here. The
+        // ai_open_answer flow is scored at submission time by the take page
+        // calling the /ai/grade-answer endpoint, and persisted in
+        // attempt.aiGrades — not through this synchronous path.
+        return {
+          points: 0,
+          isCorrect: false
         };
 
       default:

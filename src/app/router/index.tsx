@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { useAuthStore } from '@app/store/authStore';
-import { redirectToHubLogin } from '@shared/services/hubAuth';
+import { isLocalAuthMode, redirectToHubLogin } from '@shared/services/hubAuth';
 import {
   MainLayout,
   ProtectedRoute,
@@ -13,22 +13,28 @@ import {
   UsersPage,
   OrganizationPage,
   CoursesPage,
-  CommunicationPage
+  CommunicationPage,
+  LoginPage,
+  RegisterPage,
+  RecoveryPage
 } from '@/pages';
 
-// All login-adjacent paths bounce straight to lasaHUB. lasaedu has no local
-// login UI by design — the hub is the single source of truth for auth.
+// In hub mode, all login-adjacent paths bounce to lasaHUB. With local auth
+// enabled, the legacy in-app login UI takes over instead.
 const HubRedirect = () => {
   useEffect(() => {
     redirectToHubLogin();
   }, []);
   return null;
 };
+
+const localAuth = isLocalAuthMode();
 import CourseDetailPage from '@modules/courses/pages/CourseDetailPage';
 import LessonViewPage from '@modules/courses/pages/LessonViewPage';
 import LessonBuilderPage from '@modules/courses/pages/LessonBuilderPage';
 import EvaluationBuilderPage from '@modules/evaluations/pages/EvaluationBuilderPage';
 import TakeEvaluationPage from '@modules/evaluations/pages/TakeEvaluationPage';
+import EvaluationAttemptsPage from '@modules/evaluations/pages/EvaluationAttemptsPage';
 import GradesPage from '@modules/grades/pages/GradesPage';
 import CertificatesPage from '@modules/certificates/pages/CertificatesPage';
 import SupportPage from '@modules/support/pages/SupportPage';
@@ -54,34 +60,17 @@ import QuizPopupPage from '@modules/courses/pages/QuizPopupPage';
 // AI assistant (admin-only content editor)
 import AIAssistantPage from '@modules/ai-assistant/pages/AIAssistantPage';
 
-// Componente para página no encontrada
-const NotFoundPage = () => (
-  <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50">
-    <h1 className="text-6xl font-bold text-gray-300">404</h1>
-    <p className="text-xl text-gray-600 mt-4">Página no encontrada</p>
-    <a href="/dashboard" className="mt-6 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">
-      Volver al inicio
-    </a>
-  </div>
-);
-
-// Componente para acceso no autorizado
-const UnauthorizedPage = () => (
-  <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50">
-    <h1 className="text-6xl font-bold text-red-300">403</h1>
-    <p className="text-xl text-gray-600 mt-4">No tienes permiso para acceder a esta página</p>
-    <a href="/dashboard" className="mt-6 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">
-      Volver al inicio
-    </a>
-  </div>
-);
+// Branded error pages
+import NotFoundPage from '@modules/errors/pages/NotFoundPage';
+import UnauthorizedPage from '@modules/errors/pages/UnauthorizedPage';
+import ServerErrorPage from '@modules/errors/pages/ServerErrorPage';
 
 // Componente para redirigir al dashboard apropiado según el rol
 const DashboardRedirect = () => {
   const { user, isAuthenticated } = useAuthStore();
 
   if (!isAuthenticated || !user) {
-    return <HubRedirect />;
+    return localAuth ? <Navigate to="/login" replace /> : <HubRedirect />;
   }
 
   switch (user.role) {
@@ -96,15 +85,16 @@ const DashboardRedirect = () => {
     case 'support':
       return <SupportDashboard />;
     default:
-      return <HubRedirect />;
+      return localAuth ? <Navigate to="/login" replace /> : <HubRedirect />;
   }
 };
 
 export const router = createBrowserRouter([
-  // Local auth routes are retired — bounce all of them to the hub.
-  { path: '/login', element: <HubRedirect /> },
-  { path: '/register', element: <HubRedirect /> },
-  { path: '/recovery', element: <HubRedirect /> },
+  // Login UI is rendered locally only when VITE_LOCAL_AUTH is set; otherwise
+  // these paths bounce to lasaHUB.
+  { path: '/login', element: localAuth ? <LoginPage /> : <HubRedirect /> },
+  { path: '/register', element: localAuth ? <RegisterPage /> : <HubRedirect /> },
+  { path: '/recovery', element: localAuth ? <RecoveryPage /> : <HubRedirect /> },
   // Quiz popup — standalone window, no MainLayout
   {
     path: '/quiz/:sectionId/:lessonId',
@@ -121,6 +111,7 @@ export const router = createBrowserRouter([
         <MainLayout />
       </ProtectedRoute>
     ),
+    errorElement: <ServerErrorPage />,
     children: [
       {
         index: true,
@@ -240,6 +231,14 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute allowedRoles={['student']}>
             <TakeEvaluationPage />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: 'evaluations/:evaluationId/attempts',
+        element: (
+          <ProtectedRoute allowedRoles={['admin', 'supervisor', 'teacher']}>
+            <EvaluationAttemptsPage />
           </ProtectedRoute>
         )
       },
