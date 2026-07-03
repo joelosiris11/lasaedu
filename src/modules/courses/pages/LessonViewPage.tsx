@@ -738,7 +738,7 @@ export default function LessonViewPage() {
                             attempt.passed ? 'text-green-600' : 'text-red-600'
                           }`}
                         >
-                          {attempt.percentage}% ({attempt.score}/{attempt.maxScore})
+                          {attempt.percentage}%
                         </span>
                       </div>
                     ))}

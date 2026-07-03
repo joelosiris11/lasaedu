@@ -1,0 +1,19 @@
+[Unit]
+Description=MinIO object storage (LasaEdu)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=lasaedu
+Group=lasaedu
+# Ruta del binario y del directorio de datos (ajústalas al VPS)
+Environment=MINIO_ROOT_USER=CHANGE_ME
+Environment=MINIO_ROOT_PASSWORD=CHANGE_ME_STRONG
+ExecStart=/usr/local/bin/minio server /var/lasaacademy/minio --address 127.0.0.1:9000 --console-address 127.0.0.1:9001
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

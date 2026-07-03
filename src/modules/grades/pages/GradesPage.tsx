@@ -298,10 +298,9 @@ function StudentEvalRow({
             </div>
 
             <div className="text-right">
-              <p className={`text-sm font-bold tabular-nums ${getGradeColor(grade.percentage)}`}>
-                {grade.score}/{grade.maxPoints}
+              <p className={`text-base font-bold tabular-nums ${getGradeColor(grade.percentage)}`}>
+                {pct}%
               </p>
-              <p className="text-[10px] text-gray-400">{pct}%</p>
             </div>
           </>
         )}
@@ -536,9 +535,8 @@ function StudentDetailModal({
                       {/* Score text */}
                       <div className="shrink-0 text-right">
                         <span className={`text-sm font-bold tabular-nums ${getGradeColor(pct)}`}>
-                          {gradeItem.score}/{gradeItem.maxPoints}
+                          {pct}%
                         </span>
-                        <span className="text-[10px] text-gray-400 ml-1.5">{pct}%</span>
                       </div>
                     </div>
                   )}
@@ -874,25 +872,49 @@ export default function GradesPage() {
       );
 
       // ── Evaluations ──────────────────────────────────────────────────────────
-      const allEvaluations = await evaluationService.getAll();
-      const filteredEvals = allEvaluations
-        .filter(e => e.courseId === courseId)
-        .filter(e => !excludedLessonIds.has(e.id));
-      const evalItems: Evaluation[] = filteredEvals.map(e => {
-        const maxPoints = Array.isArray(e.questions) && e.questions.length > 0
-          ? e.questions.reduce((sum: number, q: any) => sum + (q.points || 0), 0) || 100
+      // En este modelo los quizzes SON lecciones (type='quiz'); la colección
+      // `evaluations` está vacía. Los intentos referencian la lección-quiz por id
+      // (attempt.evaluationId === lesson.id), así que las evaluaciones se derivan
+      // de las lecciones-quiz. Si existieran evaluaciones en la colección, se suman.
+      const quizLessons = courseLessons.filter(
+        (l) => l.type === 'quiz' && !excludedLessonIds.has(l.id)
+      );
+      const evalFromLessons: Evaluation[] = quizLessons.map((l) => {
+        const qs = (l.settings as any)?.questions ?? (l as any).questions ?? (l.content as any)?.questions;
+        const maxPoints = Array.isArray(qs) && qs.length > 0
+          ? qs.reduce((sum: number, q: any) => sum + (q.points || 0), 0) || 100
           : 100;
         return {
-          id: e.id,
-          title: e.title,
-          courseId: e.courseId,
-          type: e.type as 'quiz' | 'tarea' | 'examen' | 'proyecto',
+          id: l.id,
+          title: l.title,
+          courseId,
+          type: 'quiz' as const,
           maxPoints,
           weight: 0,
           source: 'evaluation' as const,
-          dueDate: e.dueDate,
+          dueDate: (l.settings as any)?.dueDate,
         };
       });
+      const allEvaluations = await evaluationService.getAll();
+      const extraEvals: Evaluation[] = allEvaluations
+        .filter((e) => e.courseId === courseId && !excludedLessonIds.has(e.id))
+        .filter((e) => !evalFromLessons.some((x) => x.id === e.id))
+        .map((e) => {
+          const maxPoints = Array.isArray(e.questions) && e.questions.length > 0
+            ? e.questions.reduce((sum: number, q: any) => sum + (q.points || 0), 0) || 100
+            : 100;
+          return {
+            id: e.id,
+            title: e.title,
+            courseId: e.courseId,
+            type: e.type as 'quiz' | 'tarea' | 'examen' | 'proyecto',
+            maxPoints,
+            weight: 0,
+            source: 'evaluation' as const,
+            dueDate: e.dueDate,
+          };
+        });
+      const evalItems: Evaluation[] = [...evalFromLessons, ...extraEvals];
 
       // ── Task submissions ──────────────────────────────────────────────────────
       const allTaskSubmissions = await taskSubmissionService.getAll();
@@ -999,9 +1021,13 @@ export default function GradesPage() {
       // ── Grade aggregation ─────────────────────────────────────────────────────
       const grades: StudentGrade[] = students.map(student => {
         const studentEvaluations = courseEvaluations.map(evaluation => {
-          const submission = allSubmissions.find(
+          // Mejor intento del estudiante para esa evaluación (no el primero).
+          const matching = allSubmissions.filter(
             s => s.evaluationId === evaluation.id && s.userId === student.id
           );
+          const submission = matching.length
+            ? matching.reduce((best, s) => ((s.percentage ?? 0) > (best.percentage ?? 0) ? s : best))
+            : undefined;
 
           return {
             evaluationId: evaluation.id,
@@ -1078,7 +1104,7 @@ export default function GradesPage() {
       grade.studentName,
       grade.studentEmail ?? '',
       grade.sectionTitle ?? '',
-      ...grade.evaluations.map(e => e.score !== null ? `${e.score}/${e.maxPoints}` : '-'),
+      ...grade.evaluations.map(e => e.percentage !== null ? `${e.percentage}%` : '-'),
       `${grade.totalScore}/${grade.totalMaxPoints}`,
       `${grade.overallPercentage}%`
     ]);
@@ -1234,6 +1260,33 @@ export default function GradesPage() {
 
   return (
     <div className="px-4 sm:px-6 pt-2 pb-6 space-y-3 sm:space-y-4">
+
+      {/* ── Course switcher — por curso (admin/profe) ── */}
+      {courses.length > 1 && (
+        <div className="border-b border-gray-200 -mx-4 sm:-mx-6 px-4 sm:px-6 overflow-x-auto">
+          <div className="flex items-stretch gap-1 min-w-max">
+            {courses.map(course => {
+              const active = course.id === selectedCourseId;
+              return (
+                <button
+                  key={course.id}
+                  onClick={() => { setSelectedCourseId(course.id); setSelectedSectionId('all'); }}
+                  className={`relative px-4 py-3 text-sm font-medium whitespace-nowrap transition-colors focus-visible:outline-none ${
+                    active ? 'text-red-700' : 'text-gray-500 hover:text-gray-800'
+                  }`}
+                >
+                  {course.title}
+                  <span
+                    className={`absolute left-3 right-3 -bottom-px h-0.5 rounded-full transition-colors ${
+                      active ? 'bg-red-600' : 'bg-transparent'
+                    }`}
+                  />
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* ── KPI strip ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">

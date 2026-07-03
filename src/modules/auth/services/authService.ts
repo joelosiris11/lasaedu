@@ -10,6 +10,7 @@ import {
 import { auth } from '@app/config/firebase';
 import { firebaseDB } from '@shared/services/firebaseDataService';
 import { storage } from '@shared/utils/storage';
+import { apiAuthService } from './apiAuthService';
 import type { User, UserRole } from '@shared/types';
 
 export interface LoginCredentials {
@@ -24,7 +25,7 @@ export interface RegisterData {
   role: UserRole;
 }
 
-export const authService = {
+const firebaseAuthService = {
   /**
    * Login with email and password using Firebase Auth
    */
@@ -248,3 +249,9 @@ export const authService = {
     return auth.currentUser;
   }
 };
+
+// Conmutador: 'api' → backend self-host JWT; otro → Firebase Auth (original).
+const USE_API_BACKEND = import.meta.env.VITE_BACKEND === 'api';
+export const authService = (
+  USE_API_BACKEND ? apiAuthService : firebaseAuthService
+) as unknown as typeof firebaseAuthService;

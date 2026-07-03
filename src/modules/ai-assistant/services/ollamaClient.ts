@@ -1,7 +1,7 @@
 import { TOOL_DECLARATIONS, executeTool } from './tools';
 import { DEFAULT_SYSTEM_PROMPT } from './defaultPrompt';
 import type { ToolCallRecord } from '../types';
-import { auth } from '@app/config/firebase';
+import { getBackendToken, mediaBase } from '@shared/services/apiClient';
 
 // ─── Message shape (Ollama /api/chat) ──────────────────────────────────
 //
@@ -52,11 +52,9 @@ function getProxyUrl(override?: string): string {
   if (override) return override;
   const explicit = import.meta.env.VITE_AI_PROXY_URL as string | undefined;
   if (explicit) return explicit;
-  // Reuse the file-server URL by default — the AI proxy lives in the same
-  // backend. In dev VITE_FILE_SERVER_URL is empty, so we fall through to a
-  // same-origin path that Vite proxies to the file-server.
-  const base = (import.meta.env.VITE_FILE_SERVER_URL as string | undefined) ?? '';
-  return `${base.replace(/\/+$/, '')}/ai/chat`;
+  // El proxy de IA vive en el mismo backend (file-server en modo Firebase,
+  // backend nuevo en modo API). mediaBase() resuelve cuál según VITE_BACKEND.
+  return `${mediaBase()}/ai/chat`;
 }
 
 function getModelName(override?: string): string {
@@ -102,7 +100,7 @@ async function* streamChat(
   // Auth with the user's Firebase ID token — the server proxy verifies it and
   // checks the admin role before forwarding to Ollama Cloud. The Ollama API
   // key never reaches the browser.
-  const idToken = await auth.currentUser?.getIdToken().catch(() => '');
+  const idToken = await getBackendToken();
   const res = await fetch(config.proxyUrl, {
     method: 'POST',
     headers: {
@@ -185,8 +183,11 @@ export async function runTurn(
     { role: 'user', content: message },
   ];
 
-  // Safety: hard cap in case the model loops on tool calls.
-  const MAX_ITERATIONS = 8;
+  // Safety: hard cap in case the model loops on tool calls. Bulk operations
+  // (e.g. regenerating every image in a course: read tree → read each lesson →
+  // generate image → update lesson, per item) legitimately need many rounds,
+  // so this is generous. The model is told to confirm/chunk very large jobs.
+  const MAX_ITERATIONS = 24;
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     let turnText = '';

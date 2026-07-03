@@ -6,6 +6,7 @@ import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { ToastContainer } from '@shared/components/ui/Toast';
 import { ChangeCredentialModal } from './ChangeCredentialModal';
+import { FloatingChatWidget } from '@modules/ai-assistant/components/FloatingChatWidget';
 
 interface MainLayoutProps {
   children?: ReactNode;
@@ -41,6 +42,9 @@ const MainLayout = ({ children }: MainLayoutProps) => {
       </div>
 
       <ToastContainer />
+
+      {/* Global admin-only assistant (gating lives inside the widget) */}
+      <FloatingChatWidget />
 
       {mustChangePassword && <ChangeCredentialModal />}
     </div>

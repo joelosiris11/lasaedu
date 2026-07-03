@@ -77,6 +77,16 @@ export default function SectionGradesPage() {
           taskSubmissionService.getAll(),
         ]);
 
+        // Las notas de QUIZ viven en evaluation_attempts (los quizzes son
+        // lecciones type='quiz'; attempt.evaluationId === lesson.id). Sin esto,
+        // el profe no ve la calificación del quiz.
+        const quizIds = lessons.filter((l) => l.type === 'quiz').map((l) => l.id);
+        const attemptLists = await Promise.all(
+          quizIds.map((id) => firebaseDB.getAttemptsByEvaluation(id).catch(() => []))
+        );
+        const attemptsByLesson = new Map<string, any[]>();
+        quizIds.forEach((id, i) => attemptsByLesson.set(id, attemptLists[i] || []));
+
         // Get user info
         const userIds = enrollments.map(e => e.userId);
         const users = await Promise.all(userIds.map(id => firebaseDB.getUserById(id)));
@@ -98,13 +108,32 @@ export default function SectionGradesPage() {
               grades.set(lesson.id, grade.percentage);
               continue;
             }
-            // Check submissions
+            // Check submissions (tareas)
             const sub = allSubmissions.find(
               s => s.studentId === enrollment.userId && s.lessonId === lesson.id &&
                 (!s.sectionId || s.sectionId === sectionId) && s.grade
             );
             if (sub?.grade) {
               grades.set(lesson.id, Math.round((sub.grade.score / sub.grade.maxScore) * 100));
+              continue;
+            }
+            // Quiz: mejor intento del estudiante (evaluation_attempts)
+            if (lesson.type === 'quiz') {
+              const atts = (attemptsByLesson.get(lesson.id) || []).filter(
+                (a: any) => a.userId === enrollment.userId
+              );
+              if (atts.length > 0) {
+                const best = Math.max(
+                  ...atts.map((a: any) =>
+                    typeof a.percentage === 'number'
+                      ? a.percentage
+                      : a.maxScore
+                        ? Math.round(((a.score ?? 0) / a.maxScore) * 100)
+                        : 0
+                  )
+                );
+                grades.set(lesson.id, best);
+              }
             }
           }
 

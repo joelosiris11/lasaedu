@@ -169,7 +169,7 @@ export default function ReportsPage() {
     if (!reportData) return;
 
     const report = `
-REPORTE DE LA PLATAFORMA LASAEDU
+REPORTE DE LA PLATAFORMA LASA ACADEMY
 ================================
 Fecha: ${new Date().toLocaleDateString('es-ES', { 
   year: 'numeric', month: 'long', day: 'numeric' 
@@ -202,7 +202,7 @@ ${reportData.topCourses.map((c, i) => `${i + 1}. ${c.title} - ${c.enrollments} i
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `reporte_lasaedu_${new Date().toISOString().split('T')[0]}.txt`;
+    a.download = `reporte_lasaacademy_${new Date().toISOString().split('T')[0]}.txt`;
     a.click();
     window.URL.revokeObjectURL(url);
   };

@@ -22,7 +22,7 @@ export default function RegisterPage() {
         </CardHeader>
         <CardContent className="text-center">
           <p className="text-gray-600 mb-4">
-            LasaEdu es una plataforma educativa empresarial. Los usuarios son creados
+            Lasa Academy es una plataforma educativa empresarial. Los usuarios son creados
             exclusivamente por el administrador del sistema.
           </p>
           <p className="text-sm text-gray-500">

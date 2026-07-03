@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { certificateService } from '@shared/services/dataService';
+import { apiBase } from '@shared/services/apiClient';
 import {
   Award,
   CheckCircle,
@@ -52,11 +52,10 @@ export default function VerifyCertificatePage() {
     }
 
     try {
-      // Search by credential ID
-      const certificates = await certificateService.getAll();
-      const certificate = certificates.find(
-        (c: any) => c.credentialId === certificateId || c.id === certificateId
-      ) as any;
+      // Verificación PÚBLICA (sin login) contra la DB: sólo devuelve este cert.
+      const resp = await fetch(`${apiBase}/public/verify/${encodeURIComponent(certificateId)}`);
+      const data = await resp.json();
+      const certificate = data?.found ? { ...data.certificate, isRevoked: data.revoked } : null;
 
       if (!certificate) {
         setVerification({
@@ -140,7 +139,7 @@ export default function VerifyCertificatePage() {
           </div>
           <h1 className="text-2xl font-bold text-gray-900">Verificación de Certificado</h1>
           <p className="text-gray-600 mt-2">
-            Sistema de verificación de credenciales de LasaEdu
+            Sistema de verificación de credenciales de Lasa Academy
           </p>
         </div>
 
@@ -174,7 +173,7 @@ export default function VerifyCertificatePage() {
               </h2>
               <p className="text-white/90">
                 {verification?.isValid
-                  ? 'Este certificado es auténtico y fue emitido por LasaEdu'
+                  ? 'Este certificado es auténtico y fue emitido por Lasa Academy'
                   : verification?.error
                 }
               </p>
@@ -258,12 +257,12 @@ export default function VerifyCertificatePage() {
               <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div className="text-sm text-gray-500 text-center sm:text-left">
                   <p>Verificación realizada el {new Date().toLocaleDateString('es-ES')}</p>
-                  <p>Sistema de Certificación LasaEdu - T-Eco Group</p>
+                  <p>Sistema de Certificación Lasa Academy - T-Eco Group</p>
                 </div>
                 <Link to="/login">
                   <Button variant="outline">
                     <ArrowLeft className="w-4 h-4 mr-2" />
-                    Ir a LasaEdu
+                    Ir a Lasa Academy
                   </Button>
                 </Link>
               </div>
@@ -277,7 +276,7 @@ export default function VerifyCertificatePage() {
             ¿Tienes preguntas sobre la verificación de certificados?
           </p>
           <p>
-            Contacta al soporte de LasaEdu o visita nuestra{' '}
+            Contacta al soporte de Lasa Academy o visita nuestra{' '}
             <a href="/help" className="text-blue-600 hover:underline">
               página de ayuda
             </a>

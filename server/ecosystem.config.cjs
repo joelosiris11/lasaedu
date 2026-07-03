@@ -35,5 +35,23 @@ module.exports = {
         // or through `npm run deploy`.
       },
     },
+    {
+      // Backend self-host nuevo (Postgres + JWT + MinIO). Lee server/.env
+      // (PG*, JWT_SECRET, AUTH_SCRYPT_*, MINIO_*, OLLAMA/GEMINI, SMTP_*).
+      name: 'lasaacademy-api',
+      script: './api.mjs',
+      cwd: __dirname,
+      instances: 1,
+      exec_mode: 'fork',
+      watch: false,
+      autorestart: true,
+      max_memory_restart: '512M',
+      merge_logs: true,
+      out_file: './logs/api-out.log',
+      error_file: './logs/api-err.log',
+      time: true,
+      env: { NODE_ENV: 'development' },
+      env_production: { NODE_ENV: 'production' },
+    },
   ],
 };

@@ -23,6 +23,7 @@ import EvaluationBuilderPage from '@modules/evaluations/pages/EvaluationBuilderP
 import TakeEvaluationPage from '@modules/evaluations/pages/TakeEvaluationPage';
 import GradesPage from '@modules/grades/pages/GradesPage';
 import CertificatesPage from '@modules/certificates/pages/CertificatesPage';
+import VerifyCertificatePage from '@modules/certificates/pages/VerifyCertificatePage';
 import SupportPage from '@modules/support/pages/SupportPage';
 import SettingsPage from '@modules/settings/pages/SettingsPage';
 
@@ -104,6 +105,11 @@ export const router = createBrowserRouter([
   {
     path: '/recovery',
     element: <RecoveryPage />
+  },
+  // Verificación pública de certificados (QR) — SIN login
+  {
+    path: '/verify/:certificateId',
+    element: <VerifyCertificatePage />
   },
   // Quiz popup — standalone window, no MainLayout
   {

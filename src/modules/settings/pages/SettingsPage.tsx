@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuthStore } from '@app/store/authStore';
-import { userService } from '@shared/services/dataService';
+import { userService, courseService, certificateService } from '@shared/services/dataService';
+import { certificateGenerator } from '@shared/services/certificateGeneratorNew';
 // import { firebaseDB } from '@shared/services/firebaseDataService';
 import { 
   User,
@@ -17,7 +18,8 @@ import {
   Eye,
   EyeOff,
   Check,
-  AlertCircle
+  AlertCircle,
+  Award
 } from 'lucide-react';
 import { Card, CardContent } from '@shared/components/ui/Card';
 import { Button } from '@shared/components/ui/Button';
@@ -50,9 +52,71 @@ interface UserProfile {
 
 export default function SettingsPage() {
   const { user, setUser } = useAuthStore();
-  const [activeTab, setActiveTab] = useState<'profile' | 'security' | 'notifications' | 'preferences'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'security' | 'notifications' | 'preferences' | 'certificates'>('profile');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // ── Emisión manual de certificados (solo admin) ──────────────────────────
+  const isAdmin = user?.role === 'admin';
+  const [certStudents, setCertStudents] = useState<any[]>([]);
+  const [certCourses, setCertCourses] = useState<any[]>([]);
+  const [certForm, setCertForm] = useState({ studentId: '', courseId: '', hours: '', grade: '', completionDate: '' });
+  const [issuing, setIssuing] = useState(false);
+  const [issued, setIssued] = useState<{ credentialId: string; verifyUrl: string; student: string; course: string } | null>(null);
+
+  useEffect(() => {
+    if (activeTab !== 'certificates' || !isAdmin) return;
+    if (certStudents.length || certCourses.length) return;
+    (async () => {
+      try {
+        const [us, cs] = await Promise.all([userService.getAll(), courseService.getAll()]);
+        setCertStudents((us as any[]).filter((u) => u.role === 'student').sort((a, b) => (a.name || '').localeCompare(b.name || '')));
+        setCertCourses((cs as any[]).sort((a, b) => (a.title || '').localeCompare(b.title || '')));
+      } catch (e) {
+        console.error('Error cargando datos para certificados:', e);
+        setMessage({ type: 'error', text: 'No se pudieron cargar estudiantes/cursos.' });
+      }
+    })();
+  }, [activeTab, isAdmin, certStudents.length, certCourses.length]);
+
+  const handleIssueCertificate = async () => {
+    const student = certStudents.find((s) => s.id === certForm.studentId);
+    const course = certCourses.find((c) => c.id === certForm.courseId);
+    if (!student || !course) {
+      setMessage({ type: 'error', text: 'Elige un estudiante y un curso.' });
+      return;
+    }
+    setIssuing(true);
+    setMessage(null);
+    setIssued(null);
+    try {
+      const credentialId = certificateGenerator.generateCertificateNumber();
+      const verifyUrl = `${window.location.origin}/verify/${credentialId}`;
+      await certificateService.create({
+        courseId: course.id,
+        userId: student.id,
+        courseName: course.title,
+        studentName: student.name,
+        instructorName: course.instructor || '',
+        completionDate: (certForm.completionDate ? new Date(certForm.completionDate) : new Date()).toISOString(),
+        hours: certForm.hours ? Number(certForm.hours) : undefined,
+        grade: certForm.grade ? Number(certForm.grade) : undefined,
+        credentialId,
+        verificationUrl: verifyUrl,
+        templateId: 'default',
+        status: 'generated',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      } as any);
+      setIssued({ credentialId, verifyUrl, student: student.name, course: course.title });
+      setMessage({ type: 'success', text: `Certificado emitido para ${student.name} en "${course.title}".` });
+      setCertForm({ studentId: '', courseId: '', hours: '', grade: '', completionDate: '' });
+    } catch (e: any) {
+      setMessage({ type: 'error', text: e.message || 'No se pudo emitir el certificado.' });
+    } finally {
+      setIssuing(false);
+    }
+  };
   
   // Profile form state
   const [profile, setProfile] = useState<UserProfile>({
@@ -200,7 +264,8 @@ export default function SettingsPage() {
     { id: 'profile' as const, label: 'Perfil', icon: User },
     { id: 'security' as const, label: 'Seguridad', icon: Lock },
     { id: 'notifications' as const, label: 'Notificaciones', icon: Bell },
-    { id: 'preferences' as const, label: 'Preferencias', icon: Palette }
+    { id: 'preferences' as const, label: 'Preferencias', icon: Palette },
+    ...(isAdmin ? [{ id: 'certificates' as const, label: 'Certificados', icon: Award }] : []),
   ];
 
   return (
@@ -703,6 +768,110 @@ export default function SettingsPage() {
                   <Button onClick={savePrivacy} disabled={saving}>
                     <Save className="h-4 w-4 mr-2" />
                     {saving ? 'Guardando...' : 'Guardar Preferencias'}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Certificates Tab (admin) */}
+          {activeTab === 'certificates' && isAdmin && (
+            <Card>
+              <CardContent className="p-6">
+                <h2 className="text-lg font-semibold mb-1 flex items-center">
+                  <Award className="h-5 w-5 mr-2 text-red-600" />
+                  Emitir certificado
+                </h2>
+                <p className="text-sm text-gray-500 mb-6">
+                  Emite un certificado a un estudiante manualmente, sin pasar por la validación
+                  automática de notas. Úsalo para casos especiales.
+                </p>
+
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="certStudent">Estudiante</Label>
+                    <select
+                      id="certStudent"
+                      className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:ring-red-500"
+                      value={certForm.studentId}
+                      onChange={(e) => setCertForm({ ...certForm, studentId: e.target.value })}
+                    >
+                      <option value="">Selecciona un estudiante…</option>
+                      {certStudents.map((s) => (
+                        <option key={s.id} value={s.id}>{s.name} — {s.email}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="certCourse">Curso</Label>
+                    <select
+                      id="certCourse"
+                      className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:ring-red-500"
+                      value={certForm.courseId}
+                      onChange={(e) => setCertForm({ ...certForm, courseId: e.target.value })}
+                    >
+                      <option value="">Selecciona un curso…</option>
+                      {certCourses.map((c) => (
+                        <option key={c.id} value={c.id}>{c.title}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <Label htmlFor="certHours">Carga horaria (horas)</Label>
+                      <Input
+                        id="certHours"
+                        type="number"
+                        min={0}
+                        placeholder="Ej. 40"
+                        value={certForm.hours}
+                        onChange={(e) => setCertForm({ ...certForm, hours: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="certGrade">Nota (opcional, 0–100)</Label>
+                      <Input
+                        id="certGrade"
+                        type="number"
+                        min={0}
+                        max={100}
+                        placeholder="Ej. 95"
+                        value={certForm.grade}
+                        onChange={(e) => setCertForm({ ...certForm, grade: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="certDate">Fecha de finalización (opcional)</Label>
+                      <Input
+                        id="certDate"
+                        type="date"
+                        value={certForm.completionDate}
+                        onChange={(e) => setCertForm({ ...certForm, completionDate: e.target.value })}
+                      />
+                    </div>
+                  </div>
+
+                  {issued && (
+                    <div className="p-4 rounded-lg bg-green-50 border border-green-200 text-sm text-green-800">
+                      <p className="font-medium">Certificado emitido ✔</p>
+                      <p className="mt-1">{issued.student} — {issued.course}</p>
+                      <p className="mt-1">Credencial: <span className="font-mono">{issued.credentialId}</span></p>
+                      <p className="mt-1">
+                        Verificación:{' '}
+                        <a href={issued.verifyUrl} target="_blank" rel="noreferrer" className="underline break-all">
+                          {issued.verifyUrl}
+                        </a>
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-6 flex justify-end">
+                  <Button onClick={handleIssueCertificate} disabled={issuing || !certForm.studentId || !certForm.courseId}>
+                    <Award className="h-4 w-4 mr-2" />
+                    {issuing ? 'Emitiendo…' : 'Emitir certificado'}
                   </Button>
                 </div>
               </CardContent>

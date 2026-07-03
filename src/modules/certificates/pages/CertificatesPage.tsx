@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuthStore } from '@app/store/authStore';
 import {
   courseService,
@@ -11,6 +11,7 @@ import { firebaseDB } from '@shared/services/firebaseDataService';
 import { logStudent } from '@shared/services/auditLogService';
 import { certificateGenerator } from '@shared/services/certificateGeneratorNew';
 import type { CertificateData } from '@shared/services/certificateGeneratorNew';
+import { apiBase } from '@shared/services/apiClient';
 import { Download, Award, Calendar, User, Clock, AlertTriangle } from 'lucide-react';
 import { Button } from '@shared/components/ui/Button';
 
@@ -307,6 +308,7 @@ export default function CertificatesPage() {
   const [loading, setLoading] = useState(true);
   const [completedCourses, setCompletedCourses] = useState<CourseCompletion[]>([]);
   const [generating, setGenerating] = useState<string | null>(null);
+  const loadingRef = useRef(false); // evita auto-emisión duplicada por doble render
 
   useEffect(() => {
     loadCompletedCourses();
@@ -315,6 +317,8 @@ export default function CertificatesPage() {
 
   const loadCompletedCourses = async () => {
     if (!user?.id) return;
+    if (loadingRef.current) return; // ya hay una carga en curso → no dupliques
+    loadingRef.current = true;
     setLoading(true);
     try {
       const userEnrollments = await legacyEnrollmentService.getByUser(user.id);
@@ -387,7 +391,14 @@ export default function CertificatesPage() {
       console.error('Error loading completed courses:', error);
     } finally {
       setLoading(false);
+      loadingRef.current = false;
     }
+  };
+
+  // Descarga el PDF oficial (diseño + QR, verificable) generado por el servidor.
+  const downloadServerCertificate = (credentialId?: string) => {
+    if (!credentialId) { alert('Este certificado no tiene una credencial válida.'); return; }
+    window.open(`${apiBase}/public/certificate/${encodeURIComponent(credentialId)}/pdf`, '_blank');
   };
 
   const generateCertificate = async (completion: CourseCompletion) => {
@@ -401,29 +412,30 @@ export default function CertificatesPage() {
     }
     setGenerating(completion.courseId);
     try {
-      const certificateData: CertificateData = {
-        id: `cert_${Date.now()}`,
-        userId: user.id,
-        userName: user.name,
-        courseId: completion.courseId,
-        courseTitle: completion.courseTitle,
-        instructorName: completion.instructorName,
-        completedAt: completion.completedAt,
-        score: completion.score,
-        hours: completion.hours,
-        certificateNumber: certificateGenerator.generateCertificateNumber(),
-      };
-
-      await certificateGenerator.downloadCertificate(certificateData);
-
+      const credentialId = certificateGenerator.generateCertificateNumber();
       const saved = await certificateService.create({
-        ...certificateData,
+        courseId: completion.courseId,
+        userId: user.id,
+        courseName: completion.courseTitle,
+        studentName: user.name,
+        instructorName: completion.instructorName,
+        completionDate: new Date(completion.completedAt).toISOString(),
+        grade: completion.score,
+        hours: completion.hours,
+        credentialId,
+        verificationUrl: `${window.location.origin}/verify/${credentialId}`,
+        templateId: 'default',
+        status: 'generated',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
       } as any);
+
+      downloadServerCertificate(credentialId);
 
       logStudent({
         activityType: 'certificate_issued',
         resourceType: 'certificate',
-        resourceId: saved?.id || certificateData.id,
+        resourceId: saved?.id || credentialId,
         resourceName: completion.courseTitle,
         courseId: completion.courseId,
       });
@@ -431,7 +443,22 @@ export default function CertificatesPage() {
       setCompletedCourses((prev) =>
         prev.map((c) =>
           c.courseId === completion.courseId
-            ? { ...c, certificate: certificateData, issuedAt: saved?.createdAt ?? Date.now() }
+            ? {
+                ...c,
+                issuedAt: saved?.createdAt ?? Date.now(),
+                certificate: {
+                  id: saved?.id || credentialId,
+                  userId: user.id,
+                  userName: user.name,
+                  courseId: completion.courseId,
+                  courseTitle: completion.courseTitle,
+                  instructorName: completion.instructorName,
+                  completedAt: completion.completedAt,
+                  score: completion.score,
+                  hours: completion.hours,
+                  certificateNumber: credentialId,
+                },
+              }
             : c
         )
       );
@@ -444,13 +471,7 @@ export default function CertificatesPage() {
   };
 
   const downloadExistingCertificate = async (completion: CourseCompletion) => {
-    if (!completion.certificate) return;
-    try {
-      await certificateGenerator.downloadCertificate(completion.certificate);
-    } catch (error) {
-      console.error('Error downloading certificate:', error);
-      alert('Error al descargar el certificado. Inténtalo de nuevo.');
-    }
+    downloadServerCertificate(completion.certificate?.certificateNumber);
   };
 
   // ── Render ─────────────────────────────────────────────────────────────────

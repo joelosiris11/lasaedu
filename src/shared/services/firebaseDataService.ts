@@ -26,6 +26,7 @@
  */
 
 import { db } from '@app/config/firebase';
+import { apiFirebaseDB } from './apiDataService';
 import {
   collection,
   doc,
@@ -1476,7 +1477,13 @@ class FirebaseDataService {
 }
 
 // Exportar instancia única
-export const firebaseDB = new FirebaseDataService();
+// Conmutador de backend: 'api' → Postgres self-host (apiFirebaseDB);
+// cualquier otro valor → Firestore (comportamiento original). Permite correr en
+// paralelo la versión Firebase y la nueva sin tocar a los consumidores.
+const USE_API_BACKEND = import.meta.env.VITE_BACKEND === 'api';
+export const firebaseDB = (
+  USE_API_BACKEND ? apiFirebaseDB : new FirebaseDataService()
+) as unknown as FirebaseDataService;
 
 // Exportar tipos para uso en componentes
 export type {

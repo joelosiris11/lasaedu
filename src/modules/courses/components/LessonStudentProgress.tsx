@@ -396,7 +396,7 @@ export default function LessonStudentProgress({
                                         Intento {idx + 1}
                                       </span>
                                       <span className={`font-medium ${attempt.passed ? 'text-green-600' : 'text-red-600'}`}>
-                                        {attempt.percentage}% ({attempt.score}/{attempt.maxScore})
+                                        {attempt.percentage}%
                                       </span>
                                     </button>
 

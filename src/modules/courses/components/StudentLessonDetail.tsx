@@ -329,7 +329,7 @@ export default function StudentLessonDetail({
                       </span>
                     </div>
                     <div className="text-xs text-gray-500">
-                      {attempt.score}/{attempt.maxScore} pts — {new Date(attempt.createdAt).toLocaleDateString('es', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                      {attempt.percentage}% — {new Date(attempt.createdAt).toLocaleDateString('es', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                     </div>
                     {/* Question results */}
                     <div className="mt-2 space-y-1">

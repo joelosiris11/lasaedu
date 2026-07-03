@@ -8,10 +8,17 @@ import crypto from 'crypto';
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
+import puppeteer from 'puppeteer-core';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 const UPLOAD_DIR = process.env.UPLOAD_DIR || '/uploads';
+// Admin-only generated assets (AI images) live here and are served ONLY through
+// the gated GET /ai/files route — never through the public /files route.
+const AI_PRIVATE_DIR = path.join(UPLOAD_DIR, 'ai-private');
+// Generated PDF reports — served through the normal /files route for direct
+// download by the admin.
+const REPORTS_DIR = path.join(UPLOAD_DIR, 'reports');
 
 // Ensure upload directory exists
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -363,6 +370,204 @@ app.post('/ai/chat', authMiddleware, adminMiddleware, async (req, res) => {
   } catch (err) {
     console.error('ollama stream relay failed', err);
     if (!res.writableEnded) res.end();
+  }
+});
+
+// ── AI assets: image generation (Gemini) + PDF reports (Puppeteer) ─────────
+// The chat engine stays on Kimi/Ollama (/ai/chat above). Gemini is used ONLY
+// to generate images; PDFs are rendered by Puppeteer from HTML composed by the
+// chat model. All three endpoints are admin-only.
+
+// Random, non-guessable filename (mirrors the multer storage naming).
+function aiAssetName(prefix, ext) {
+  const unique = crypto.randomBytes(6).toString('hex');
+  return `${prefix}_${Date.now()}_${unique}${ext}`;
+}
+
+/**
+ * POST /ai/image
+ * Body: { prompt: string, aspectRatio?: string }
+ *
+ * Generates an image with Gemini (gemini-3-pro-image / "Nano Banana Pro"),
+ * stores it in the admin-only ai-private dir, and returns a gated URL. The
+ * Gemini API key never reaches the browser.
+ */
+app.post('/ai/image', authMiddleware, adminMiddleware, async (req, res) => {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return res.status(500).json({ error: 'GEMINI_API_KEY not configured on the server' });
+  }
+  const { prompt, aspectRatio, scope } = req.body || {};
+  if (!prompt || typeof prompt !== 'string') {
+    return res.status(400).json({ error: 'prompt (string) is required' });
+  }
+  // scope 'course' → PUBLIC image (served by /files), embeddable in lessons
+  // that students see. Anything else → PRIVATE (admin-only /ai/files).
+  const isPublic = scope === 'course';
+  const model = process.env.GEMINI_IMAGE_MODEL || 'gemini-3-pro-image';
+  const generationConfig = {
+    responseModalities: ['TEXT', 'IMAGE'],
+    ...(aspectRatio ? { imageConfig: { aspectRatio: String(aspectRatio), imageSize: '2K' } } : {}),
+  };
+
+  let upstream;
+  try {
+    upstream = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig }),
+      },
+    );
+  } catch (err) {
+    console.error('gemini image upstream fetch failed', err);
+    return res.status(502).json({ error: 'Gemini upstream unreachable' });
+  }
+
+  if (!upstream.ok) {
+    const body = await upstream.text().catch(() => '');
+    return res
+      .status(upstream.status || 502)
+      .json({ error: `Gemini error ${upstream.status}: ${body || upstream.statusText}` });
+  }
+
+  let json;
+  try {
+    json = await upstream.json();
+  } catch {
+    return res.status(502).json({ error: 'Gemini returned a non-JSON response' });
+  }
+
+  const parts = json?.candidates?.[0]?.content?.parts || [];
+  const imgPart = parts.find((p) => p?.inlineData?.data);
+  if (!imgPart) {
+    const note = parts.find((p) => p?.text)?.text;
+    return res
+      .status(502)
+      .json({ error: `Gemini no devolvió imagen${note ? `: ${note}` : ''}` });
+  }
+
+  const mime = imgPart.inlineData.mimeType || 'image/png';
+  const ext = mime.includes('jpeg') || mime.includes('jpg') ? '.jpg' : '.png';
+  const filename = aiAssetName('img', ext);
+
+  if (isPublic) {
+    // Public course image — served by /files so students can see it in lessons.
+    const dir = path.join(UPLOAD_DIR, 'ai-generated', 'images');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, filename), Buffer.from(imgPart.inlineData.data, 'base64'));
+    const baseUrl = process.env.BASE_URL || '';
+    const rel = `/files/ai-generated/images/${filename}`;
+    return res.json({ url: baseUrl ? `${baseUrl}${rel}` : rel, prompt, mimeType: mime, scope: 'course' });
+  }
+
+  // Private admin image — only the admin can read it (gated /ai/files).
+  const dir = path.join(AI_PRIVATE_DIR, 'images');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, filename), Buffer.from(imgPart.inlineData.data, 'base64'));
+  res.json({ url: `/ai/files/images/${filename}`, prompt, mimeType: mime, scope: 'private' });
+});
+
+/**
+ * GET /ai/files/:path(*)
+ * Admin-only serving of generated assets (AI images). Mirrors the /files
+ * traversal guard but is gated so students can never read these.
+ */
+app.get('/ai/files/:path(*)', authMiddleware, adminMiddleware, (req, res) => {
+  const filePath = path.join(AI_PRIVATE_DIR, req.params.path);
+  if (!filePath.startsWith(AI_PRIVATE_DIR)) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'File not found' });
+  }
+  res.sendFile(filePath);
+});
+
+// Puppeteer browser singleton — launching Chromium per request is expensive.
+let browserPromise = null;
+async function getBrowser() {
+  if (!browserPromise) {
+    browserPromise = puppeteer
+      .launch({
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser',
+        headless: 'new',
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+      })
+      .catch((err) => {
+        browserPromise = null; // allow retry on next request
+        throw err;
+      });
+  }
+  return browserPromise;
+}
+
+const ASSET_MIME = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+};
+
+// Rewrites <img src="/files/..."> and "/ai/files/..." URLs to base64 data URIs
+// so Puppeteer embeds admin-only images without an auth header. Data URIs are
+// used (not file://) because page.setContent runs from an about:blank origin,
+// which Chrome blocks from loading file:// resources.
+function inlineLocalAssets(html) {
+  return String(html).replace(
+    /(src\s*=\s*["'])(\/(?:ai\/files|files)\/[^"']+)(["'])/gi,
+    (match, pre, url, post) => {
+      const rel = url.startsWith('/ai/files/')
+        ? path.join(AI_PRIVATE_DIR, url.slice('/ai/files/'.length))
+        : path.join(UPLOAD_DIR, url.slice('/files/'.length));
+      const base = url.startsWith('/ai/files/') ? AI_PRIVATE_DIR : UPLOAD_DIR;
+      if (!rel.startsWith(base) || !fs.existsSync(rel)) return match; // leave untouched
+      const mime = ASSET_MIME[path.extname(rel).toLowerCase()] || 'application/octet-stream';
+      const b64 = fs.readFileSync(rel).toString('base64');
+      return `${pre}data:${mime};base64,${b64}${post}`;
+    },
+  );
+}
+
+/**
+ * POST /ai/pdf
+ * Body: { title: string, html: string }
+ *
+ * Renders an HTML report (composed by the chat model from db_* tool data) to a
+ * PDF with Puppeteer, stores it, and returns a download URL.
+ */
+app.post('/ai/pdf', authMiddleware, adminMiddleware, async (req, res) => {
+  const { title, html } = req.body || {};
+  if (!html || typeof html !== 'string') {
+    return res.status(400).json({ error: 'html (string) is required' });
+  }
+  const safeTitle = (title && String(title)) || 'Reporte';
+
+  let page;
+  try {
+    const browser = await getBrowser();
+    page = await browser.newPage();
+    const doc = `<!doctype html><html><head><meta charset="utf-8"><title>${safeTitle}</title></head><body>${inlineLocalAssets(html)}</body></html>`;
+    await page.setContent(doc, { waitUntil: 'networkidle0' });
+    const pdf = await page.pdf({
+      format: 'A4',
+      printBackground: true,
+      margin: { top: '20mm', bottom: '20mm', left: '15mm', right: '15mm' },
+    });
+    fs.mkdirSync(REPORTS_DIR, { recursive: true });
+    const filename = aiAssetName('report', '.pdf');
+    fs.writeFileSync(path.join(REPORTS_DIR, filename), pdf);
+    const baseUrl = process.env.BASE_URL || '';
+    const url = baseUrl ? `${baseUrl}/files/reports/${filename}` : `/files/reports/${filename}`;
+    res.json({ url, title: safeTitle, filename });
+  } catch (err) {
+    console.error('pdf render failed', err);
+    res.status(500).json({ error: `No se pudo generar el PDF: ${err?.message || err}` });
+  } finally {
+    if (page) await page.close().catch(() => {});
   }
 });
 

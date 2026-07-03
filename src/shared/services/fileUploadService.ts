@@ -1,4 +1,4 @@
-import { auth } from '@app/config/firebase';
+import { getBackendToken, mediaBase } from '@shared/services/apiClient';
 import { validateFile, type FileValidationOptions } from '@shared/utils/fileValidation';
 
 export interface UploadProgress {
@@ -18,17 +18,12 @@ export interface UploadResult {
 // Default is empty string → requests are sent relative to the current origin
 // (Vite dev server), which proxies /upload and /files to the file-server.
 // To bypass the proxy, set VITE_FILE_SERVER_URL to an absolute URL.
-const FILE_SERVER_URL = import.meta.env.VITE_FILE_SERVER_URL ?? '';
+// mediaBase() resuelve el backend según VITE_BACKEND (file-server o API nuevo).
+const FILE_SERVER_URL = mediaBase();
 
 class FileUploadService {
   private async getAuthToken(): Promise<string> {
-    try {
-      const user = auth.currentUser;
-      if (user) {
-        return await user.getIdToken();
-      }
-    } catch { /* ignore */ }
-    return '';
+    return getBackendToken();
   }
 
   private validateFile(file: File, type: 'image' | 'video' | 'audio' | 'document'): void {

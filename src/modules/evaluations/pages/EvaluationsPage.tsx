@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '@app/store/authStore';
-import { evaluationService, legacyEnrollmentService, extensionService } from '@shared/services/dataService';
+import { evaluationService, legacyEnrollmentService, extensionService, courseService, lessonService } from '@shared/services/dataService';
 import type { DBEvaluation, DBEnrollment, DBDeadlineExtension } from '@shared/services/dataService';
 import { formatDeadlineDate } from '@shared/utils/deadlines';
 import {
@@ -28,6 +28,7 @@ import { Label } from '@shared/components/ui/Label';
 const EvaluationsPage = () => {
   const { user } = useAuthStore();
   const [evaluations, setEvaluations] = useState<DBEvaluation[]>([]);
+  const [courseNames, setCourseNames] = useState<Record<string, string>>({});
   const [enrollments, setEnrollments] = useState<DBEnrollment[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -50,16 +51,46 @@ const EvaluationsPage = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [evaluationsData, enrollmentsData] = await Promise.all([
+      const [courses, dbEvals, enrollmentsData] = await Promise.all([
+        courseService.getAll(),
         evaluationService.getAll(),
-        user?.role === 'student' ? legacyEnrollmentService.getAll() : Promise.resolve([])
+        legacyEnrollmentService.getAll(),
       ]);
-      setEvaluations(evaluationsData);
 
-      // Filter enrollments for current student
+      setCourseNames(Object.fromEntries((courses as any[]).map((c) => [c.id, c.title])));
+
+      // Los quizzes/tareas reales son LECCIONES (type quiz/tarea); la colección
+      // `evaluations` suele estar vacía. Derivamos las evaluaciones de esas lecciones.
+      const lessonsPerCourse = await Promise.all(
+        (courses as any[]).map((c) =>
+          lessonService.getByCourse(c.id).then((ls: any[]) => ({ c, ls })).catch(() => ({ c, ls: [] }))
+        )
+      );
+      const derived: any[] = [];
+      for (const { c, ls } of lessonsPerCourse) {
+        for (const l of ls) {
+          if (l.type === 'quiz' || l.type === 'tarea') {
+            derived.push({
+              id: l.id,
+              title: l.title,
+              description: l.description || '',
+              type: l.type,
+              courseId: c.id,
+              status: c.status === 'publicado' ? 'publicado' : 'borrador',
+              createdBy: c.instructorId || '',
+              dueDate: (l.settings as any)?.dueDate,
+              questions: [],
+              createdAt: l.createdAt,
+              updatedAt: l.updatedAt,
+            });
+          }
+        }
+      }
+      const all = [...derived, ...(dbEvals as any[]).filter((e) => !derived.some((d) => d.id === e.id))];
+      setEvaluations(all as DBEvaluation[]);
+
       if (user?.role === 'student') {
-        const userEnrollments = enrollmentsData.filter(e => e.userId === user.id);
-        setEnrollments(userEnrollments);
+        setEnrollments((enrollmentsData as any[]).filter((e) => e.userId === user.id));
       }
     } catch (error) {
       console.error('Error loading evaluations:', error);
@@ -94,6 +125,11 @@ const EvaluationsPage = () => {
     }
 
     return matchesSearch && matchesType && matchesStatus;
+  }).sort((a, b) => {
+    // Agrupar por curso: mismo curso queda junto, luego por título.
+    const ca = courseNames[a.courseId] || a.courseId || '';
+    const cb = courseNames[b.courseId] || b.courseId || '';
+    return ca.localeCompare(cb) || (a.title || '').localeCompare(b.title || '');
   });
 
   // Estadísticas
@@ -448,7 +484,7 @@ const EvaluationsPage = () => {
                         <div className="flex items-center space-x-6 text-sm text-gray-500">
                           <div className="flex items-center">
                             <BookOpen className="h-4 w-4 mr-1" />
-                            <span>Curso: {evaluation.courseId}</span>
+                            <span>Curso: {courseNames[evaluation.courseId] || evaluation.courseId}</span>
                           </div>
                           {evaluation.dueDate && (
                             <div className="flex items-center">

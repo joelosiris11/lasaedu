@@ -30,6 +30,7 @@ export interface OllamaToolDeclaration {
 }
 import { useAuthStore } from '@app/store/authStore';
 import { searchStockImages } from './unsplash';
+import { generateImage, generatePdf, type ImageAspectRatio, type ImageScope } from './aiBackend';
 import { useUndoStack, newUndoId } from './undoStack';
 import {
   getActivePrompt,
@@ -341,6 +342,58 @@ export const TOOL_DECLARATIONS: OllamaToolDeclaration[] = [
             enum: ['landscape', 'portrait', 'squarish'],
           },
           perPage: { type: 'number', description: '1 a 10. Por defecto 6.' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'generate_image',
+      description:
+        'Genera una imagen nueva con IA (Gemini Nano Banana Pro) a partir de una descripción. Describe la escena con detalle (estilo, composición, colores, texto si aplica). El parámetro scope decide la visibilidad: usa "course" para imágenes que van DENTRO de un curso/lección o como portada (las verán los estudiantes — URL pública); usa "private" (por defecto) para uso del admin en el chat o en reportes PDF (URL solo-admin). Devuelve la URL de la imagen.',
+      parameters: {
+        type: 'object',
+        required: ['prompt'],
+        properties: {
+          prompt: {
+            type: 'string',
+            description: 'Descripción detallada de la imagen a generar.',
+          },
+          aspectRatio: {
+            type: 'string',
+            enum: ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3'],
+            description: 'Proporción de la imagen. Por defecto 1:1.',
+          },
+          scope: {
+            type: 'string',
+            enum: ['course', 'private'],
+            description:
+              'course = imagen pública para insertar en cursos/lecciones/portadas; private = solo el admin la ve. Por defecto private.',
+          },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_pdf_report',
+      description:
+        'Genera un PDF de reportería a partir de HTML que tú compones. Úsalo cuando el admin pida un reporte/informe descargable. FLUJO: primero reúne datos reales con db_overview/db_count/db_query, luego arma un HTML profesional (encabezados, tablas, totales, branding de Lasa Academy) y pásalo aquí. No inventes números. Puedes incluir imágenes generadas con generate_image referenciando su URL en <img src="...">. Devuelve la URL del PDF para descargar.',
+      parameters: {
+        type: 'object',
+        required: ['title', 'html'],
+        properties: {
+          title: {
+            type: 'string',
+            description: 'Título del reporte (también el nombre lógico del PDF).',
+          },
+          html: {
+            type: 'string',
+            description:
+              'HTML completo del cuerpo del reporte. Usa estilos inline o una etiqueta <style>; usa <table> para datos tabulares.',
+          },
         },
       },
     },
@@ -850,6 +903,31 @@ async function execSearchStockImages(args: ToolArgs): Promise<ToolExecResult> {
   };
 }
 
+async function execGenerateImage(args: ToolArgs): Promise<ToolExecResult> {
+  requireAdmin();
+  const prompt = String(args.prompt || '').trim();
+  if (!prompt) throw new Error('prompt vacío');
+  const aspectRatio = args.aspectRatio as ImageAspectRatio | undefined;
+  const scope: ImageScope = args.scope === 'course' ? 'course' : 'private';
+  const result = await generateImage(prompt, aspectRatio, scope);
+  return {
+    data: { url: result.url, prompt: result.prompt, kind: 'image', scope: result.scope ?? scope },
+    summary: `Imagen ${scope === 'course' ? 'pública' : 'privada'} generada: ${truncate(prompt, 70)}`,
+  };
+}
+
+async function execCreatePdfReport(args: ToolArgs): Promise<ToolExecResult> {
+  requireAdmin();
+  const title = String(args.title || '').trim() || 'Reporte';
+  const html = String(args.html || '').trim();
+  if (!html) throw new Error('html vacío');
+  const result = await generatePdf(title, html);
+  return {
+    data: { url: result.url, title: result.title, kind: 'pdf' },
+    summary: `PDF generado: ${truncate(title, 80)}`,
+  };
+}
+
 // ─── Read-only DB executors ──────────────────────────────────────────────
 
 type CollectionName =
@@ -1052,6 +1130,8 @@ export type ToolName =
   | 'get_current_system_prompt'
   | 'propose_system_prompt_update'
   | 'search_stock_images'
+  | 'generate_image'
+  | 'create_pdf_report'
   | 'db_overview'
   | 'db_count'
   | 'db_query';
@@ -1070,6 +1150,8 @@ const EXECUTORS: Record<ToolName, (args: ToolArgs) => Promise<ToolExecResult>> =
   get_current_system_prompt: execGetCurrentSystemPrompt,
   propose_system_prompt_update: execProposeSystemPromptUpdate,
   search_stock_images: execSearchStockImages,
+  generate_image: execGenerateImage,
+  create_pdf_report: execCreatePdfReport,
   db_overview: execDbOverview,
   db_count: execDbCount,
   db_query: execDbQuery,

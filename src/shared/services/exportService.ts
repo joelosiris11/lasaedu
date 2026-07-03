@@ -193,7 +193,7 @@ export function exportToPDF<T extends object>(
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(16);
   doc.setFont('helvetica', 'bold');
-  doc.text('LasaEdu', margin, 12);
+  doc.text('Lasa Academy', margin, 12);
   
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');

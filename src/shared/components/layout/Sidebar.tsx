@@ -189,7 +189,7 @@ export const Sidebar = ({ collapsed, onToggleCollapse }: SidebarProps) => {
                 <div className="flex justify-center px-1 pb-4">
                   <img
                     src="/LaAuroraLogo.png"
-                    alt="lasa EDU"
+                    alt="Lasa Academy"
                     className="h-10 w-auto transition-all duration-300"
                   />
                 </div>
@@ -199,7 +199,7 @@ export const Sidebar = ({ collapsed, onToggleCollapse }: SidebarProps) => {
                 <div className="flex justify-center pt-1 pb-1 px-1">
                   <img
                     src="/LaAuroraLogo.png"
-                    alt="lasa EDU"
+                    alt="Lasa Academy"
                     className="h-32 md:h-36 w-auto transition-all duration-300"
                   />
                 </div>

@@ -433,8 +433,8 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
           // Update existing in-progress attempt to completed
           await firebaseDB.updateAttempt(activeAttemptId, {
             answers: completedAnswers,
-            score: quizResult.earnedPoints,
-            maxScore: quizResult.totalPoints,
+            score: quizResult.percentage, // normalizado a /100 (ningún quiz vale >100)
+            maxScore: 100,
             percentage: quizResult.percentage,
             passed: quizResult.passed,
             timeSpent,
@@ -451,8 +451,8 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
             userId,
             courseId: courseId || '',
             answers: completedAnswers,
-            score: quizResult.earnedPoints,
-            maxScore: quizResult.totalPoints,
+            score: quizResult.percentage, // normalizado a /100 (ningún quiz vale >100)
+            maxScore: 100,
             percentage: quizResult.percentage,
             passed: quizResult.passed,
             timeSpent,
@@ -633,7 +633,6 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
     const effectiveTimeLimit = lesson.settings?.timeLimit || quizContent.settings.timeLimit;
     const hasTimer = effectiveTimeLimit && effectiveTimeLimit > 0;
     const answerableQs = quizContent.questions.filter((q) => q.type !== 'context');
-    const totalPoints = answerableQs.reduce((s, q) => s + q.points, 0);
 
     // Resolve deadlines from template + section override
     const resolved = resolveDeadlines(lesson.settings, sectionOverride);
@@ -681,10 +680,6 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
                 <tr className="border-b border-gray-100">
                   <td className="px-4 py-2.5 text-gray-500 font-medium bg-gray-50 w-1/3">Preguntas</td>
                   <td className="px-4 py-2.5 text-gray-900 font-semibold">{answerableQs.length}</td>
-                </tr>
-                <tr className="border-b border-gray-100">
-                  <td className="px-4 py-2.5 text-gray-500 font-medium bg-gray-50">Puntos totales</td>
-                  <td className="px-4 py-2.5 text-gray-900 font-semibold">{totalPoints}</td>
                 </tr>
                 <tr className="border-b border-gray-100">
                   <td className="px-4 py-2.5 text-gray-500 font-medium bg-gray-50">Para aprobar</td>
@@ -980,7 +975,9 @@ export default function QuizLessonView({ lesson, onComplete, userId, courseId, r
           </div>
           <h2 className="text-xl font-bold mb-1">{result.passed ? '¡Quiz Aprobado!' : 'Quiz No Aprobado'}</h2>
           <p className="text-3xl md:text-4xl font-bold mb-1">{result.percentage}%</p>
-          <p className="text-gray-600 text-sm">{result.earnedPoints} de {result.totalPoints} puntos</p>
+          <p className="text-gray-600 text-sm">
+            {result.questionResults.filter((r) => r.correct).length} de {result.questionResults.length} respuestas correctas
+          </p>
           <p className="text-xs text-gray-500 mt-1">Mínimo para aprobar: {quizContent.settings.passingScore}%</p>
         </div>
 

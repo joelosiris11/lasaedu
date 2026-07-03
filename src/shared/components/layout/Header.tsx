@@ -25,7 +25,7 @@ const pageMeta: Record<string, { title: string; subtitle: string }> = {
 
 function getPageMeta(pathname: string) {
   const match = Object.keys(pageMeta).find(key => pathname.startsWith(key));
-  return match ? pageMeta[match] : { title: 'lasa EDU', subtitle: '' };
+  return match ? pageMeta[match] : { title: 'Lasa Academy', subtitle: '' };
 }
 
 export const Header = () => {

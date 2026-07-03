@@ -62,7 +62,7 @@ export default function NotificationSystemPage() {
       id: 'welcome',
       name: 'Bienvenida a estudiante',
       type: 'inapp',
-      subject: 'Bienvenido a LasaEdu!',
+      subject: 'Bienvenido a Lasa Academy!',
       content: 'Bienvenido a nuestra plataforma. Estamos emocionados de tenerte con nosotros.',
       variables: ['userName'],
       category: 'course'

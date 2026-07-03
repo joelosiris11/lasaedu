@@ -413,7 +413,8 @@ export default function TakeEvaluationPage() {
       userId: user.id,
       userName: user.name,
       answers,
-      score: earnedPoints,
+      score: percentage, // normalizado a /100
+      maxScore: 100,
       totalPoints,
       percentage,
       passed: submissionResult.passed,
